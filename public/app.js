@@ -1,4 +1,9 @@
-const app = document.getElementById('app');
+const app = document.getElementById('app');.
+app.innerHTML = 'TEST WORKS';
+
+  
+
+
 let state = { user: null, coaches: [], currentCoach: null, mySubs: [], activeChat: null, chatTimer: null };
 
 async function api(path, opts = {}) {
