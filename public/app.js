@@ -1,4 +1,4 @@
-const app = document.getElementById('app');.
+const app = document.getElementById('app');
 app.innerHTML = 'TEST WORKS';
 
   
