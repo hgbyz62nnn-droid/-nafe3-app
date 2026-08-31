@@ -2,15 +2,11 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-
 const dbDir = path.join(__dirname, 'db');
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-
 const db = new Database(path.join(__dirname, 'db', 'nafe3.sqlite'));
 db.pragma('journal_mode = WAL');
-
-
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -54,5 +50,9 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT DEFAULT (datetime('now'))
 );
 `);
+
+try { db.exec("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN avatar TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gallery TEXT"); } catch (e) {}
 
 module.exports = db;
