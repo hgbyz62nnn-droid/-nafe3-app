@@ -15,7 +15,9 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+// dotfiles 'allow' so /.well-known/assetlinks.json (needed for the Android
+// TWA app to verify it owns this domain) isn't silently 404'd.
+app.use(express.static(path.join(__dirname, 'public'), { dotfiles: 'allow' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/coaches', coachRoutes);
