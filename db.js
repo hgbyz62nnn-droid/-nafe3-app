@@ -69,5 +69,9 @@ try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gallery TEXT"); } catch (e)
 try { db.exec("ALTER TABLE users ADD COLUMN verified INTEGER DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN verify_code TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN verify_expires TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE subscriptions ADD COLUMN client_number INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE subscriptions ADD COLUMN commission_rate REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE subscriptions ADD COLUMN commission_amount INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE subscriptions ADD COLUMN coach_payout INTEGER"); } catch (e) {}
 
 module.exports = db;
