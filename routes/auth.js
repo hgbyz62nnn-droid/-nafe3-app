@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/adminAuth');
 const { sendVerificationEmail, sendBroadcastEmail } = require('../lib/email');
 
 const router = express.Router();
@@ -131,22 +131,30 @@ router.get('/me', (req, res) => {
   }
 });
 
-router.get('/admin/users', requireAuth, requireRole('admin'), (req, res) => {
-  const users = db.prepare("SELECT id, role, name, email, banned, created_at FROM users WHERE role != 'admin'").all();
+router.get('/admin/users', requireAdmin, (req, res) => {
+  const q = req.query.q;
+  let query = "SELECT id, role, name, email, banned, created_at FROM users WHERE role != 'admin'";
+  const params = [];
+  if (q) {
+    query += ' AND email LIKE ?';
+    params.push(`%${q}%`);
+  }
+  query += ' ORDER BY id DESC';
+  const users = db.prepare(query).all(...params);
   res.json({ users });
 });
 
-router.post('/admin/:id/ban', requireAuth, requireRole('admin'), (req, res) => {
+router.post('/admin/:id/ban', requireAdmin, (req, res) => {
   db.prepare('UPDATE users SET banned = 1 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/unban', requireAuth, requireRole('admin'), (req, res) => {
+router.post('/admin/:id/unban', requireAdmin, (req, res) => {
   db.prepare('UPDATE users SET banned = 0 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-router.delete('/admin/:id', requireAuth, requireRole('admin'), (req, res) => {
+router.delete('/admin/:id', requireAdmin, (req, res) => {
   const userId = req.params.id;
   db.prepare('DELETE FROM messages WHERE sender_id = ?').run(userId);
   db.prepare('DELETE FROM subscriptions WHERE trainee_id = ? OR coach_id = ?').run(userId, userId);
@@ -155,21 +163,37 @@ router.delete('/admin/:id', requireAuth, requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/admin/flagged-attempts', requireAuth, requireRole('admin'), (req, res) => {
+router.get('/admin/flagged-attempts', requireAdmin, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  const conditions = [];
+  const params = [];
+  if (req.query.reason) {
+    conditions.push('fa.reasons LIKE ?');
+    params.push(`%${req.query.reason}%`);
+  }
+  if (req.query.blocked === '0' || req.query.blocked === '1') {
+    conditions.push('fa.blocked = ?');
+    params.push(Number(req.query.blocked));
+  }
+  if (req.query.email) {
+    conditions.push('u.email LIKE ?');
+    params.push(`%${req.query.email}%`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const attempts = db
     .prepare(
       `SELECT fa.*, u.name AS user_name, u.email AS user_email
        FROM flagged_attempts fa
        JOIN users u ON u.id = fa.user_id
+       ${where}
        ORDER BY fa.id DESC
        LIMIT ?`
     )
-    .all(limit);
+    .all(...params, limit);
   res.json({ attempts });
 });
 
-router.post('/admin/broadcast', requireAuth, requireRole('admin'), async (req, res) => {
+router.post('/admin/broadcast', requireAdmin, async (req, res) => {
   const { targetRole, subject, message } = req.body;
   let query = "SELECT email FROM users WHERE role != 'admin'";
   if (targetRole === 'trainee' || targetRole === 'coach') query = `SELECT email FROM users WHERE role = '${targetRole}'`;
@@ -181,16 +205,6 @@ router.post('/admin/broadcast', requireAuth, requireRole('admin'), async (req, r
     catch (e) { failed++; }
   }
   res.json({ ok: true, sent, failed, total: targets.length });
-});
-
-router.get('/setup/create-admin/nafe3secret2026', (req, res) => {
-  const { email, password } = req.query;
-  if (!email || !password) return res.status(400).send('لازم تحط email و password في الرابط');
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-  if (existing) return res.send('في حساب بالإيميل ده خالص');
-  const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('INSERT INTO users (role, name, email, password_hash, verified) VALUES (?, ?, ?, ?, 1)').run('admin', 'Admin', email, password_hash);
-  res.send('تم إنشاء حساب الأدمن بنجاح ✅');
 });
 
 module.exports = router;

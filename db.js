@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS flagged_attempts (
   blocked INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS admins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0"); } catch (e) {}

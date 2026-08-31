@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/adminAuth');
 
 const router = express.Router();
 
@@ -41,7 +42,7 @@ router.get('/me/profile', requireAuth, requireRole('coach'), (req, res) => {
   res.json({ profile });
 });
 
-router.get('/admin/pending', requireAuth, requireRole('admin'), (req, res) => {
+router.get('/admin/pending', requireAdmin, (req, res) => {
   const pending = db
     .prepare(
       `SELECT u.id, u.name, u.email, c.specialty, c.bio, c.certification
@@ -52,12 +53,12 @@ router.get('/admin/pending', requireAuth, requireRole('admin'), (req, res) => {
   res.json({ pending });
 });
 
-router.post('/admin/:id/approve', requireAuth, requireRole('admin'), (req, res) => {
+router.post('/admin/:id/approve', requireAdmin, (req, res) => {
   db.prepare("UPDATE coach_profiles SET status='approved' WHERE user_id=?").run(req.params.id);
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/reject', requireAuth, requireRole('admin'), (req, res) => {
+router.post('/admin/:id/reject', requireAdmin, (req, res) => {
   db.prepare("UPDATE coach_profiles SET status='rejected' WHERE user_id=?").run(req.params.id);
   res.json({ ok: true });
 });
