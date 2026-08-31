@@ -51,6 +51,18 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 `);
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS flagged_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  subscription_id INTEGER REFERENCES subscriptions(id),
+  message TEXT NOT NULL,
+  reasons TEXT NOT NULL,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
 try { db.exec("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN avatar TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gallery TEXT"); } catch (e) {}

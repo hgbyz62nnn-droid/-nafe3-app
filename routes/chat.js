@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { containsContactInfo } = require('../lib/privacyFilter');
+const { analyzeWithHistory, shouldBlock } = require('../lib/privacyFilter');
 
 const router = express.Router();
 
@@ -28,9 +28,22 @@ router.post('/:subscriptionId', requireAuth, (req, res) => {
   if (!assertParticipant(sub, req.user.id)) return res.status(403).json({ error: 'مش معاك صلاحية' });
   if (sub.status !== 'active') return res.status(403).json({ error: 'الشات بيتفعّل بعد تأكيد الاشتراك' });
 
-  const flagged = containsContactInfo(content) ? 1 : 0;
+  const recent = db
+    .prepare('SELECT content FROM messages WHERE subscription_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 5')
+    .all(req.params.subscriptionId, req.user.id)
+    .map((r) => r.content)
+    .reverse();
+
+  const { flagged, reasons } = analyzeWithHistory(content, recent);
+  const blocked = flagged && shouldBlock(reasons);
 
   if (flagged) {
+    db.prepare(
+      'INSERT INTO flagged_attempts (user_id, subscription_id, message, reasons, blocked) VALUES (?, ?, ?, ?, ?)'
+    ).run(req.user.id, req.params.subscriptionId, content, reasons.join(','), blocked ? 1 : 0);
+  }
+
+  if (blocked) {
     db.prepare(
       'INSERT INTO messages (subscription_id, sender_id, content, flagged) VALUES (?, ?, ?, 1)'
     ).run(req.params.subscriptionId, req.user.id, '[رسالة اتمنعت - محتوى تواصل خارجي]');

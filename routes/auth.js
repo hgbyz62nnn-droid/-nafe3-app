@@ -155,6 +155,20 @@ router.delete('/admin/:id', requireAuth, requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/admin/flagged-attempts', requireAuth, requireRole('admin'), (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  const attempts = db
+    .prepare(
+      `SELECT fa.*, u.name AS user_name, u.email AS user_email
+       FROM flagged_attempts fa
+       JOIN users u ON u.id = fa.user_id
+       ORDER BY fa.id DESC
+       LIMIT ?`
+    )
+    .all(limit);
+  res.json({ attempts });
+});
+
 router.post('/admin/broadcast', requireAuth, requireRole('admin'), async (req, res) => {
   const { targetRole, subject, message } = req.body;
   let query = "SELECT email FROM users WHERE role != 'admin'";
