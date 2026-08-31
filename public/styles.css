@@ -6,10 +6,15 @@
 *{box-sizing:border-box;}
 body{
   font-family:'Tajawal',sans-serif; background:var(--bg); color:var(--text);
-  margin:0; min-height:100vh; direction:rtl;
+  margin:0; min-height:100vh;
 }
 .wrap{ max-width:480px; margin:0 auto; padding:20px 16px 60px; }
-.brand{ font-family:'Cairo',sans-serif; font-weight:900; font-size:20px; color:var(--red-soft); margin-bottom:18px; }
+.topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+.brand{ font-family:'Cairo',sans-serif; font-weight:900; font-size:20px; color:var(--red-soft); }
+.lang-toggle{
+  width:auto; padding:6px 14px; border-radius:999px; background:var(--surface-2); color:var(--text);
+  border:1px solid var(--line); font-weight:700; font-size:12px; cursor:pointer; font-family:inherit;
+}
 .card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:14px; }
 h2{ font-family:'Cairo',sans-serif; font-size:17px; margin:0 0 10px; }
 input, select, textarea{

@@ -1,6 +1,19 @@
 const app = document.getElementById('app');
 let state = { user: null, coaches: [], currentCoach: null, mySubs: [], activeChat: null, chatTimer: null, pendingEmail: null };
 
+applyLangAttrs(getLang());
+
+function wireLangToggle() {
+  const btn = document.getElementById('langToggle');
+  function updateLabel() { btn.textContent = getLang() === 'ar' ? 'EN' : 'عربي'; }
+  updateLabel();
+  btn.addEventListener('click', () => {
+    setLang(getLang() === 'ar' ? 'en' : 'ar');
+    updateLabel();
+    boot();
+  });
+}
+
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     credentials: 'include',
@@ -9,7 +22,7 @@ async function api(path, opts = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data.error || 'حصل خطأ');
+    const err = new Error(data.error || t('genericError'));
     err.data = data;
     throw err;
   }
@@ -31,8 +44,8 @@ async function boot() {
 function renderAuth() {
   render(`
     <div class="tabs">
-      <div class="tab active" id="tabLogin">دخول</div>
-      <div class="tab" id="tabRegister">حساب جديد</div>
+      <div class="tab active" id="tabLogin">${t('tabLogin')}</div>
+      <div class="tab" id="tabRegister">${t('tabRegister')}</div>
     </div>
     <div class="card" id="authCard"></div>
   `);
@@ -45,11 +58,11 @@ function renderLoginForm() {
   document.getElementById('tabLogin').classList.add('active');
   document.getElementById('tabRegister').classList.remove('active');
   document.getElementById('authCard').innerHTML = `
-    <h2>تسجيل الدخول</h2>
+    <h2>${t('loginTitle')}</h2>
     <div class="error hidden" id="authErr"></div>
-    <input id="email" type="email" placeholder="الإيميل">
-    <input id="password" type="password" placeholder="الباسورد">
-    <button id="doLogin">دخول</button>
+    <input id="email" type="email" placeholder="${t('emailPlaceholder')}">
+    <input id="password" type="password" placeholder="${t('passwordPlaceholder')}">
+    <button id="doLogin">${t('loginBtn')}</button>
   `;
   on('doLogin', 'click', async () => {
     try {
@@ -73,16 +86,16 @@ function renderRegisterForm() {
   document.getElementById('tabRegister').classList.add('active');
   document.getElementById('tabLogin').classList.remove('active');
   document.getElementById('authCard').innerHTML = `
-    <h2>حساب جديد</h2>
+    <h2>${t('registerTitle')}</h2>
     <div class="error hidden" id="authErr"></div>
-    <input id="name" placeholder="الاسم">
-    <input id="email" type="email" placeholder="الإيميل">
-    <input id="password" type="password" placeholder="الباسورد (8 حروف على الأقل)">
+    <input id="name" placeholder="${t('namePlaceholder')}">
+    <input id="email" type="email" placeholder="${t('emailPlaceholder')}">
+    <input id="password" type="password" placeholder="${t('passwordHintPlaceholder')}">
     <select id="role">
-      <option value="trainee">متدرب - عاوز أشترك مع مدرب</option>
-      <option value="coach">مدرب - عاوز أعرض نفسي</option>
+      <option value="trainee">${t('roleTrainee')}</option>
+      <option value="coach">${t('roleCoach')}</option>
     </select>
-    <button id="doRegister">إنشاء الحساب</button>
+    <button id="doRegister">${t('createAccountBtn')}</button>
   `;
   on('doRegister', 'click', async () => {
     try {
@@ -102,14 +115,14 @@ function renderRegisterForm() {
 function renderVerifyForm() {
   render(`
     <div class="card">
-      <h2>تأكيد الإيميل 📧</h2>
+      <h2>${t('verifyTitle')}</h2>
       <p class="small" style="line-height:1.8; margin-bottom:14px;">
-        بعتنالك كود مكون من 6 أرقام على ${state.pendingEmail}. اكتبه هنا عشان تكمل.
+        ${t('verifyBody', { email: state.pendingEmail })}
       </p>
       <div class="error hidden" id="verifyErr"></div>
-      <input id="code" placeholder="اكتب الكود هنا" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:6px;">
-      <button id="doVerify">تأكيد</button>
-      <button class="secondary" id="resendCode" style="margin-top:10px;">إعادة إرسال الكود</button>
+      <input id="code" placeholder="${t('codePlaceholder')}" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:6px;">
+      <button id="doVerify">${t('confirmBtn')}</button>
+      <button class="secondary" id="resendCode" style="margin-top:10px;">${t('resendCodeBtn')}</button>
     </div>
   `);
   on('doVerify', 'click', async () => {
@@ -127,7 +140,7 @@ function renderVerifyForm() {
   on('resendCode', 'click', async () => {
     try {
       await api('/auth/resend-code', { method: 'POST', body: JSON.stringify({ email: state.pendingEmail }) });
-      alert('اتبعت كود جديد ✅');
+      alert(t('codeResentAlert'));
     } catch (e) { alert(e.message); }
   });
 }
@@ -138,7 +151,7 @@ function showAuthErr(msg) {
 }
 
 function logoutBtn() {
-  return `<button class="secondary" id="logoutBtn" style="margin-top:14px;">تسجيل خروج</button>`;
+  return `<button class="secondary" id="logoutBtn" style="margin-top:14px;">${t('logoutBtn')}</button>`;
 }
 function wireLogout() {
   on('logoutBtn', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
@@ -154,25 +167,25 @@ async function renderTraineeHome() {
 
   render(`
     <div class="card">
-      <h2>أهلاً ${state.user.name} 👋</h2>
-      <p class="small">دوّر على مدربك وابدأ اشتراكك بأمان.</p>
+      <h2>${t('welcome', { name: state.user.name })}</h2>
+      <p class="small">${t('traineeHomeHint')}</p>
     </div>
     ${activeSubs.length ? `
       <div class="card">
-        <h2>اشتراكاتي</h2>
+        <h2>${t('mySubscriptions')}</h2>
         ${activeSubs.map(s => `
           <div class="coach-row" data-open-chat="${s.id}">
-            <div>${s.other_party_name}<div class="small">باقة ${s.package} · <span class="pill">مفعّل</span></div></div>
-            <div class="small">💬 الشات</div>
+            <div>${s.other_party_name}<div class="small">${t('packageLabel', { pkg: s.package })} · <span class="pill">${t('statusActive')}</span></div></div>
+            <div class="small">${t('chatLink')}</div>
           </div>
         `).join('')}
       </div>` : ''}
     <div class="card">
-      <h2>المدربين المتاحين</h2>
-      ${coaches.length === 0 ? '<p class="small">مفيش مدربين معتمدين لسه.</p>' : coaches.map(c => `
+      <h2>${t('availableCoaches')}</h2>
+      ${coaches.length === 0 ? `<p class="small">${t('noApprovedCoaches')}</p>` : coaches.map(c => `
         <div class="coach-row" data-open-coach="${c.id}">
-          <div>${c.name}<div class="small">${c.specialty || 'مدرب عام'}</div></div>
-          <div class="small">${c.price_1m} ج / شهر</div>
+          <div>${c.name}<div class="small">${c.specialty || t('coachSpecialtyFallback')}</div></div>
+          <div class="small">${t('pricePerMonth', { price: c.price_1m })}</div>
         </div>
       `).join('')}
     </div>
@@ -191,26 +204,26 @@ async function renderTraineeHome() {
 async function renderCoachProfile(coachId) {
   const { coach } = await api('/coaches/' + coachId);
   render(`
-    <button class="secondary" id="back">← رجوع</button>
+    <button class="secondary" id="back">${t('back')}</button>
     <div class="card">
       <h2>${coach.name}</h2>
       <p class="small">${coach.specialty || ''}</p>
-      <p style="font-size:13px; line-height:1.8; margin-top:10px;">${coach.bio || 'مفيش نبذة لسه'}</p>
-      <p class="small" style="margin-top:8px;">🎓 ${coach.certification || '-'}</p>
+      <p style="font-size:13px; line-height:1.8; margin-top:10px;">${coach.bio || t('noBioYet')}</p>
+      <p class="small" style="margin-top:8px;">${t('certificationLabel', { cert: coach.certification || '-' })}</p>
     </div>
     <div class="card">
-      <h2>الباقات</h2>
-      <div class="coach-row"><div>شهر واحد</div><div>${coach.price_1m} ج</div></div>
-      <div class="coach-row"><div>3 شهور</div><div>${coach.price_3m} ج</div></div>
-      <div class="coach-row"><div>6 شهور</div><div>${coach.price_6m} ج</div></div>
+      <h2>${t('packagesTitle')}</h2>
+      <div class="coach-row"><div>${t('package1m')}</div><div>${coach.price_1m} ${t('currency')}</div></div>
+      <div class="coach-row"><div>${t('package3m')}</div><div>${coach.price_3m} ${t('currency')}</div></div>
+      <div class="coach-row"><div>${t('package6m')}</div><div>${coach.price_6m} ${t('currency')}</div></div>
     </div>
     <div class="card">
       <select id="pkg">
-        <option value="1m">شهر واحد - ${coach.price_1m} ج</option>
-        <option value="3m">3 شهور - ${coach.price_3m} ج</option>
-        <option value="6m">6 شهور - ${coach.price_6m} ج</option>
+        <option value="1m">${t('package1m')} - ${coach.price_1m} ${t('currency')}</option>
+        <option value="3m">${t('package3m')} - ${coach.price_3m} ${t('currency')}</option>
+        <option value="6m">${t('package6m')} - ${coach.price_6m} ${t('currency')}</option>
       </select>
-      <button id="subscribeBtn">اشترك دلوقتي</button>
+      <button id="subscribeBtn">${t('subscribeBtn')}</button>
     </div>
   `);
   document.getElementById('back').onclick = renderTraineeHome;
@@ -230,11 +243,11 @@ async function renderCoachProfile(coachId) {
 function renderMockCheckout(subscriptionId) {
   render(`
     <div class="card">
-      <h2>وضع الدفع التجريبي 🧪</h2>
+      <h2>${t('mockCheckoutTitle')}</h2>
       <p class="small" style="line-height:1.8;">
-        Paymob لسه مش متوصل. ده تفعيل تجريبي بس عشان تكمل تجربة باقي التطبيق (الشات، الاشتراك، إلخ).
+        ${t('mockCheckoutBody')}
       </p>
-      <button id="confirmMock">تفعيل الاشتراك (تجريبي)</button>
+      <button id="confirmMock">${t('activateMockBtn')}</button>
     </div>
   `);
   on('confirmMock', 'click', async () => {
@@ -248,14 +261,14 @@ async function renderChat(subscriptionId) {
   state.activeChat = subscriptionId;
 
   render(`
-    <button class="secondary" id="back">← رجوع</button>
-    <div class="notice">🛡️ للحفاظ على خصوصيتك وأمان الدفع، مش هينفع تتبادل أرقام موبايل أو حسابات سوشيال ميديا جوه الشات.</div>
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="notice">${t('chatPrivacyNotice')}</div>
     <div class="card" id="chatBox" style="min-height:300px; display:flex; flex-direction:column;">
       <div id="msgs" style="flex:1; overflow-y:auto; margin-bottom:10px;"></div>
     </div>
     <div class="card" style="display:flex; gap:8px;">
-      <input id="msgInput" placeholder="اكتب رسالتك..." style="margin:0;">
-      <button id="sendBtn" style="width:90px;">إرسال</button>
+      <input id="msgInput" placeholder="${t('messagePlaceholder')}" style="margin:0;">
+      <button id="sendBtn" style="width:90px;">${t('sendBtn')}</button>
     </div>
   `);
   document.getElementById('back').onclick = () => { clearInterval(state.chatTimer); boot(); };
@@ -267,7 +280,7 @@ async function renderChat(subscriptionId) {
       if (!box) return;
       box.innerHTML = messages.map(m => `
         <div class="msg ${m.flagged ? 'blocked' : (m.sender_id === state.user.id ? 'me' : 'them')}">
-          ${m.flagged ? '🚫 رسالة اتمنعت (محتوى تواصل خارجي)' : m.content}
+          ${m.flagged ? t('blockedMessage') : m.content}
         </div>
       `).join('');
       box.scrollTop = box.scrollHeight;
@@ -293,31 +306,31 @@ async function renderCoachDashboard() {
   const { subscriptions } = await api('/subscriptions/mine');
   const activeSubs = subscriptions.filter(s => s.status === 'active');
 
-  const statusLabel = { pending: 'قيد المراجعة', approved: 'معتمد ✓', rejected: 'مرفوض' }[profile.status];
+  const statusLabel = { pending: t('statusPending'), approved: t('statusApproved'), rejected: t('statusRejected') }[profile.status];
 
   render(`
     <div class="card">
-      <h2>لوحة المدرب</h2>
-      <p class="small">حالة الحساب: <span class="pill">${statusLabel}</span></p>
+      <h2>${t('coachDashboardTitle')}</h2>
+      <p class="small">${t('accountStatusLabel')} <span class="pill">${statusLabel}</span></p>
     </div>
     <div class="card">
-      <h2>بروفايلي</h2>
-      <input id="specialty" placeholder="التخصص" value="${profile.specialty || ''}">
-      <textarea id="bio" placeholder="نبذة عنك" rows="3">${profile.bio || ''}</textarea>
-      <input id="certification" placeholder="الشهادة" value="${profile.certification || ''}">
-      <input id="price_1m" type="number" placeholder="سعر الشهر" value="${profile.price_1m || ''}">
-      <input id="price_3m" type="number" placeholder="سعر 3 شهور" value="${profile.price_3m || ''}">
-      <input id="price_6m" type="number" placeholder="سعر 6 شهور" value="${profile.price_6m || ''}">
-      <button id="saveProfile">حفظ البروفايل</button>
-      <p class="small" style="margin-top:8px;">أي تعديل بيرجع الحساب "قيد المراجعة" لحد ما الأدمن يوافق تاني.</p>
+      <h2>${t('myProfile')}</h2>
+      <input id="specialty" placeholder="${t('specialtyPlaceholder')}" value="${profile.specialty || ''}">
+      <textarea id="bio" placeholder="${t('bioPlaceholder')}" rows="3">${profile.bio || ''}</textarea>
+      <input id="certification" placeholder="${t('certificationPlaceholder')}" value="${profile.certification || ''}">
+      <input id="price_1m" type="number" placeholder="${t('price1mPlaceholder')}" value="${profile.price_1m || ''}">
+      <input id="price_3m" type="number" placeholder="${t('price3mPlaceholder')}" value="${profile.price_3m || ''}">
+      <input id="price_6m" type="number" placeholder="${t('price6mPlaceholder')}" value="${profile.price_6m || ''}">
+      <button id="saveProfile">${t('saveProfileBtn')}</button>
+      <p class="small" style="margin-top:8px;">${t('profileReviewHint')}</p>
     </div>
     ${activeSubs.length ? `
       <div class="card">
-        <h2>متدربيني</h2>
+        <h2>${t('myTrainees')}</h2>
         ${activeSubs.map(s => `
           <div class="coach-row" data-open-chat="${s.id}">
-            <div>${s.other_party_name}<div class="small">باقة ${s.package}</div></div>
-            <div class="small">💬 الشات</div>
+            <div>${s.other_party_name}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
+            <div class="small">${t('chatLink')}</div>
           </div>
         `).join('')}
       </div>` : ''}
@@ -349,8 +362,8 @@ async function renderAdmin() {
 
   render(`
     <div class="tabs">
-      <div class="tab active" id="tabPending">طلبات المدربين</div>
-      <div class="tab" id="tabUsers">كل المستخدمين</div>
+      <div class="tab active" id="tabPending">${t('pendingRequestsTab')}</div>
+      <div class="tab" id="tabUsers">${t('allUsersTab')}</div>
     </div>
     <div id="adminContent"></div>
     ${logoutBtn()}
@@ -361,15 +374,15 @@ async function renderAdmin() {
     document.getElementById('tabUsers').classList.remove('active');
     document.getElementById('adminContent').innerHTML = `
       <div class="card">
-        <h2>مراجعة طلبات المدربين</h2>
-        ${pending.length === 0 ? '<p class="small">مفيش طلبات جديدة.</p>' : pending.map(p => `
+        <h2>${t('reviewRequestsTitle')}</h2>
+        ${pending.length === 0 ? `<p class="small">${t('noPendingRequests')}</p>` : pending.map(p => `
           <div class="card" style="background:var(--surface-2);">
             <b>${p.name}</b> <span class="small">(${p.email})</span>
             <p class="small">${p.specialty || '-'} — ${p.certification || '-'}</p>
             <p style="font-size:12.5px;">${p.bio || ''}</p>
             <div style="display:flex; gap:8px;">
-              <button data-approve="${p.id}">✅ موافقة</button>
-              <button class="danger" data-reject="${p.id}">❌ رفض</button>
+              <button data-approve="${p.id}">${t('approveBtn')}</button>
+              <button class="danger" data-reject="${p.id}">${t('rejectBtn')}</button>
             </div>
           </div>
         `).join('')}
@@ -388,16 +401,16 @@ async function renderAdmin() {
     document.getElementById('tabPending').classList.remove('active');
     document.getElementById('adminContent').innerHTML = `
       <div class="card">
-        <h2>كل المستخدمين</h2>
-        ${users.length === 0 ? '<p class="small">مفيش مستخدمين.</p>' : users.map(u => `
+        <h2>${t('allUsersTitle')}</h2>
+        ${users.length === 0 ? `<p class="small">${t('noUsers')}</p>` : users.map(u => `
           <div class="card" style="background:var(--surface-2);">
             <b>${u.name}</b> <span class="small">(${u.email})</span>
-            <p class="small">${u.role === 'coach' ? 'مدرب' : 'متدرب'} ${u.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''}</p>
+            <p class="small">${u.role === 'coach' ? t('roleCoachLabel') : t('roleTraineeLabel')} ${u.banned ? `· <span style="color:var(--danger)">${t('bannedLabel')}</span>` : ''}</p>
             <div style="display:flex; gap:8px;">
               ${u.banned
-                ? `<button data-unban="${u.id}">✅ إلغاء الحظر</button>`
-                : `<button class="danger" data-ban="${u.id}">🚫 حظر</button>`}
-              <button class="danger" data-delete="${u.id}">🗑️ حذف نهائي</button>
+                ? `<button data-unban="${u.id}">${t('unbanBtn')}</button>`
+                : `<button class="danger" data-ban="${u.id}">${t('banBtn')}</button>`}
+              <button class="danger" data-delete="${u.id}">${t('deleteBtn')}</button>
             </div>
           </div>
         `).join('')}
@@ -411,7 +424,7 @@ async function renderAdmin() {
     });
     document.querySelectorAll('[data-delete]').forEach(el => {
       el.onclick = async () => {
-        if (!confirm('متأكد من الحذف النهائي؟ الإجراء ده مش هينفع يترجع')) return;
+        if (!confirm(t('confirmDelete'))) return;
         await api(`/auth/admin/${el.dataset.delete}`, { method: 'DELETE' });
         renderAdmin();
       };
@@ -424,4 +437,5 @@ async function renderAdmin() {
   wireLogout();
 }
 
+wireLangToggle();
 boot();
