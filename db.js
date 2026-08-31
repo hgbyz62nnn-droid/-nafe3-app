@@ -54,5 +54,8 @@ CREATE TABLE IF NOT EXISTS messages (
 try { db.exec("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN avatar TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gallery TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN verified INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN verify_code TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN verify_expires TEXT"); } catch (e) {}
 
 module.exports = db;
