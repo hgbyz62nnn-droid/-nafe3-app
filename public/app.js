@@ -1,5 +1,5 @@
 const app = document.getElementById('app');
-let state = { user: null, coaches: [], currentCoach: null, mySubs: [], activeChat: null, chatTimer: null };
+let state = { user: null, coaches: [], currentCoach: null, mySubs: [], activeChat: null, chatTimer: null, pendingEmail: null };
 
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
@@ -8,7 +8,11 @@ async function api(path, opts = {}) {
     ...opts,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'حصل خطأ');
+  if (!res.ok) {
+    const err = new Error(data.error || 'حصل خطأ');
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 
@@ -54,7 +58,14 @@ function renderLoginForm() {
         password: document.getElementById('password').value,
       })});
       boot();
-    } catch (e) { showAuthErr(e.message); }
+    } catch (e) {
+      if (e.data && e.data.needsVerification) {
+        state.pendingEmail = e.data.email;
+        renderVerifyForm();
+      } else {
+        showAuthErr(e.message);
+      }
+    }
   });
 }
 
@@ -75,14 +86,49 @@ function renderRegisterForm() {
   `;
   on('doRegister', 'click', async () => {
     try {
+      const email = document.getElementById('email').value;
       await api('/auth/register', { method: 'POST', body: JSON.stringify({
         name: document.getElementById('name').value,
-        email: document.getElementById('email').value,
+        email,
         password: document.getElementById('password').value,
         role: document.getElementById('role').value,
       })});
-      boot();
+      state.pendingEmail = email;
+      renderVerifyForm();
     } catch (e) { showAuthErr(e.message); }
+  });
+}
+
+function renderVerifyForm() {
+  render(`
+    <div class="card">
+      <h2>تأكيد الإيميل 📧</h2>
+      <p class="small" style="line-height:1.8; margin-bottom:14px;">
+        بعتنالك كود مكون من 6 أرقام على ${state.pendingEmail}. اكتبه هنا عشان تكمل.
+      </p>
+      <div class="error hidden" id="verifyErr"></div>
+      <input id="code" placeholder="اكتب الكود هنا" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:6px;">
+      <button id="doVerify">تأكيد</button>
+      <button class="secondary" id="resendCode" style="margin-top:10px;">إعادة إرسال الكود</button>
+    </div>
+  `);
+  on('doVerify', 'click', async () => {
+    try {
+      await api('/auth/verify', { method: 'POST', body: JSON.stringify({
+        email: state.pendingEmail,
+        code: document.getElementById('code').value,
+      })});
+      boot();
+    } catch (e) {
+      const el = document.getElementById('verifyErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  });
+  on('resendCode', 'click', async () => {
+    try {
+      await api('/auth/resend-code', { method: 'POST', body: JSON.stringify({ email: state.pendingEmail }) });
+      alert('اتبعت كود جديد ✅');
+    } catch (e) { alert(e.message); }
   });
 }
 
