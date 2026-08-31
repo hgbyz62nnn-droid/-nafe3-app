@@ -2,10 +2,10 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dbDir = path.join(__dirname, 'db');
+const dbDir = process.env.DATA_DIR || path.join(__dirname, 'db');
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-const db = new Database(path.join(__dirname, 'db', 'nafe3.sqlite'));
+const db = new Database(path.join(dbDir, 'nafe3.sqlite'));
 db.pragma('journal_mode = WAL');
 
 db.exec(`
