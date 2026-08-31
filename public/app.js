@@ -3,6 +3,10 @@ let state = { user: null, coaches: [], currentCoach: null, mySubs: [], activeCha
 
 applyLangAttrs(getLang());
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
 function wireLangToggle() {
   const btn = document.getElementById('langToggle');
   function updateLabel() { btn.textContent = getLang() === 'ar' ? 'EN' : 'عربي'; }
