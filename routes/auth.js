@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { sendVerificationEmail, sendBroadcastEmail } = require('../lib/email');
 
 const router = express.Router();
 
@@ -20,7 +21,11 @@ function setAuthCookie(res, token) {
   });
 }
 
-router.post('/register', (req, res) => {
+function generateCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+router.post('/register', async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password || !['trainee', 'coach'].includes(role)) {
     return res.status(400).json({ error: 'البيانات ناقصة أو غلط' });
@@ -32,9 +37,12 @@ router.post('/register', (req, res) => {
   if (existing) return res.status(409).json({ error: 'الإيميل ده مسجل قبل كده' });
 
   const password_hash = bcrypt.hashSync(password, 10);
+  const code = generateCode();
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
   const info = db
-    .prepare('INSERT INTO users (role, name, email, password_hash) VALUES (?, ?, ?, ?)')
-    .run(role, name, email, password_hash);
+    .prepare('INSERT INTO users (role, name, email, password_hash, verify_code, verify_expires) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(role, name, email, password_hash, code, expires);
 
   if (role === 'coach') {
     db.prepare(
@@ -42,9 +50,44 @@ router.post('/register', (req, res) => {
     ).run(info.lastInsertRowid, '', '', '', 'pending');
   }
 
-  const user = { id: info.lastInsertRowid, role, name };
+  try {
+    await sendVerificationEmail(email, code);
+  } catch (e) {
+    console.log('فشل إرسال إيميل التأكيد:', e.message);
+  }
+
+  res.json({ needsVerification: true, userId: info.lastInsertRowid, email });
+});
+
+router.post('/verify', async (req, res) => {
+  const { email, code } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user) return res.status(404).json({ error: 'الحساب غير موجود' });
+  if (user.verified) return res.status(400).json({ error: 'الحساب متأكد بالفعل' });
+  if (user.verify_code !== code) return res.status(400).json({ error: 'الكود غلط' });
+  if (new Date(user.verify_expires) < new Date()) return res.status(400).json({ error: 'الكود منتهي، اطلب كود جديد' });
+
+  db.prepare("UPDATE users SET verified = 1, verify_code = NULL WHERE id = ?").run(user.id);
   setAuthCookie(res, signToken(user));
-  res.json({ user });
+  res.json({ user: { id: user.id, role: user.role, name: user.name } });
+});
+
+router.post('/resend-code', async (req, res) => {
+  const { email } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user) return res.status(404).json({ error: 'الحساب غير موجود' });
+  if (user.verified) return res.status(400).json({ error: 'الحساب متأكد بالفعل' });
+
+  const code = generateCode();
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('UPDATE users SET verify_code = ?, verify_expires = ? WHERE id = ?').run(code, expires, user.id);
+
+  try {
+    await sendVerificationEmail(email, code);
+  } catch (e) {
+    return res.status(500).json({ error: 'فشل إرسال الإيميل' });
+  }
+  res.json({ ok: true });
 });
 
 let loginAttempts = {};
@@ -63,6 +106,7 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'الإيميل أو الباسورد غلط' });
   }
   if (user.banned) return res.status(403).json({ error: 'تم حظر هذا الحساب' });
+  if (!user.verified) return res.status(403).json({ error: 'لازم تأكد الإيميل الأول', needsVerification: true, email: user.email });
 
   delete loginAttempts[key];
   setAuthCookie(res, signToken(user));
@@ -87,7 +131,6 @@ router.get('/me', (req, res) => {
   }
 });
 
-// ==== صلاحيات الأدمن ====
 router.get('/admin/users', requireAuth, requireRole('admin'), (req, res) => {
   const users = db.prepare("SELECT id, role, name, email, banned, created_at FROM users WHERE role != 'admin'").all();
   res.json({ users });
@@ -112,13 +155,27 @@ router.delete('/admin/:id', requireAuth, requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/admin/broadcast', requireAuth, requireRole('admin'), async (req, res) => {
+  const { targetRole, subject, message } = req.body;
+  let query = "SELECT email FROM users WHERE role != 'admin'";
+  if (targetRole === 'trainee' || targetRole === 'coach') query = `SELECT email FROM users WHERE role = '${targetRole}'`;
+  const targets = db.prepare(query).all();
+
+  let sent = 0, failed = 0;
+  for (const t of targets) {
+    try { await sendBroadcastEmail(t.email, subject, message); sent++; }
+    catch (e) { failed++; }
+  }
+  res.json({ ok: true, sent, failed, total: targets.length });
+});
+
 router.get('/setup/create-admin/nafe3secret2026', (req, res) => {
   const { email, password } = req.query;
   if (!email || !password) return res.status(400).send('لازم تحط email و password في الرابط');
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) return res.send('في حساب بالإيميل ده خالص');
   const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('INSERT INTO users (role, name, email, password_hash) VALUES (?, ?, ?, ?)').run('admin', 'Admin', email, password_hash);
+  db.prepare('INSERT INTO users (role, name, email, password_hash, verified) VALUES (?, ?, ?, ?, 1)').run('admin', 'Admin', email, password_hash);
   res.send('تم إنشاء حساب الأدمن بنجاح ✅');
 });
 
