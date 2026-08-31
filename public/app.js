@@ -1,9 +1,4 @@
 const app = document.getElementById('app');
-app.innerHTML = 'TEST WORKS';
-
-  
-
-
 let state = { user: null, coaches: [], currentCoach: null, mySubs: [], activeChat: null, chatTimer: null };
 
 async function api(path, opts = {}) {
@@ -169,4 +164,166 @@ async function renderCoachProfile(coachId) {
         <option value="3m">3 شهور - ${coach.price_3m} ج</option>
         <option value="6m">6 شهور - ${coach.price_6m} ج</option>
       </select>
-      <button id="subscribeBtn">اشترك دلوقتي
+      <button id="subscribeBtn">اشترك دلوقتي</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = renderTraineeHome;
+  on('subscribeBtn', 'click', async () => {
+    const pkg = document.getElementById('pkg').value;
+    try {
+      const result = await api('/subscriptions', { method: 'POST', body: JSON.stringify({ coachId, package: pkg }) });
+      if (result.mock) {
+        renderMockCheckout(result.subscriptionId);
+      } else {
+        window.location.href = result.checkoutUrl;
+      }
+    } catch (e) { alert(e.message); }
+  });
+}
+
+function renderMockCheckout(subscriptionId) {
+  render(`
+    <div class="card">
+      <h2>وضع الدفع التجريبي 🧪</h2>
+      <p class="small" style="line-height:1.8;">
+        Paymob لسه مش متوصل. ده تفعيل تجريبي بس عشان تكمل تجربة باقي التطبيق (الشات، الاشتراك، إلخ).
+        لما تحط مفاتيح Paymob في ملف .env، هيتحول أوتوماتيك لصفحة دفع حقيقية.
+      </p>
+      <button id="confirmMock">تفعيل الاشتراك (تجريبي)</button>
+    </div>
+  `);
+  on('confirmMock', 'click', async () => {
+    await api(`/subscriptions/${subscriptionId}/mock-confirm`, { method: 'POST' });
+    renderChat(subscriptionId);
+  });
+}
+
+async function renderChat(subscriptionId) {
+  clearInterval(state.chatTimer);
+  state.activeChat = subscriptionId;
+
+  render(`
+    <button class="secondary" id="back">← رجوع</button>
+    <div class="notice">🛡️ للحفاظ على خصوصيتك وأمان الدفع، مش هينفع تتبادل أرقام موبايل أو حسابات سوشيال ميديا جوه الشات.</div>
+    <div class="card" id="chatBox" style="min-height:300px; display:flex; flex-direction:column;">
+      <div id="msgs" style="flex:1; overflow-y:auto; margin-bottom:10px;"></div>
+    </div>
+    <div class="card" style="display:flex; gap:8px;">
+      <input id="msgInput" placeholder="اكتب رسالتك..." style="margin:0;">
+      <button id="sendBtn" style="width:90px;">إرسال</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = () => { clearInterval(state.chatTimer); boot(); };
+
+  async function loadMsgs() {
+    try {
+      const { messages } = await api('/chat/' + subscriptionId);
+      const box = document.getElementById('msgs');
+      if (!box) return;
+      box.innerHTML = messages.map(m => `
+        <div class="msg ${m.flagged ? 'blocked' : (m.sender_id === state.user.id ? 'me' : 'them')}">
+          ${m.flagged ? '🚫 رسالة اتمنعت (محتوى تواصل خارجي)' : m.content}
+        </div>
+      `).join('');
+      box.scrollTop = box.scrollHeight;
+    } catch (e) { }
+  }
+  await loadMsgs();
+  state.chatTimer = setInterval(loadMsgs, 3000);
+
+  on('sendBtn', 'click', async () => {
+    const input = document.getElementById('msgInput');
+    const content = input.value.trim();
+    if (!content) return;
+    input.value = '';
+    try {
+      await api('/chat/' + subscriptionId, { method: 'POST', body: JSON.stringify({ content }) });
+    } catch (e) { }
+    loadMsgs();
+  });
+}
+
+async function renderCoachDashboard() {
+  const { profile } = await api('/coaches/me/profile');
+  const { subscriptions } = await api('/subscriptions/mine');
+  const activeSubs = subscriptions.filter(s => s.status === 'active');
+
+  const statusLabel = { pending: 'قيد المراجعة', approved: 'معتمد ✓', rejected: 'مرفوض' }[profile.status];
+
+  render(`
+    <div class="card">
+      <h2>لوحة المدرب</h2>
+      <p class="small">حالة الحساب: <span class="pill">${statusLabel}</span></p>
+    </div>
+    <div class="card">
+      <h2>بروفايلي</h2>
+      <input id="specialty" placeholder="التخصص" value="${profile.specialty || ''}">
+      <textarea id="bio" placeholder="نبذة عنك" rows="3">${profile.bio || ''}</textarea>
+      <input id="certification" placeholder="الشهادة" value="${profile.certification || ''}">
+      <input id="price_1m" type="number" placeholder="سعر الشهر" value="${profile.price_1m || ''}">
+      <input id="price_3m" type="number" placeholder="سعر 3 شهور" value="${profile.price_3m || ''}">
+      <input id="price_6m" type="number" placeholder="سعر 6 شهور" value="${profile.price_6m || ''}">
+      <button id="saveProfile">حفظ البروفايل</button>
+      <p class="small" style="margin-top:8px;">أي تعديل بيرجع الحساب "قيد المراجعة" لحد ما الأدمن يوافق تاني.</p>
+    </div>
+    ${activeSubs.length ? `
+      <div class="card">
+        <h2>متدربيني</h2>
+        ${activeSubs.map(s => `
+          <div class="coach-row" data-open-chat="${s.id}">
+            <div>${s.other_party_name}<div class="small">باقة ${s.package}</div></div>
+            <div class="small">💬 الشات</div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+    ${logoutBtn()}
+  `);
+
+  on('saveProfile', 'click', async () => {
+    try {
+      await api('/coaches/me/profile', { method: 'PUT', body: JSON.stringify({
+        specialty: document.getElementById('specialty').value,
+        bio: document.getElementById('bio').value,
+        certification: document.getElementById('certification').value,
+        price_1m: Number(document.getElementById('price_1m').value) || 0,
+        price_3m: Number(document.getElementById('price_3m').value) || 0,
+        price_6m: Number(document.getElementById('price_6m').value) || 0,
+      })});
+      renderCoachDashboard();
+    } catch (e) { alert(e.message); }
+  });
+  document.querySelectorAll('[data-open-chat]').forEach(el => {
+    el.onclick = () => renderChat(el.dataset.openChat);
+  });
+  wireLogout();
+}
+
+async function renderAdmin() {
+  const { pending } = await api('/coaches/admin/pending');
+  render(`
+    <div class="card">
+      <h2>مراجعة طلبات المدربين</h2>
+      ${pending.length === 0 ? '<p class="small">مفيش طلبات جديدة.</p>' : pending.map(p => `
+        <div class="card" style="background:var(--surface-2);">
+          <b>${p.name}</b> <span class="small">(${p.email})</span>
+          <p class="small">${p.specialty || '-'} — ${p.certification || '-'}</p>
+          <p style="font-size:12.5px;">${p.bio || ''}</p>
+          <div style="display:flex; gap:8px;">
+            <button data-approve="${p.id}">✅ موافقة</button>
+            <button class="danger" data-reject="${p.id}">❌ رفض</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    ${logoutBtn()}
+  `);
+  document.querySelectorAll('[data-approve]').forEach(el => {
+    el.onclick = async () => { await api(`/coaches/admin/${el.dataset.approve}/approve`, { method: 'POST' }); renderAdmin(); };
+  });
+  document.querySelectorAll('[data-reject]').forEach(el => {
+    el.onclick = async () => { await api(`/coaches/admin/${el.dataset.reject}/reject`, { method: 'POST' }); renderAdmin(); };
+  });
+  wireLogout();
+}
+
+boot();
