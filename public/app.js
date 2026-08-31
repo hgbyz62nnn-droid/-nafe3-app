@@ -66,7 +66,7 @@ function renderRegisterForm() {
     <div class="error hidden" id="authErr"></div>
     <input id="name" placeholder="الاسم">
     <input id="email" type="email" placeholder="الإيميل">
-    <input id="password" type="password" placeholder="الباسورد">
+    <input id="password" type="password" placeholder="الباسورد (8 حروف على الأقل)">
     <select id="role">
       <option value="trainee">متدرب - عاوز أشترك مع مدرب</option>
       <option value="coach">مدرب - عاوز أعرض نفسي</option>
@@ -187,7 +187,6 @@ function renderMockCheckout(subscriptionId) {
       <h2>وضع الدفع التجريبي 🧪</h2>
       <p class="small" style="line-height:1.8;">
         Paymob لسه مش متوصل. ده تفعيل تجريبي بس عشان تكمل تجربة باقي التطبيق (الشات، الاشتراك، إلخ).
-        لما تحط مفاتيح Paymob في ملف .env، هيتحول أوتوماتيك لصفحة دفع حقيقية.
       </p>
       <button id="confirmMock">تفعيل الاشتراك (تجريبي)</button>
     </div>
@@ -300,29 +299,82 @@ async function renderCoachDashboard() {
 
 async function renderAdmin() {
   const { pending } = await api('/coaches/admin/pending');
+  const { users } = await api('/auth/admin/users');
+
   render(`
-    <div class="card">
-      <h2>مراجعة طلبات المدربين</h2>
-      ${pending.length === 0 ? '<p class="small">مفيش طلبات جديدة.</p>' : pending.map(p => `
-        <div class="card" style="background:var(--surface-2);">
-          <b>${p.name}</b> <span class="small">(${p.email})</span>
-          <p class="small">${p.specialty || '-'} — ${p.certification || '-'}</p>
-          <p style="font-size:12.5px;">${p.bio || ''}</p>
-          <div style="display:flex; gap:8px;">
-            <button data-approve="${p.id}">✅ موافقة</button>
-            <button class="danger" data-reject="${p.id}">❌ رفض</button>
-          </div>
-        </div>
-      `).join('')}
+    <div class="tabs">
+      <div class="tab active" id="tabPending">طلبات المدربين</div>
+      <div class="tab" id="tabUsers">كل المستخدمين</div>
     </div>
+    <div id="adminContent"></div>
     ${logoutBtn()}
   `);
-  document.querySelectorAll('[data-approve]').forEach(el => {
-    el.onclick = async () => { await api(`/coaches/admin/${el.dataset.approve}/approve`, { method: 'POST' }); renderAdmin(); };
-  });
-  document.querySelectorAll('[data-reject]').forEach(el => {
-    el.onclick = async () => { await api(`/coaches/admin/${el.dataset.reject}/reject`, { method: 'POST' }); renderAdmin(); };
-  });
+
+  function showPending() {
+    document.getElementById('tabPending').classList.add('active');
+    document.getElementById('tabUsers').classList.remove('active');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>مراجعة طلبات المدربين</h2>
+        ${pending.length === 0 ? '<p class="small">مفيش طلبات جديدة.</p>' : pending.map(p => `
+          <div class="card" style="background:var(--surface-2);">
+            <b>${p.name}</b> <span class="small">(${p.email})</span>
+            <p class="small">${p.specialty || '-'} — ${p.certification || '-'}</p>
+            <p style="font-size:12.5px;">${p.bio || ''}</p>
+            <div style="display:flex; gap:8px;">
+              <button data-approve="${p.id}">✅ موافقة</button>
+              <button class="danger" data-reject="${p.id}">❌ رفض</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.querySelectorAll('[data-approve]').forEach(el => {
+      el.onclick = async () => { await api(`/coaches/admin/${el.dataset.approve}/approve`, { method: 'POST' }); renderAdmin(); };
+    });
+    document.querySelectorAll('[data-reject]').forEach(el => {
+      el.onclick = async () => { await api(`/coaches/admin/${el.dataset.reject}/reject`, { method: 'POST' }); renderAdmin(); };
+    });
+  }
+
+  function showUsers() {
+    document.getElementById('tabUsers').classList.add('active');
+    document.getElementById('tabPending').classList.remove('active');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>كل المستخدمين</h2>
+        ${users.length === 0 ? '<p class="small">مفيش مستخدمين.</p>' : users.map(u => `
+          <div class="card" style="background:var(--surface-2);">
+            <b>${u.name}</b> <span class="small">(${u.email})</span>
+            <p class="small">${u.role === 'coach' ? 'مدرب' : 'متدرب'} ${u.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''}</p>
+            <div style="display:flex; gap:8px;">
+              ${u.banned
+                ? `<button data-unban="${u.id}">✅ إلغاء الحظر</button>`
+                : `<button class="danger" data-ban="${u.id}">🚫 حظر</button>`}
+              <button class="danger" data-delete="${u.id}">🗑️ حذف نهائي</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.querySelectorAll('[data-ban]').forEach(el => {
+      el.onclick = async () => { await api(`/auth/admin/${el.dataset.ban}/ban`, { method: 'POST' }); renderAdmin(); };
+    });
+    document.querySelectorAll('[data-unban]').forEach(el => {
+      el.onclick = async () => { await api(`/auth/admin/${el.dataset.unban}/unban`, { method: 'POST' }); renderAdmin(); };
+    });
+    document.querySelectorAll('[data-delete]').forEach(el => {
+      el.onclick = async () => {
+        if (!confirm('متأكد من الحذف النهائي؟ الإجراء ده مش هينفع يترجع')) return;
+        await api(`/auth/admin/${el.dataset.delete}`, { method: 'DELETE' });
+        renderAdmin();
+      };
+    });
+  }
+
+  document.getElementById('tabPending').onclick = showPending;
+  document.getElementById('tabUsers').onclick = showUsers;
+  showPending();
   wireLogout();
 }
 
