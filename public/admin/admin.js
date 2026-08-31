@@ -197,8 +197,9 @@ async function renderDashboard(admin) {
         : users.map((u) => `
           <div class="card" style="background:var(--surface-2);">
             <b>${escapeHtml(u.name)}</b> <span class="small">(${escapeHtml(u.email)})</span>
-            <p class="small">${u.role === 'coach' ? 'مدرب' : 'متدرب'} ${u.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''}</p>
-            <div style="display:flex; gap:8px;">
+            <p class="small">${u.role === 'coach' ? 'مدرب' : 'متدرب'} ${u.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''} ${!u.verified ? '· <span style="color:var(--text-dim)">إيميل مش متأكد</span>' : ''}</p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${!u.verified ? `<button data-verify="${u.id}">📧 تأكيد يدوي</button>` : ''}
               ${u.banned
                 ? `<button data-unban="${u.id}">✅ إلغاء الحظر</button>`
                 : `<button class="danger" data-ban="${u.id}">🚫 حظر</button>`}
@@ -206,6 +207,9 @@ async function renderDashboard(admin) {
             </div>
           </div>
         `).join('');
+      document.querySelectorAll('[data-verify]').forEach((el) => {
+        el.onclick = async () => { await api(`/auth/admin/${el.dataset.verify}/verify`, { method: 'POST' }); load(); };
+      });
       document.querySelectorAll('[data-ban]').forEach((el) => {
         el.onclick = async () => { await api(`/auth/admin/${el.dataset.ban}/ban`, { method: 'POST' }); load(); };
       });

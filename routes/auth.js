@@ -135,7 +135,7 @@ router.get('/me', (req, res) => {
 
 router.get('/admin/users', requireAdmin, (req, res) => {
   const q = req.query.q;
-  let query = "SELECT id, role, name, email, banned, created_at FROM users WHERE role != 'admin'";
+  let query = "SELECT id, role, name, email, banned, verified, created_at FROM users WHERE role != 'admin'";
   const params = [];
   if (q) {
     query += ' AND email LIKE ?';
@@ -153,6 +153,13 @@ router.post('/admin/:id/ban', requireAdmin, (req, res) => {
 
 router.post('/admin/:id/unban', requireAdmin, (req, res) => {
   db.prepare('UPDATE users SET banned = 0 WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// For when a user's verification email never arrives (bounced, stuck in
+// spam, wrong address) and support needs to unblock their account by hand.
+router.post('/admin/:id/verify', requireAdmin, (req, res) => {
+  db.prepare("UPDATE users SET verified = 1, verify_code = NULL WHERE id = ?").run(req.params.id);
   res.json({ ok: true });
 });
 
