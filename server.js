@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const coachRoutes = require('./routes/coaches');
 const subscriptionRoutes = require('./routes/subscriptions');
 const chatRoutes = require('./routes/chat');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/coaches', coachRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
