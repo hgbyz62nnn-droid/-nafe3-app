@@ -57,7 +57,7 @@ router.post('/', requireAuth, requireRole('trainee'), async (req, res) => {
       orderRef,
       billing: {
         first_name: req.user.name || 'Trainee',
-        last_name: 'NAFE3',
+        last_name: 'Traino',
         email: 'trainee@example.com',
         phone_number: '+201000000000',
         apartment: 'NA', floor: 'NA', street: 'NA', building: 'NA', city: 'Ismailia', country: 'EG',

@@ -155,7 +155,7 @@ async function renderTraineeHome() {
   render(`
     <div class="card">
       <h2>أهلاً ${state.user.name} 👋</h2>
-      <p class="small">دوّر على مدربك في الإسماعيلية وابدأ اشتراكك بأمان.</p>
+      <p class="small">دوّر على مدربك وابدأ اشتراكك بأمان.</p>
     </div>
     ${activeSubs.length ? `
       <div class="card">

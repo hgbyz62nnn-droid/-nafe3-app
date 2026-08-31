@@ -1,7 +1,7 @@
 {
   "name": "nafe3-app",
   "version": "1.0.0",
-  "description": "منصة مدربين الإسماعيلية - NAFE3",
+  "description": "Traino - منصة تربط المتدربين بمدربين شخصيين معتمدين",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
