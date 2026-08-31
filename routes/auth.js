@@ -71,4 +71,15 @@ router.get('/me', (req, res) => {
   }
 });
 
+// مؤقت: عمل حساب أدمن - هيتمسح بعد الاستخدام
+router.get('/setup/create-admin/nafe3secret2026', (req, res) => {
+  const { email, password } = req.query;
+  if (!email || !password) return res.status(400).send('لازم تحط email و password في الرابط');
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  if (existing) return res.send('في حساب بالإيميل ده خالص');
+  const password_hash = bcrypt.hashSync(password, 10);
+  db.prepare('INSERT INTO users (role, name, email, password_hash) VALUES (?, ?, ?, ?)').run('admin', 'Admin', email, password_hash);
+  res.send('تم إنشاء حساب الأدمن بنجاح ✅');
+});
+
 module.exports = router;
