@@ -2,8 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 
+const db = require('./db');
+const { scheduleDailyBackup } = require('./lib/backup');
 const authRoutes = require('./routes/auth');
 const coachRoutes = require('./routes/coaches');
 const subscriptionRoutes = require('./routes/subscriptions');
@@ -12,7 +15,61 @@ const adminAuthRoutes = require('./routes/adminAuth');
 
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+// Railway terminates TLS at its edge and forwards plain HTTP internally;
+// trust proxy so req.secure / x-forwarded-proto reflect the real client.
+app.set('trust proxy', 1);
+
+// Force HTTPS whenever we can tell (via the edge's x-forwarded-proto) that
+// the original request came in over plain HTTP. Skipped when the header is
+// absent (local dev, or a healthcheck hitting the container directly).
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  if (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-proto'] !== 'https') {
+    return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+  }
+  next();
+});
+
+app.use(
+  helmet({
+    // Google Fonts doesn't send Cross-Origin-Resource-Policy headers, which
+    // COEP would otherwise use to block its stylesheet/font requests.
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        // 'unsafe-inline' is needed for the many inline style="" attributes
+        // the UI renders; low-risk compared to allowing inline scripts,
+        // which stay locked to 'self' above.
+        styleSrc: ["'self'", 'https://fonts.googleapis.com', "'unsafe-inline'"],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'self'"],
+      },
+    },
+  })
+);
+
+const ALLOWED_ORIGINS = ['https://nafe3-app-production.up.railway.app'];
+app.use(
+  cors({
+    origin(origin, callback) {
+      // No Origin header: same-origin page loads, curl, and server-to-server
+      // calls (e.g. the Paymob webhook) - CORS doesn't apply to these anyway.
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 app.use(cookieParser());
 // dotfiles 'allow' so /.well-known/assetlinks.json (needed for the Android
@@ -30,4 +87,5 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Traino server running: http://localhost:${PORT}`);
+  scheduleDailyBackup(db);
 });

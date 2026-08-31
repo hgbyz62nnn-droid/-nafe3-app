@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { sendVerificationEmail, sendBroadcastEmail } = require('../lib/email');
+const { emailActionLimiter } = require('../lib/rateLimit');
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ function signToken(user) {
 function setAuthCookie(res, token) {
   res.cookie('token', token, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
@@ -25,7 +27,7 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-router.post('/register', async (req, res) => {
+router.post('/register', emailActionLimiter, async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password || !['trainee', 'coach'].includes(role)) {
     return res.status(400).json({ error: 'البيانات ناقصة أو غلط' });
@@ -72,7 +74,7 @@ router.post('/verify', async (req, res) => {
   res.json({ user: { id: user.id, role: user.role, name: user.name } });
 });
 
-router.post('/resend-code', async (req, res) => {
+router.post('/resend-code', emailActionLimiter, async (req, res) => {
   const { email } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user) return res.status(404).json({ error: 'الحساب غير موجود' });
@@ -195,9 +197,9 @@ router.get('/admin/flagged-attempts', requireAdmin, (req, res) => {
 
 router.post('/admin/broadcast', requireAdmin, async (req, res) => {
   const { targetRole, subject, message } = req.body;
-  let query = "SELECT email FROM users WHERE role != 'admin'";
-  if (targetRole === 'trainee' || targetRole === 'coach') query = `SELECT email FROM users WHERE role = '${targetRole}'`;
-  const targets = db.prepare(query).all();
+  const targets = (targetRole === 'trainee' || targetRole === 'coach')
+    ? db.prepare('SELECT email FROM users WHERE role = ?').all(targetRole)
+    : db.prepare("SELECT email FROM users WHERE role != 'admin'").all();
 
   let sent = 0, failed = 0;
   for (const t of targets) {

@@ -36,6 +36,15 @@ async function api(path, opts = {}) {
 function render(html) { app.innerHTML = html; }
 function on(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
 
+// Escapes any value coming from the server (names, bios, chat messages...)
+// before it's dropped into an HTML template string, so stored data can
+// never inject markup/script when rendered back.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 async function boot() {
   const { user } = await api('/auth/me');
   state.user = user;
@@ -170,7 +179,7 @@ async function renderTraineeHome() {
 
   render(`
     <div class="card">
-      <h2>${t('welcome', { name: state.user.name })}</h2>
+      <h2>${t('welcome', { name: escapeHtml(state.user.name) })}</h2>
       <p class="small">${t('traineeHomeHint')}</p>
     </div>
     ${activeSubs.length ? `
@@ -178,7 +187,7 @@ async function renderTraineeHome() {
         <h2>${t('mySubscriptions')}</h2>
         ${activeSubs.map(s => `
           <div class="coach-row" data-open-chat="${s.id}">
-            <div>${s.other_party_name}<div class="small">${t('packageLabel', { pkg: s.package })} · <span class="pill">${t('statusActive')}</span></div></div>
+            <div>${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })} · <span class="pill">${t('statusActive')}</span></div></div>
             <div class="small">${t('chatLink')}</div>
           </div>
         `).join('')}
@@ -187,7 +196,7 @@ async function renderTraineeHome() {
       <h2>${t('availableCoaches')}</h2>
       ${coaches.length === 0 ? `<p class="small">${t('noApprovedCoaches')}</p>` : coaches.map(c => `
         <div class="coach-row" data-open-coach="${c.id}">
-          <div>${c.name}<div class="small">${c.specialty || t('coachSpecialtyFallback')}</div></div>
+          <div>${escapeHtml(c.name)}<div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div></div>
           <div class="small">${t('pricePerMonth', { price: c.price_1m })}</div>
         </div>
       `).join('')}
@@ -209,10 +218,10 @@ async function renderCoachProfile(coachId) {
   render(`
     <button class="secondary" id="back">${t('back')}</button>
     <div class="card">
-      <h2>${coach.name}</h2>
-      <p class="small">${coach.specialty || ''}</p>
-      <p style="font-size:13px; line-height:1.8; margin-top:10px;">${coach.bio || t('noBioYet')}</p>
-      <p class="small" style="margin-top:8px;">${t('certificationLabel', { cert: coach.certification || '-' })}</p>
+      <h2>${escapeHtml(coach.name)}</h2>
+      <p class="small">${escapeHtml(coach.specialty)}</p>
+      <p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.bio) || t('noBioYet')}</p>
+      <p class="small" style="margin-top:8px;">${t('certificationLabel', { cert: escapeHtml(coach.certification) || '-' })}</p>
     </div>
     <div class="card">
       <h2>${t('packagesTitle')}</h2>
@@ -283,7 +292,7 @@ async function renderChat(subscriptionId) {
       if (!box) return;
       box.innerHTML = messages.map(m => `
         <div class="msg ${m.flagged ? 'blocked' : (m.sender_id === state.user.id ? 'me' : 'them')}">
-          ${m.flagged ? t('blockedMessage') : m.content}
+          ${m.flagged ? t('blockedMessage') : escapeHtml(m.content)}
         </div>
       `).join('');
       box.scrollTop = box.scrollHeight;
@@ -318,9 +327,9 @@ async function renderCoachDashboard() {
     </div>
     <div class="card">
       <h2>${t('myProfile')}</h2>
-      <input id="specialty" placeholder="${t('specialtyPlaceholder')}" value="${profile.specialty || ''}">
-      <textarea id="bio" placeholder="${t('bioPlaceholder')}" rows="3">${profile.bio || ''}</textarea>
-      <input id="certification" placeholder="${t('certificationPlaceholder')}" value="${profile.certification || ''}">
+      <input id="specialty" placeholder="${t('specialtyPlaceholder')}" value="${escapeHtml(profile.specialty)}">
+      <textarea id="bio" placeholder="${t('bioPlaceholder')}" rows="3">${escapeHtml(profile.bio)}</textarea>
+      <input id="certification" placeholder="${t('certificationPlaceholder')}" value="${escapeHtml(profile.certification)}">
       <input id="price_1m" type="number" placeholder="${t('price1mPlaceholder')}" value="${profile.price_1m || ''}">
       <input id="price_3m" type="number" placeholder="${t('price3mPlaceholder')}" value="${profile.price_3m || ''}">
       <input id="price_6m" type="number" placeholder="${t('price6mPlaceholder')}" value="${profile.price_6m || ''}">
@@ -332,7 +341,7 @@ async function renderCoachDashboard() {
         <h2>${t('myTrainees')}</h2>
         ${activeSubs.map(s => `
           <div class="coach-row" data-open-chat="${s.id}">
-            <div>${s.other_party_name}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
+            <div>${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
             <div class="small">${t('chatLink')}</div>
           </div>
         `).join('')}

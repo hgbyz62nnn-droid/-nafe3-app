@@ -3,18 +3,23 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
+const { adminLoginLimiter } = require('../lib/rateLimit');
+const { listBackups, resolveBackupPath } = require('../lib/backup');
 
 const router = express.Router();
 
+const ADMIN_SESSION_MS = 7 * 24 * 60 * 60 * 1000; // shorter than user sessions - higher-value account
+
 function signAdminToken(admin) {
-  return jwt.sign({ adminId: admin.id, isAdmin: true }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ adminId: admin.id, isAdmin: true }, process.env.JWT_SECRET, { expiresIn: '7d' });
 }
 
 function setAdminCookie(res, token) {
   res.cookie('admin_token', token, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: ADMIN_SESSION_MS,
   });
 }
 
@@ -32,7 +37,7 @@ router.post('/bootstrap', (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', adminLoginLimiter, (req, res) => {
   const { username, password } = req.body;
   const admin = db.prepare('SELECT * FROM admins WHERE username = ?').get(username);
   if (!admin || !bcrypt.compareSync(password || '', admin.password_hash)) {
@@ -79,6 +84,16 @@ router.get('/stats', requireAdmin, (req, res) => {
     .prepare("SELECT COALESCE(SUM(commission_amount), 0) AS s FROM subscriptions WHERE status IN ('active','expired')")
     .get().s;
   res.json({ users, activeSubscriptions, totalCommission });
+});
+
+router.get('/backups', requireAdmin, (req, res) => {
+  res.json({ backups: listBackups() });
+});
+
+router.get('/backups/:name', requireAdmin, (req, res) => {
+  const filePath = resolveBackupPath(req.params.name);
+  if (!filePath) return res.status(404).json({ error: 'النسخة الاحتياطية غير موجودة' });
+  res.download(filePath);
 });
 
 module.exports = router;

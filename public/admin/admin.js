@@ -18,6 +18,15 @@ async function api(path, opts = {}) {
 function render(html) { app.innerHTML = html; }
 function on(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
 
+// Everything in this panel comes straight from user-submitted data (coach
+// bios, chat messages flagged for review, names/emails) - escape before
+// dropping into HTML so it can't run as script in the admin's own session.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 async function boot() {
   const { admin } = await api('/admin/me');
   if (!admin) return renderLogin();
@@ -92,9 +101,9 @@ async function renderDashboard(admin) {
         <h2>مراجعة طلبات المدربين</h2>
         ${pending.length === 0 ? '<p class="small">مفيش طلبات جديدة.</p>' : pending.map((p) => `
           <div class="card" style="background:var(--surface-2);">
-            <b>${p.name}</b> <span class="small">(${p.email})</span>
-            <p class="small">${p.specialty || '-'} — ${p.certification || '-'}</p>
-            <p style="font-size:12.5px;">${p.bio || ''}</p>
+            <b>${escapeHtml(p.name)}</b> <span class="small">(${escapeHtml(p.email)})</span>
+            <p class="small">${escapeHtml(p.specialty) || '-'} — ${escapeHtml(p.certification) || '-'}</p>
+            <p style="font-size:12.5px;">${escapeHtml(p.bio)}</p>
             <div style="display:flex; gap:8px;">
               <button data-approve="${p.id}">✅ موافقة</button>
               <button class="danger" data-reject="${p.id}">❌ رفض</button>
@@ -154,12 +163,12 @@ async function renderDashboard(admin) {
         ? '<p class="small">مفيش نتايج.</p>'
         : attempts.map((a) => `
           <div class="attempt-row">
-            <div><b>${a.user_name}</b> <span class="small">(${a.user_email})</span> · <span class="small">${a.created_at}</span></div>
+            <div><b>${escapeHtml(a.user_name)}</b> <span class="small">(${escapeHtml(a.user_email)})</span> · <span class="small">${escapeHtml(a.created_at)}</span></div>
             <div>
               ${a.blocked ? '<span class="badge blocked">اتمنعت</span>' : '<span class="badge review">للمراجعة</span>'}
-              ${a.reasons.split(',').map((r) => `<span class="badge blocked" style="background:var(--surface-2); color:var(--text-dim);">${REASON_LABELS[r] || r}</span>`).join('')}
+              ${a.reasons.split(',').map((r) => `<span class="badge blocked" style="background:var(--surface-2); color:var(--text-dim);">${escapeHtml(REASON_LABELS[r] || r)}</span>`).join('')}
             </div>
-            <div class="msg-text">${a.message}</div>
+            <div class="msg-text">${escapeHtml(a.message)}</div>
           </div>
         `).join('');
     }
@@ -187,7 +196,7 @@ async function renderDashboard(admin) {
         ? '<p class="small">مفيش نتايج.</p>'
         : users.map((u) => `
           <div class="card" style="background:var(--surface-2);">
-            <b>${u.name}</b> <span class="small">(${u.email})</span>
+            <b>${escapeHtml(u.name)}</b> <span class="small">(${escapeHtml(u.email)})</span>
             <p class="small">${u.role === 'coach' ? 'مدرب' : 'متدرب'} ${u.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''}</p>
             <div style="display:flex; gap:8px;">
               ${u.banned
@@ -215,17 +224,22 @@ async function renderDashboard(admin) {
     load();
   }
 
-  function showSettings() {
+  async function showSettings() {
     activateTab('tabSettings');
     document.getElementById('adminContent').innerHTML = `
       <div class="card">
         <h2>تغيير الباسورد</h2>
-        <p class="small">مسجل دخول بحساب: <b>${admin.username}</b></p>
+        <p class="small">مسجل دخول بحساب: <b>${escapeHtml(admin.username)}</b></p>
         <div class="error hidden" id="pwErr"></div>
         <div class="small hidden" id="pwOk" style="color:var(--success); margin-bottom:10px;">✅ اتغيّر الباسورد</div>
         <input id="currentPassword" type="password" placeholder="الباسورد الحالي">
         <input id="newPassword" type="password" placeholder="الباسورد الجديد (10 حروف على الأقل)">
         <button id="changePw">حفظ</button>
+      </div>
+      <div class="card">
+        <h2>النسخ الاحتياطية</h2>
+        <p class="small" style="margin-bottom:10px;">نسخة يومية بتتعمل تلقائي وبتفضل محفوظة 7 أيام. نزّل نسخة بانتظام لجهازك عشان تبقى نسخة حقيقية بره السيرفر.</p>
+        <div id="backupsList"><p class="small">بيحمّل...</p></div>
       </div>
     `;
     on('changePw', 'click', async () => {
@@ -244,6 +258,20 @@ async function renderDashboard(admin) {
         errEl.textContent = e.message; errEl.classList.remove('hidden');
       }
     });
+
+    try {
+      const { backups } = await api('/admin/backups');
+      document.getElementById('backupsList').innerHTML = backups.length === 0
+        ? '<p class="small">مفيش نسخ لسه (بتتعمل أول واحدة عند تشغيل السيرفر).</p>'
+        : backups.map((b) => `
+          <div class="coach-row">
+            <div>${escapeHtml(b.name)}<div class="small">${(b.size / 1024).toFixed(0)} KB · ${escapeHtml(b.createdAt)}</div></div>
+            <a class="link" href="/api/admin/backups/${encodeURIComponent(b.name)}">تحميل</a>
+          </div>
+        `).join('');
+    } catch (e) {
+      document.getElementById('backupsList').innerHTML = `<p class="small">${escapeHtml(e.message)}</p>`;
+    }
   }
 
   document.getElementById('tabPending').onclick = showPending;

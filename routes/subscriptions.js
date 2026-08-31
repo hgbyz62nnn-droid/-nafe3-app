@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/adminAuth');
-const { createPaymentSession } = require('../lib/paymob');
+const { createPaymentSession, isConfigured, verifyWebhookHmac } = require('../lib/paymob');
 const { computeCommission } = require('../lib/commission');
 
 const router = express.Router();
@@ -71,9 +71,17 @@ router.post('/', requireAuth, requireRole('trainee'), async (req, res) => {
   }
 });
 
-router.post('/:id/mock-confirm', requireAuth, (req, res) => {
+// Test-only shortcut for trying the app without a real Paymob integration.
+// Locked down two ways: only the trainee who owns the subscription can call
+// it, and it stops working the moment real Paymob credentials are set, so
+// it can never be used to activate a subscription for free once payments
+// are actually live.
+router.post('/:id/mock-confirm', requireAuth, requireRole('trainee'), (req, res) => {
+  if (isConfigured()) return res.status(403).json({ error: 'الدفع الحقيقي شغال، مينفعش تفعيل تجريبي' });
+
   const sub = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(req.params.id);
   if (!sub) return res.status(404).json({ error: 'الاشتراك غير موجود' });
+  if (sub.trainee_id !== req.user.id) return res.status(403).json({ error: 'مش معاك صلاحية' });
 
   activateSubscription(sub);
   res.json({ ok: true });
@@ -81,6 +89,10 @@ router.post('/:id/mock-confirm', requireAuth, (req, res) => {
 
 router.post('/webhook/paymob', express.json(), (req, res) => {
   const { obj } = req.body || {};
+  if (!verifyWebhookHmac(obj, req.query.hmac)) {
+    console.log('⚠️ Paymob webhook: HMAC غلط أو مش موجود - اتجاهل');
+    return res.sendStatus(400);
+  }
   if (obj?.success && obj?.order?.merchant_order_id) {
     const orderRef = obj.order.merchant_order_id;
     const subId = orderRef.replace('sub_', '');
