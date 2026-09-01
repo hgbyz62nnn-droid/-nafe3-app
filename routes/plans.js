@@ -98,6 +98,46 @@ router.delete('/workout-templates/:id', requireAuth, requireRole('coach'), (req,
   res.json({ ok: true });
 });
 
+// -------------------- قوالب خطط التغذية --------------------
+// نفس فكرة قوالب التمرين فوق بالظبط.
+
+router.get('/nutrition-templates', requireAuth, requireRole('coach'), (req, res) => {
+  const templates = db
+    .prepare('SELECT id, title, created_at FROM nutrition_templates WHERE coach_id = ? ORDER BY created_at DESC')
+    .all(req.user.id);
+  res.json({ templates });
+});
+
+router.post('/nutrition-templates', requireAuth, requireRole('coach'), (req, res) => {
+  const count = db.prepare('SELECT COUNT(*) c FROM nutrition_templates WHERE coach_id = ?').get(req.user.id).c;
+  if (count >= MAX_TEMPLATES) return res.status(400).json({ error: 'وصلت للحد الأقصى من القوالب (' + MAX_TEMPLATES + ')' });
+  const title = clampStr(req.body.title, 80);
+  if (!title) return res.status(400).json({ error: 'اكتب اسم للقالب' });
+  const dailyCalories = toNullableNumber(req.body.daily_calories);
+  const proteinTarget = toNullableNumber(req.body.protein_target);
+  const carbsTarget = toNullableNumber(req.body.carbs_target);
+  const fatTarget = toNullableNumber(req.body.fat_target);
+  const notes = clampStr(req.body.notes, 300);
+  const meals = sanitizeMeals(req.body.meals);
+  const info = db.prepare(
+    'INSERT INTO nutrition_templates (coach_id, title, daily_calories, protein_target, carbs_target, fat_target, notes, meals_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.user.id, title, dailyCalories, proteinTarget, carbsTarget, fatTarget, notes || null, JSON.stringify(meals));
+  res.json({ ok: true, id: info.lastInsertRowid });
+});
+
+router.get('/nutrition-templates/:id', requireAuth, requireRole('coach'), (req, res) => {
+  const tpl = db.prepare('SELECT * FROM nutrition_templates WHERE id = ?').get(req.params.id);
+  if (!tpl || tpl.coach_id !== req.user.id) return res.status(404).json({ error: 'القالب غير موجود' });
+  res.json({ template: { ...tpl, meals: JSON.parse(tpl.meals_json) } });
+});
+
+router.delete('/nutrition-templates/:id', requireAuth, requireRole('coach'), (req, res) => {
+  const tpl = db.prepare('SELECT * FROM nutrition_templates WHERE id = ?').get(req.params.id);
+  if (!tpl || tpl.coach_id !== req.user.id) return res.status(404).json({ error: 'القالب غير موجود' });
+  db.prepare('DELETE FROM nutrition_templates WHERE id = ?').run(tpl.id);
+  res.json({ ok: true });
+});
+
 router.get('/:subscriptionId/workout', requireAuth, requireSubscriptionParty, (req, res) => {
   const row = db.prepare('SELECT * FROM workout_plans WHERE subscription_id = ?').get(req.sub.id);
   res.json({ plan: row ? { ...row, days: JSON.parse(row.days_json) } : null });

@@ -101,6 +101,21 @@ CREATE TABLE IF NOT EXISTS workout_templates (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- نفس فكرة workout_templates بالظبط بس لخطة التغذية - كيان منفصل مش مربوط
+-- بأي اشتراك معيّن، الكوتش يقدر يطبّقه على أي متدرب.
+CREATE TABLE IF NOT EXISTS nutrition_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  daily_calories INTEGER,
+  protein_target INTEGER,
+  carbs_target INTEGER,
+  fat_target INTEGER,
+  notes TEXT,
+  meals_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS nutrition_plans (
   subscription_id INTEGER PRIMARY KEY REFERENCES subscriptions(id),
   daily_calories INTEGER,

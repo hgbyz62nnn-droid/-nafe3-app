@@ -2102,13 +2102,14 @@ async function renderPlanTab(subscriptionId) {
     </div>
     <div class="card">
       <h2>${t('nutritionPlanTitle')}</h2>
+      ${isCoach ? `<div id="nutritionTemplateToolbar" class="template-toolbar"></div>` : ''}
       <div id="nutritionBody"></div>
     </div>
   `);
   wireHubNav(subscriptionId, 'plan');
   renderWorkoutBody(subscriptionId, isCoach);
   renderNutritionBody(subscriptionId, isCoach);
-  if (isCoach) wireTemplateToolbar(subscriptionId);
+  if (isCoach) { wireTemplateToolbar(subscriptionId); wireNutritionTemplateToolbar(subscriptionId); }
 }
 
 // -------------------- قوالب برامج التمرين --------------------
@@ -2148,6 +2149,60 @@ async function wireTemplateToolbar(subscriptionId) {
       await api('/plans/workout-templates', { method: 'POST', body: JSON.stringify({ title, days: planEditState.workout.days }) });
       alert(t('templateSavedAlert'));
       wireTemplateToolbar(subscriptionId);
+    } catch (e) { alert(e.message); }
+  });
+}
+
+async function wireNutritionTemplateToolbar(subscriptionId) {
+  const box = document.getElementById('nutritionTemplateToolbar');
+  if (!box) return;
+  let templates = [];
+  try {
+    ({ templates } = await api('/plans/nutrition-templates'));
+  } catch (e) { return; }
+
+  box.innerHTML = `
+    <select id="nutritionTemplateSelect" style="margin-bottom:0; flex:1;">
+      <option value="">${t('startFromTemplateOption')}</option>
+      ${templates.map((tpl) => `<option value="${tpl.id}">${escapeHtml(tpl.title)}</option>`).join('')}
+    </select>
+    <button class="secondary" id="applyNutritionTemplateBtn" style="width:auto; padding:9px 12px;">${t('applyTemplateBtn')}</button>
+    <button class="secondary" id="saveAsNutritionTemplateBtn" style="width:auto; padding:9px 12px;">${t('saveAsTemplateBtn')}</button>
+  `;
+
+  on('applyNutritionTemplateBtn', 'click', async () => {
+    const id = document.getElementById('nutritionTemplateSelect').value;
+    if (!id) return;
+    if (planEditState.nutrition.meals.length && !confirm(t('confirmApplyNutritionTemplate'))) return;
+    try {
+      const { template } = await api('/plans/nutrition-templates/' + id);
+      planEditState.nutrition = {
+        daily_calories: template.daily_calories ?? '',
+        protein_target: template.protein_target ?? '',
+        carbs_target: template.carbs_target ?? '',
+        fat_target: template.fat_target ?? '',
+        notes: template.notes || '',
+        meals: JSON.parse(JSON.stringify(template.meals)),
+      };
+      renderNutritionBody(subscriptionId, true);
+    } catch (e) { alert(e.message); }
+  });
+
+  on('saveAsNutritionTemplateBtn', 'click', async () => {
+    const title = prompt(t('templateNamePrompt'));
+    if (!title) return;
+    try {
+      await api('/plans/nutrition-templates', { method: 'POST', body: JSON.stringify({
+        title,
+        daily_calories: document.getElementById('dailyCalories')?.value,
+        protein_target: document.getElementById('proteinTarget')?.value,
+        carbs_target: document.getElementById('carbsTarget')?.value,
+        fat_target: document.getElementById('fatTarget')?.value,
+        notes: document.getElementById('nutritionNotes')?.value,
+        meals: planEditState.nutrition.meals,
+      }) });
+      alert(t('templateSavedAlert'));
+      wireNutritionTemplateToolbar(subscriptionId);
     } catch (e) { alert(e.message); }
   });
 }
