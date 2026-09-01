@@ -106,6 +106,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/transformations', transformationRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

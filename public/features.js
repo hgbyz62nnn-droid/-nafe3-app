@@ -261,6 +261,7 @@ async function renderProfile() {
     <div class="card menu-card">
       ${menuRow({ icon: '📅', label: t('myBookingsTitle'), id: 'menuBookings' })}
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
       ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
     </div>
@@ -276,6 +277,7 @@ async function renderProfile() {
   on('editProfileLink', 'click', (e) => { e.preventDefault(); document.getElementById('bioInput')?.scrollIntoView({ behavior: 'smooth' }); });
   on('menuBookings', 'click', renderMyBookings);
   on('menuSupport', 'click', renderSupportHome);
+  on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderProfile(); });
   on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
 }
@@ -289,6 +291,7 @@ async function renderMore() {
       ${menuRow({ icon: '📸', label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: '📊', label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
       ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
     </div>
@@ -306,6 +309,7 @@ async function renderMore() {
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuSupport', 'click', renderSupportHome);
+  on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderMore(); });
   on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
 }
