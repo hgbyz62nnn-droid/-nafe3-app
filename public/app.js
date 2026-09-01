@@ -33,6 +33,19 @@ async function api(path, opts = {}) {
   return data;
 }
 
+// زي api() بالظبط بس من غير Content-Type: json، عشان الرفع بيبقى
+// multipart/form-data والمتصفح لازم يحدد الـ boundary بنفسه.
+async function apiUpload(path, formData) {
+  const res = await fetch('/api' + path, { credentials: 'include', method: 'POST', body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || t('genericError'));
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
 function render(html) { app.innerHTML = html; }
 function on(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
 
@@ -273,7 +286,7 @@ async function renderChat(subscriptionId) {
   state.activeChat = subscriptionId;
 
   render(`
-    <button class="secondary" id="back">${t('back')}</button>
+    ${renderHubTabs(subscriptionId, 'chat')}
     <div class="notice">${t('chatPrivacyNotice')}</div>
     <div class="card" id="chatBox" style="min-height:300px; display:flex; flex-direction:column;">
       <div id="msgs" style="flex:1; overflow-y:auto; margin-bottom:10px;"></div>
@@ -283,7 +296,7 @@ async function renderChat(subscriptionId) {
       <button id="sendBtn" style="width:90px;">${t('sendBtn')}</button>
     </div>
   `);
-  document.getElementById('back').onclick = () => { clearInterval(state.chatTimer); boot(); };
+  wireHubNav(subscriptionId, 'chat');
 
   async function loadMsgs() {
     try {
@@ -324,6 +337,7 @@ async function renderCoachDashboard() {
     <div class="card">
       <h2>${t('coachDashboardTitle')}</h2>
       <p class="small">${t('accountStatusLabel')} <span class="pill">${statusLabel}</span></p>
+      <button class="secondary" id="openStats" style="margin-top:10px;">${t('viewStatsBtn')}</button>
     </div>
     <div class="card">
       <h2>${t('myProfile')}</h2>
@@ -365,6 +379,7 @@ async function renderCoachDashboard() {
   document.querySelectorAll('[data-open-chat]').forEach(el => {
     el.onclick = () => renderChat(el.dataset.openChat);
   });
+  on('openStats', 'click', renderCoachStats);
   wireLogout();
 }
 

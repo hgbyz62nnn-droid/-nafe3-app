@@ -81,4 +81,69 @@ try { db.exec("ALTER TABLE subscriptions ADD COLUMN commission_rate REAL"); } ca
 try { db.exec("ALTER TABLE subscriptions ADD COLUMN commission_amount INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE subscriptions ADD COLUMN coach_payout INTEGER"); } catch (e) {}
 
+db.exec(`
+-- خطط التمرين والتغذية: خطة واحدة نشطة لكل اشتراك، الكوتش بيعدّلها والمتدرب بيشوفها.
+-- الأيام/التمارين والوجبات متخزنة كـ JSON عشان تبسيط الفورم بدل جداول متداخلة.
+CREATE TABLE IF NOT EXISTS workout_plans (
+  subscription_id INTEGER PRIMARY KEY REFERENCES subscriptions(id),
+  title TEXT,
+  days_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS nutrition_plans (
+  subscription_id INTEGER PRIMARY KEY REFERENCES subscriptions(id),
+  daily_calories INTEGER,
+  notes TEXT,
+  meals_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS progress_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  weight_kg REAL,
+  photo_path TEXT,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS habit_definitions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  label TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS habit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  habit_id INTEGER NOT NULL REFERENCES habit_definitions(id),
+  log_date TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(habit_id, log_date)
+);
+
+CREATE TABLE IF NOT EXISTS badges_earned (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  badge_key TEXT NOT NULL,
+  earned_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(subscription_id, user_id, badge_key)
+);
+
+CREATE TABLE IF NOT EXISTS booked_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  scheduled_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','completed','cancelled')),
+  notes TEXT,
+  reminder_24h_sent INTEGER NOT NULL DEFAULT 0,
+  reminder_1h_sent INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
 module.exports = db;

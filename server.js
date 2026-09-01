@@ -7,11 +7,19 @@ const path = require('path');
 
 const db = require('./db');
 const { scheduleDailyBackup } = require('./lib/backup');
+const { uploadsDir } = require('./lib/paths');
+const { scheduleSessionReminders } = require('./lib/sessionReminders');
 const authRoutes = require('./routes/auth');
 const coachRoutes = require('./routes/coaches');
 const subscriptionRoutes = require('./routes/subscriptions');
 const chatRoutes = require('./routes/chat');
 const adminAuthRoutes = require('./routes/adminAuth');
+const planRoutes = require('./routes/plans');
+const progressRoutes = require('./routes/progress');
+const habitRoutes = require('./routes/habits');
+const sessionRoutes = require('./routes/sessions');
+const coachStatsRoutes = require('./routes/coachStats');
+const badgeRoutes = require('./routes/badges');
 
 const app = express();
 
@@ -75,12 +83,19 @@ app.use(cookieParser());
 // dotfiles 'allow' so /.well-known/assetlinks.json (needed for the Android
 // TWA app to verify it owns this domain) isn't silently 404'd.
 app.use(express.static(path.join(__dirname, 'public'), { dotfiles: 'allow' }));
+app.use('/uploads', express.static(uploadsDir));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/coaches', coachRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/admin', adminAuthRoutes);
+app.use('/api/plans', planRoutes);
+app.use('/api/progress', progressRoutes);
+app.use('/api/habits', habitRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/coach-stats', coachStatsRoutes);
+app.use('/api/badges', badgeRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -88,4 +103,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Traino server running: http://localhost:${PORT}`);
   scheduleDailyBackup(db);
+  scheduleSessionReminders();
 });
