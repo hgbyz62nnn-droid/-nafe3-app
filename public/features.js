@@ -1247,6 +1247,7 @@ const HUB_TABS = [
   ['chat', 'navChat'],
   ['plan', 'navPlan'],
   ['progress', 'navProgress'],
+  ['checkins', 'navCheckins'],
   ['habits', 'navHabits'],
   ['sessions', 'navSessions'],
 ];
@@ -1276,6 +1277,7 @@ function wireHubNav(subscriptionId, active) {
       if (key === 'chat') renderChat(subscriptionId);
       else if (key === 'plan') renderPlanTab(subscriptionId);
       else if (key === 'progress') renderProgressTab(subscriptionId);
+      else if (key === 'checkins') renderCheckinsTab(subscriptionId);
       else if (key === 'habits') renderHabitsTab(subscriptionId);
       else if (key === 'sessions') renderSessionsTab(subscriptionId);
     };
@@ -1810,6 +1812,137 @@ async function renderProgressTab(subscriptionId) {
       const el = document.getElementById('progressErr');
       el.textContent = e.message; el.classList.remove('hidden');
     }
+  });
+}
+
+// -------------------- التقييم الدوري (Check-ins) --------------------
+// منفصل تمامًا عن progress_entries (تسجيل وزن سريع) وhabit_logs (عادات
+// يومية) - ده فورم دوري أشمل بيراجعه الكوتش. فورم واحد مسطّح من غير أي
+// إضافة/حذف صفوف بتعمل re-render أثناء الكتابة، فقراءة القيم من الـ DOM
+// وقت الإرسال مباشرة كافية وآمنة (عكس بناء الخطط اللي فيها state بيتزامن).
+
+const MEASUREMENT_KEYS = [
+  ['waist', 'checkinWaistPlaceholder'],
+  ['chest', 'checkinChestPlaceholder'],
+  ['hips', 'checkinHipsPlaceholder'],
+  ['arm', 'checkinArmPlaceholder'],
+  ['thigh', 'checkinThighPlaceholder'],
+];
+
+function checkinStatusBadge(c) {
+  return c.status === 'reviewed'
+    ? `<span class="pill">${t('checkinStatusReviewed')}</span>`
+    : `<span class="small">${t('checkinStatusSubmitted')}</span>`;
+}
+
+function renderCheckinCard(c, isCoach) {
+  const date = new Date(c.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US');
+  const measurementLine = MEASUREMENT_KEYS
+    .filter(([key]) => c.measurements[key] != null)
+    .map(([key, labelKey]) => `${t(labelKey)}: ${c.measurements[key]}`)
+    .join(' · ');
+  return `
+    <div class="progress-entry" data-checkin-card="${c.id}">
+      ${c.photo_path ? `<img src="/uploads/${encodeURIComponent(c.photo_path)}" class="progress-photo" alt="">` : ''}
+      <div style="flex:1;">
+        <div class="small">${date} ${checkinStatusBadge(c)}</div>
+        ${c.weight_kg != null ? `<div>⚖️ ${c.weight_kg} ${t('kgUnit')}</div>` : ''}
+        ${c.body_fat_pct != null ? `<div class="small">${t('checkinBodyFatPlaceholder')}: ${c.body_fat_pct}%</div>` : ''}
+        ${measurementLine ? `<div class="small">${measurementLine}</div>` : ''}
+        ${c.energy_level != null ? `<div class="small">${t('checkinEnergyLabel')}: ${t('energyLevel' + c.energy_level)}</div>` : ''}
+        ${c.sleep_hours != null ? `<div class="small">${t('checkinSleepPlaceholder')}: ${c.sleep_hours}</div>` : ''}
+        ${c.training_adherence_pct != null ? `<div class="small">${t('checkinTrainingAdherencePlaceholder')}: ${c.training_adherence_pct}%</div>` : ''}
+        ${c.diet_adherence_pct != null ? `<div class="small">${t('checkinDietAdherencePlaceholder')}: ${c.diet_adherence_pct}%</div>` : ''}
+        ${c.trainee_notes ? `<div class="small">${escapeHtml(c.trainee_notes)}</div>` : ''}
+        ${c.coach_notes ? `<div class="small" style="margin-top:6px;"><b>${t('coachNotesLabel')}:</b> ${escapeHtml(c.coach_notes)}</div>` : ''}
+        ${isCoach && c.status !== 'reviewed' ? `
+          <div style="margin-top:8px;">
+            <textarea data-review-notes="${c.id}" rows="2" placeholder="${t('addCoachNotePlaceholder')}"></textarea>
+            <button data-review-submit="${c.id}" class="secondary" style="width:auto; padding:6px 10px;">${t('reviewCheckinBtn')}</button>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function renderCheckinsTab(subscriptionId) {
+  const isCoach = state.user.role === 'coach';
+  const { checkIns } = await api('/checkins/' + subscriptionId);
+
+  render(`
+    ${renderHubTabs(subscriptionId, 'checkins')}
+    ${!isCoach ? `
+    <div class="card">
+      <h2>${t('newCheckinTitle')}</h2>
+      <div class="error hidden" id="checkinErr"></div>
+      <input id="ciWeight" type="number" step="0.1" placeholder="${t('checkinWeightPlaceholder')}">
+      <input id="ciBodyFat" type="number" step="0.1" placeholder="${t('checkinBodyFatPlaceholder')}">
+      <label class="small" style="display:block; margin:6px 0;">${t('checkinMeasurementsTitle')}</label>
+      <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); gap:8px;">
+        ${MEASUREMENT_KEYS.map(([key, labelKey]) => `<input id="ciM_${key}" type="number" step="0.1" placeholder="${t(labelKey)}">`).join('')}
+      </div>
+      <label class="small" style="display:block; margin:10px 0 6px;">${t('checkinPhotoLabel')}</label>
+      <input id="ciPhoto" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
+      <label class="small" style="display:block; margin-bottom:6px;">${t('checkinEnergyLabel')}</label>
+      <select id="ciEnergy" style="margin-bottom:10px;">
+        <option value="">-</option>
+        ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${t('energyLevel' + n)}</option>`).join('')}
+      </select>
+      <input id="ciSleep" type="number" step="0.5" placeholder="${t('checkinSleepPlaceholder')}">
+      <input id="ciTrainingAdherence" type="number" step="1" min="0" max="100" placeholder="${t('checkinTrainingAdherencePlaceholder')}">
+      <input id="ciDietAdherence" type="number" step="1" min="0" max="100" placeholder="${t('checkinDietAdherencePlaceholder')}">
+      <textarea id="ciNotes" rows="2" placeholder="${t('checkinNotesPlaceholder')}"></textarea>
+      <button id="submitCheckin">${t('submitCheckinBtn')}</button>
+    </div>` : ''}
+    <div class="card">
+      <h2>${t('checkinHistoryTitle')}</h2>
+      ${checkIns.length === 0 ? `<p class="small">${t('noCheckinsYet')}</p>` : checkIns.map((c) => renderCheckinCard(c, isCoach)).join('')}
+    </div>
+  `);
+  wireHubNav(subscriptionId, 'checkins');
+
+  on('submitCheckin', 'click', async () => {
+    const fd = new FormData();
+    const weight = document.getElementById('ciWeight').value;
+    const bodyFat = document.getElementById('ciBodyFat').value;
+    const photo = document.getElementById('ciPhoto').files[0];
+    const energy = document.getElementById('ciEnergy').value;
+    const sleep = document.getElementById('ciSleep').value;
+    const trainingAdherence = document.getElementById('ciTrainingAdherence').value;
+    const dietAdherence = document.getElementById('ciDietAdherence').value;
+    const notes = document.getElementById('ciNotes').value;
+    const measurements = {};
+    MEASUREMENT_KEYS.forEach(([key]) => { measurements[key] = document.getElementById('ciM_' + key).value || null; });
+
+    if (weight) fd.append('weight_kg', weight);
+    if (bodyFat) fd.append('body_fat_pct', bodyFat);
+    fd.append('measurements', JSON.stringify(measurements));
+    if (photo) fd.append('photo', photo);
+    if (energy) fd.append('energy_level', energy);
+    if (sleep) fd.append('sleep_hours', sleep);
+    if (trainingAdherence) fd.append('training_adherence_pct', trainingAdherence);
+    if (dietAdherence) fd.append('diet_adherence_pct', dietAdherence);
+    if (notes) fd.append('trainee_notes', notes);
+
+    try {
+      await apiUpload('/checkins/' + subscriptionId, fd);
+      renderCheckinsTab(subscriptionId);
+    } catch (e) {
+      const el = document.getElementById('checkinErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  });
+
+  document.querySelectorAll('[data-review-submit]').forEach((el) => {
+    el.onclick = async () => {
+      const id = el.dataset.reviewSubmit;
+      const notes = document.querySelector(`[data-review-notes="${id}"]`).value;
+      try {
+        await api('/checkins/' + subscriptionId + '/' + id + '/review', { method: 'POST', body: JSON.stringify({ coach_notes: notes }) });
+        renderCheckinsTab(subscriptionId);
+      } catch (e) { alert(e.message); }
+    };
   });
 }
 

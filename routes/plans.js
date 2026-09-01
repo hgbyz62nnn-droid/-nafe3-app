@@ -3,6 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { requireSubscriptionParty } = require('../middleware/subscriptionAccess');
 const { checkAndAwardBadges } = require('../lib/badges');
+const { clampStr, toNullableNumber } = require('../lib/sanitize');
 
 const router = express.Router();
 
@@ -12,19 +13,6 @@ const MAX_MEALS = 12;
 const MAX_FOODS_PER_MEAL = 15;
 const MAX_TEMPLATES = 30;
 const EXERCISE_TYPES = ['normal', 'superset', 'dropset', 'warmup', 'cooldown'];
-
-function clampStr(v, max) {
-  return String(v ?? '').slice(0, max);
-}
-
-// Number(null) === 0 و Number(undefined) === NaN، فمينفعش نعتمد على
-// Number.isFinite(Number(v)) لوحده عشان نميّز "الحقل فاضي" عن "الحقل صفر" -
-// لازم نستبعد null/undefined/'' يدويًا الأول قبل التحويل.
-function toNullableNumber(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
 
 function sanitizeDays(days) {
   if (!Array.isArray(days)) return [];

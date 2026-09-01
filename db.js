@@ -290,6 +290,30 @@ CREATE TABLE IF NOT EXISTS coach_profile_edits (
   reviewed_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_coach_pending_edit ON coach_profile_edits(coach_id) WHERE status = 'pending';
+
+-- تقييمات دورية (Check-ins) من المتدرب للكوتش: منفصلة تمامًا عن نظام
+-- progress_entries/habit_logs الحالي (تتبع يومي). دي بيانات دورية أشمل
+-- (وزن، دهون، قياسات، صورة، مستوى طاقة، نوم، التزام بالتمرين والدايت،
+-- ملاحظات) بيراجعها الكوتش ويضيف ملاحظاته عليها.
+CREATE TABLE IF NOT EXISTS check_ins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  trainee_id INTEGER NOT NULL REFERENCES users(id),
+  weight_kg REAL,
+  body_fat_pct REAL,
+  measurements_json TEXT NOT NULL DEFAULT '{}',
+  photo_path TEXT,
+  energy_level INTEGER,
+  sleep_hours REAL,
+  training_adherence_pct INTEGER,
+  diet_adherence_pct INTEGER,
+  trainee_notes TEXT,
+  coach_notes TEXT,
+  status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','reviewed')),
+  created_at TEXT DEFAULT (datetime('now')),
+  reviewed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_checkins_subscription ON check_ins(subscription_id);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}
