@@ -1318,9 +1318,16 @@ async function renderPlanTab(subscriptionId) {
     days: workoutPlan?.days ? JSON.parse(JSON.stringify(workoutPlan.days)) : [],
   };
   planEditState.nutrition = {
-    daily_calories: nutritionPlan?.daily_calories || '',
+    daily_calories: nutritionPlan?.daily_calories ?? '',
+    protein_target: nutritionPlan?.protein_target ?? '',
+    carbs_target: nutritionPlan?.carbs_target ?? '',
+    fat_target: nutritionPlan?.fat_target ?? '',
     notes: nutritionPlan?.notes || '',
-    meals: nutritionPlan?.meals ? JSON.parse(JSON.stringify(nutritionPlan.meals)) : [],
+    // خطط قديمة قبل إضافة time/foods مفيش عندها الحقول دي - نديها قيمة
+    // افتراضية هنا عشان الفورم ميتعملش عليها crash.
+    meals: nutritionPlan?.meals
+      ? JSON.parse(JSON.stringify(nutritionPlan.meals)).map((m) => ({ time: '', foods: [], ...m }))
+      : [],
   };
 
   render(`
@@ -1527,51 +1534,174 @@ function renderWorkoutBody(subscriptionId, isCoach) {
   });
 }
 
+function newFood() {
+  return { name: '', quantity: '', calories: null, protein: null, carbs: null, fat: null, alternative: '' };
+}
+function newMeal() {
+  return { label: '', time: '', description: '', foods: [] };
+}
+
+function sumMealsMacros(meals) {
+  return meals.reduce((acc, m) => {
+    (m.foods || []).forEach((f) => {
+      acc.calories += f.calories || 0;
+      acc.protein += f.protein || 0;
+      acc.carbs += f.carbs || 0;
+      acc.fat += f.fat || 0;
+    });
+    return acc;
+  }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+}
+
+function macroSummaryChips(totals, targets) {
+  const calTarget = targets.daily_calories ? Number(targets.daily_calories) : null;
+  const proTarget = targets.protein_target ? Number(targets.protein_target) : null;
+  const carbTarget = targets.carbs_target ? Number(targets.carbs_target) : null;
+  const fatTarget = targets.fat_target ? Number(targets.fat_target) : null;
+  return `
+    <div class="macro-summary">
+      <span class="macro-chip">🔥 ${totals.calories}${calTarget ? ' / ' + calTarget : ''} ${t('kcalUnit')}</span>
+      <span class="macro-chip">${t('proteinLabel')} ${totals.protein}${proTarget ? ' / ' + proTarget : ''}${t('gramUnit')}</span>
+      <span class="macro-chip">${t('carbsLabel')} ${totals.carbs}${carbTarget ? ' / ' + carbTarget : ''}${t('gramUnit')}</span>
+      <span class="macro-chip">${t('fatLabel')} ${totals.fat}${fatTarget ? ' / ' + fatTarget : ''}${t('gramUnit')}</span>
+    </div>
+  `;
+}
+
+function foodSummaryLine(f) {
+  const parts = [];
+  if (f.quantity) parts.push(escapeHtml(f.quantity));
+  if (f.calories) parts.push(f.calories + ' ' + t('kcalUnit'));
+  if (f.protein) parts.push(t('proteinLabel') + ' ' + f.protein);
+  if (f.carbs) parts.push(t('carbsLabel') + ' ' + f.carbs);
+  if (f.fat) parts.push(t('fatLabel') + ' ' + f.fat);
+  return parts.join(' · ');
+}
+
 function renderNutritionBody(subscriptionId, isCoach) {
   const body = document.getElementById('nutritionBody');
   const np = planEditState.nutrition;
 
   if (!isCoach) {
+    const totals = sumMealsMacros(np.meals);
     body.innerHTML = `
-      ${np.daily_calories ? `<p class="small">🔥 ${np.daily_calories} kcal</p>` : ''}
+      ${np.daily_calories || np.protein_target || np.carbs_target || np.fat_target ? macroSummaryChips(totals, np) : ''}
       ${np.notes ? `<p style="font-size:13px; line-height:1.8;">${escapeHtml(np.notes)}</p>` : ''}
       ${np.meals.length ? np.meals.map((m) => `
-        <div class="coach-row"><div>${escapeHtml(m.label)}<div class="small">${escapeHtml(m.description)}</div></div></div>
+        <div class="plan-day">
+          <div class="plan-day-title">${escapeHtml(m.label)}${m.time ? ` <span class="small">· ${escapeHtml(m.time)}</span>` : ''}</div>
+          ${m.description ? `<p class="small">${escapeHtml(m.description)}</p>` : ''}
+          ${(m.foods || []).map((f) => `
+            <div class="exercise-row read">
+              <div>
+                <div class="exercise-name">${escapeHtml(f.name)}</div>
+                <div class="small">${foodSummaryLine(f)}</div>
+                ${f.alternative ? `<div class="small">${t('alternativeLabel')} ${escapeHtml(f.alternative)}</div>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
       `).join('') : `<p class="small">${t('noNutritionPlanYet')}</p>`}
     `;
     return;
   }
 
+  function updateMacroPreview() {
+    const totals = sumMealsMacros(np.meals);
+    const targets = {
+      daily_calories: document.getElementById('dailyCalories').value,
+      protein_target: document.getElementById('proteinTarget').value,
+      carbs_target: document.getElementById('carbsTarget').value,
+      fat_target: document.getElementById('fatTarget').value,
+    };
+    document.getElementById('macroPreview').innerHTML = macroSummaryChips(totals, targets);
+  }
+
   body.innerHTML = `
-    <input id="dailyCalories" type="number" value="${np.daily_calories || ''}" placeholder="${t('dailyCaloriesPlaceholder')}">
+    <div class="exercise-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:8px;">
+      <input id="dailyCalories" type="number" min="0" value="${np.daily_calories}" placeholder="${t('dailyCaloriesPlaceholder')}">
+      <input id="proteinTarget" type="number" min="0" value="${np.protein_target}" placeholder="${t('proteinTargetPlaceholder')}">
+      <input id="carbsTarget" type="number" min="0" value="${np.carbs_target}" placeholder="${t('carbsTargetPlaceholder')}">
+      <input id="fatTarget" type="number" min="0" value="${np.fat_target}" placeholder="${t('fatTargetPlaceholder')}">
+    </div>
     <textarea id="nutritionNotes" rows="2" placeholder="${t('nutritionNotesPlaceholder')}">${escapeHtml(np.notes)}</textarea>
+    <div id="macroPreview"></div>
     ${np.meals.map((m, mi) => `
-      <div class="exercise-row">
-        <input data-meal-label="${mi}" value="${escapeHtml(m.label)}" placeholder="${t('mealLabelPlaceholder')}">
+      <div class="meal-card">
         <div style="display:flex; gap:6px;">
-          <input data-meal-desc="${mi}" value="${escapeHtml(m.description)}" placeholder="${t('mealDescPlaceholder')}">
-          <button class="secondary" data-remove-meal="${mi}" style="width:auto; padding:8px 12px;">${t('removeBtn')}</button>
+          <input data-meal="label:${mi}" value="${escapeHtml(m.label)}" placeholder="${t('mealLabelPlaceholder')}" style="flex:2;">
+          <input data-meal="time:${mi}" value="${escapeHtml(m.time)}" placeholder="${t('mealTimePlaceholder')}" style="flex:1;">
         </div>
+        <input data-meal="description:${mi}" value="${escapeHtml(m.description)}" placeholder="${t('mealDescPlaceholder')}">
+        ${(m.foods || []).map((f, fi) => `
+          <div class="food-row">
+            <input data-food="name:${mi}:${fi}" value="${escapeHtml(f.name)}" placeholder="${t('foodNamePlaceholder')}">
+            <div class="macro-grid-2">
+              <input data-food="quantity:${mi}:${fi}" value="${escapeHtml(f.quantity)}" placeholder="${t('foodQuantityPlaceholder')}">
+              <input data-food="calories:${mi}:${fi}" type="number" min="0" value="${f.calories ?? ''}" placeholder="${t('foodCaloriesPlaceholder')}">
+            </div>
+            <div class="exercise-grid">
+              <input data-food="protein:${mi}:${fi}" type="number" min="0" value="${f.protein ?? ''}" placeholder="${t('foodProteinPlaceholder')}">
+              <input data-food="carbs:${mi}:${fi}" type="number" min="0" value="${f.carbs ?? ''}" placeholder="${t('foodCarbsPlaceholder')}">
+              <input data-food="fat:${mi}:${fi}" type="number" min="0" value="${f.fat ?? ''}" placeholder="${t('foodFatPlaceholder')}">
+            </div>
+            <input data-food="alternative:${mi}:${fi}" value="${escapeHtml(f.alternative)}" placeholder="${t('foodAlternativePlaceholder')}">
+            <button class="secondary" data-remove-food="${mi}:${fi}">${t('removeBtn')}</button>
+          </div>
+        `).join('')}
+        <button class="secondary" data-add-food="${mi}" style="margin-bottom:6px;">${t('addFoodBtn')}</button>
+        <button class="danger" data-remove-meal="${mi}" style="width:auto; padding:8px 12px;">${t('removeBtn')}</button>
       </div>
     `).join('')}
     <button class="secondary" id="addMeal">${t('addMealBtn')}</button>
     <button id="saveNutrition" style="margin-top:10px;">${t('savePlanBtn')}</button>
   `;
 
-  document.querySelectorAll('[data-meal-label]').forEach((el) => {
-    el.oninput = () => { np.meals[+el.dataset.mealLabel].label = el.value; };
+  document.querySelectorAll('[data-meal]').forEach((el) => {
+    el.oninput = () => {
+      const [field, mi] = el.dataset.meal.split(':');
+      np.meals[+mi][field] = el.value;
+    };
   });
-  document.querySelectorAll('[data-meal-desc]').forEach((el) => {
-    el.oninput = () => { np.meals[+el.dataset.mealDesc].description = el.value; };
+  document.querySelectorAll('[data-food]').forEach((el) => {
+    el.oninput = () => {
+      const [field, mi, fi] = el.dataset.food.split(':');
+      const numericFields = ['calories', 'protein', 'carbs', 'fat'];
+      np.meals[+mi].foods[+fi][field] = numericFields.includes(field) ? (el.value ? Number(el.value) : null) : el.value;
+      updateMacroPreview();
+    };
   });
   document.querySelectorAll('[data-remove-meal]').forEach((el) => {
     el.onclick = () => { np.meals.splice(+el.dataset.removeMeal, 1); renderNutritionBody(subscriptionId, isCoach); };
   });
-  on('addMeal', 'click', () => { np.meals.push({ label: '', description: '' }); renderNutritionBody(subscriptionId, isCoach); });
+  document.querySelectorAll('[data-add-food]').forEach((el) => {
+    el.onclick = () => { np.meals[+el.dataset.addFood].foods.push(newFood()); renderNutritionBody(subscriptionId, isCoach); };
+  });
+  document.querySelectorAll('[data-remove-food]').forEach((el) => {
+    el.onclick = () => {
+      const [mi, fi] = el.dataset.removeFood.split(':').map(Number);
+      np.meals[mi].foods.splice(fi, 1);
+      renderNutritionBody(subscriptionId, isCoach);
+    };
+  });
+  on('addMeal', 'click', () => { np.meals.push(newMeal()); renderNutritionBody(subscriptionId, isCoach); });
+  // لازم الحقول دي تتكتب في np مباشرة زي باقي الحقول، مش بس تحدّث المعاينة -
+  // لأن أي زرار تاني (إضافة/حذف وجبة أو أكلة) بيعيد رسم الفورم كله من np،
+  // وأي حاجة اتكتبت وملهاش مكان في np بتتمسح وقتها.
+  const TARGET_FIELD_MAP = { dailyCalories: 'daily_calories', proteinTarget: 'protein_target', carbsTarget: 'carbs_target', fatTarget: 'fat_target' };
+  Object.entries(TARGET_FIELD_MAP).forEach(([id, field]) => {
+    on(id, 'input', () => { np[field] = document.getElementById(id).value; updateMacroPreview(); });
+  });
+  on('nutritionNotes', 'input', () => { np.notes = document.getElementById('nutritionNotes').value; });
+  updateMacroPreview();
+
   on('saveNutrition', 'click', async () => {
     try {
       await api('/plans/' + subscriptionId + '/nutrition', { method: 'PUT', body: JSON.stringify({
         daily_calories: document.getElementById('dailyCalories').value,
+        protein_target: document.getElementById('proteinTarget').value,
+        carbs_target: document.getElementById('carbsTarget').value,
+        fat_target: document.getElementById('fatTarget').value,
         notes: document.getElementById('nutritionNotes').value,
         meals: np.meals,
       })});

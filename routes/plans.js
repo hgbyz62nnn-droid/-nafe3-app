@@ -9,6 +9,7 @@ const router = express.Router();
 const MAX_DAYS = 14;
 const MAX_EXERCISES_PER_DAY = 20;
 const MAX_MEALS = 12;
+const MAX_FOODS_PER_MEAL = 15;
 const MAX_TEMPLATES = 30;
 const EXERCISE_TYPES = ['normal', 'superset', 'dropset', 'warmup', 'cooldown'];
 
@@ -49,11 +50,26 @@ function sanitizeDays(days) {
   }));
 }
 
+function sanitizeFoods(foods) {
+  if (!Array.isArray(foods)) return [];
+  return foods.slice(0, MAX_FOODS_PER_MEAL).map((f) => ({
+    name: clampStr(f?.name, 100),
+    quantity: clampStr(f?.quantity, 40),
+    calories: toNullableNumber(f?.calories),
+    protein: toNullableNumber(f?.protein),
+    carbs: toNullableNumber(f?.carbs),
+    fat: toNullableNumber(f?.fat),
+    alternative: clampStr(f?.alternative, 150),
+  }));
+}
+
 function sanitizeMeals(meals) {
   if (!Array.isArray(meals)) return [];
   return meals.slice(0, MAX_MEALS).map((m) => ({
     label: clampStr(m?.label, 40),
+    time: clampStr(m?.time, 20),
     description: clampStr(m?.description, 300),
+    foods: sanitizeFoods(m?.foods),
   }));
 }
 
@@ -117,14 +133,18 @@ router.get('/:subscriptionId/nutrition', requireAuth, requireSubscriptionParty, 
 
 router.put('/:subscriptionId/nutrition', requireAuth, requireSubscriptionParty, (req, res) => {
   if (!req.isCoach) return res.status(403).json({ error: 'الكوتش بس اللي يقدر يعدّل خطة التغذية' });
-  const dailyCalories = Number.isFinite(Number(req.body.daily_calories)) ? Number(req.body.daily_calories) : null;
+  const dailyCalories = toNullableNumber(req.body.daily_calories);
+  const proteinTarget = toNullableNumber(req.body.protein_target);
+  const carbsTarget = toNullableNumber(req.body.carbs_target);
+  const fatTarget = toNullableNumber(req.body.fat_target);
   const notes = clampStr(req.body.notes, 300);
   const meals = sanitizeMeals(req.body.meals);
   db.prepare(
-    `INSERT INTO nutrition_plans (subscription_id, daily_calories, notes, meals_json, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(subscription_id) DO UPDATE SET daily_calories=excluded.daily_calories, notes=excluded.notes, meals_json=excluded.meals_json, updated_at=datetime('now')`
-  ).run(req.sub.id, dailyCalories, notes, JSON.stringify(meals));
+    `INSERT INTO nutrition_plans (subscription_id, daily_calories, protein_target, carbs_target, fat_target, notes, meals_json, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(subscription_id) DO UPDATE SET daily_calories=excluded.daily_calories, protein_target=excluded.protein_target,
+       carbs_target=excluded.carbs_target, fat_target=excluded.fat_target, notes=excluded.notes, meals_json=excluded.meals_json, updated_at=datetime('now')`
+  ).run(req.sub.id, dailyCalories, proteinTarget, carbsTarget, fatTarget, notes, JSON.stringify(meals));
   res.json({ ok: true });
 });
 

@@ -298,5 +298,8 @@ try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gender TEXT CHECK(gender IN
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN location TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE subscriptions ADD COLUMN trainee_last_seen_at TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE subscriptions ADD COLUMN coach_last_seen_at TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN protein_target INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN carbs_target INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN fat_target INTEGER"); } catch (e) {}
 
 module.exports = db;
