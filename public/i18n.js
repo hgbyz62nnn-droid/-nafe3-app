@@ -318,6 +318,7 @@ const translations = {
     blockedUsersMenuItem: 'المستخدمين المحظورين',
     blockedUsersTitle: 'المستخدمين المحظورين',
     noBlockedUsers: 'مفيش مستخدمين محظورين',
+    deleteAccountMenuItem: 'حذف الحساب',
 
     earningsTitle: 'الأرباح',
     totalEarningsLabel: 'إجمالي الأرباح',
@@ -644,6 +645,7 @@ const translations = {
     blockedUsersMenuItem: 'Blocked Users',
     blockedUsersTitle: 'Blocked Users',
     noBlockedUsers: 'No blocked users',
+    deleteAccountMenuItem: 'Delete Account',
 
     earningsTitle: 'Earnings',
     totalEarningsLabel: 'Total Earnings',

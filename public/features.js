@@ -263,6 +263,7 @@ async function renderProfile() {
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
       ${menuRow({ icon: '🚫', label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
+      ${menuRow({ icon: '🗑️', label: t('deleteAccountMenuItem'), id: 'menuDeleteAccount', danger: true })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
       ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
     </div>
@@ -280,6 +281,7 @@ async function renderProfile() {
   on('menuSupport', 'click', renderSupportHome);
   on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
+  on('menuDeleteAccount', 'click', () => window.open('/delete-account', '_blank'));
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderProfile(); });
   on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
 }
@@ -295,6 +297,7 @@ async function renderMore() {
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
       ${menuRow({ icon: '🚫', label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
+      ${menuRow({ icon: '🗑️', label: t('deleteAccountMenuItem'), id: 'menuDeleteAccount', danger: true })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
       ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
     </div>
@@ -314,6 +317,7 @@ async function renderMore() {
   on('menuSupport', 'click', renderSupportHome);
   on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
+  on('menuDeleteAccount', 'click', () => window.open('/delete-account', '_blank'));
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderMore(); });
   on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
 }

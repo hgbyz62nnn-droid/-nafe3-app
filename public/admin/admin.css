@@ -10,3 +10,4 @@
 .badge{ display:inline-block; font-size:10px; padding:2px 7px; border-radius:999px; margin-inline-end:4px; margin-bottom:4px; }
 .badge.blocked{ background:rgba(244,81,30,.18); color:#FFB199; }
 .badge.review{ background:rgba(255,193,7,.18); color:#FFD873; }
+button:disabled{ opacity:.4; cursor:not-allowed; }

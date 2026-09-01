@@ -230,6 +230,18 @@ CREATE TABLE IF NOT EXISTS user_reports (
   admin_action TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- طلبات حذف الحساب: صفحة عامة من غير تسجيل دخول، بيراجعها الأدمن ويوافق
+-- عليها (يحذف الحساب فعليًا) أو يرفضها. مربوطة بالإيميل مش بـ user_id
+-- عشان لسه صالحة حتى لو الحساب اتحذف بالفعل أو الإيميل مش مطابق لحساب حقيقي.
+CREATE TABLE IF NOT EXISTS account_deletion_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','rejected')),
+  created_at TEXT DEFAULT (datetime('now')),
+  processed_at TEXT
+);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}

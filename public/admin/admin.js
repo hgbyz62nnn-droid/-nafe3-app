@@ -81,6 +81,7 @@ async function renderDashboard(admin) {
       <div class="tab active" id="tabPending">طلبات المدربين</div>
       <div class="tab" id="tabSupport">تذاكر الدعم</div>
       <div class="tab" id="tabReports">بلاغات المستخدمين</div>
+      <div class="tab" id="tabDeletions">طلبات حذف الحساب</div>
       <div class="tab" id="tabFlagged">محاولات التحايل</div>
       <div class="tab" id="tabReviews">التقييمات</div>
       <div class="tab" id="tabUsers">المستخدمين</div>
@@ -91,7 +92,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabSupport', 'tabReports', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -186,6 +187,68 @@ async function renderDashboard(admin) {
       });
     }
     on('rApply', 'click', load);
+    load();
+  }
+
+  const DELETION_STATUS_LABELS = { pending: 'مفتوح', completed: 'اتحذف', rejected: 'اترفض' };
+
+  async function showDeletionRequests() {
+    activateTab('tabDeletions');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>طلبات حذف الحساب</h2>
+        <div class="filters">
+          <select id="dStatus">
+            <option value="pending">مفتوحة</option>
+            <option value="">كل الحالات</option>
+            <option value="completed">اتحذفت</option>
+            <option value="rejected">اترفضت</option>
+          </select>
+          <button id="dApply" style="width:auto; padding:8px 16px;">فلترة</button>
+        </div>
+        <div id="deletionsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const params = new URLSearchParams();
+      const status = document.getElementById('dStatus').value;
+      if (status) params.set('status', status);
+      const { requests } = await api('/account-deletion/admin/all?' + params.toString());
+      document.getElementById('deletionsList').innerHTML = requests.length === 0
+        ? '<p class="small">مفيش طلبات.</p>'
+        : requests.map((r) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>${escapeHtml(r.email)}</b>
+              <span class="badge ${r.status === 'pending' ? 'blocked' : 'review'}">${DELETION_STATUS_LABELS[r.status]}</span>
+            </div>
+            <p class="small">${escapeHtml(r.created_at)}</p>
+            ${r.matchingUser
+              ? `<p class="small">حساب مطابق: ${r.matchingUser.role === 'coach' ? 'مدرب' : 'متدرب'} #${r.matchingUser.id}${r.matchingUser.banned ? ' · <span style="color:var(--danger)">محظور بالفعل</span>' : ''}</p>`
+              : `<p class="small" style="color:var(--danger);">مفيش حساب مسجل بالإيميل ده حاليًا</p>`}
+            ${r.reason ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.reason)}</p>` : ''}
+            ${r.status === 'pending' ? `
+              <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+                <button class="danger" data-approve="${r.id}" ${!r.matchingUser ? 'disabled' : ''}>🗑️ موافقة وحذف الحساب</button>
+                <button class="secondary" data-reject="${r.id}">❌ رفض</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-approve]').forEach((el) => {
+        el.onclick = async () => {
+          if (!confirm('متأكد من حذف الحساب ده وكل بياناته نهائيًا؟ الإجراء ده مش هينفع يترجع')) return;
+          try {
+            await api('/account-deletion/admin/' + el.dataset.approve + '/approve', { method: 'POST' });
+            load();
+          } catch (e) { alert(e.message); }
+        };
+      });
+      document.querySelectorAll('[data-reject]').forEach((el) => {
+        el.onclick = async () => { await api('/account-deletion/admin/' + el.dataset.reject + '/reject', { method: 'POST' }); load(); };
+      });
+    }
+    on('dApply', 'click', load);
     load();
   }
 
@@ -474,6 +537,7 @@ async function renderDashboard(admin) {
   document.getElementById('tabPending').onclick = showPending;
   document.getElementById('tabSupport').onclick = showSupport;
   document.getElementById('tabReports').onclick = showReports;
+  document.getElementById('tabDeletions').onclick = showDeletionRequests;
   document.getElementById('tabFlagged').onclick = showFlagged;
   document.getElementById('tabReviews').onclick = showReviews;
   document.getElementById('tabUsers').onclick = showUsers;

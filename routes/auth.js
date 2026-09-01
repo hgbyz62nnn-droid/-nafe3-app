@@ -5,6 +5,7 @@ const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
 const { sendVerificationEmail, sendBroadcastEmail } = require('../lib/email');
 const { emailActionLimiter } = require('../lib/rateLimit');
+const { deleteUserAccount } = require('../lib/accountDeletion');
 
 const router = express.Router();
 
@@ -164,11 +165,8 @@ router.post('/admin/:id/verify', requireAdmin, (req, res) => {
 });
 
 router.delete('/admin/:id', requireAdmin, (req, res) => {
-  const userId = req.params.id;
-  db.prepare('DELETE FROM messages WHERE sender_id = ?').run(userId);
-  db.prepare('DELETE FROM subscriptions WHERE trainee_id = ? OR coach_id = ?').run(userId, userId);
-  db.prepare('DELETE FROM coach_profiles WHERE user_id = ?').run(userId);
-  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  const deleted = deleteUserAccount(req.params.id);
+  if (!deleted) return res.status(404).json({ error: 'المستخدم غير موجود' });
   res.json({ ok: true });
 });
 

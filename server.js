@@ -25,6 +25,7 @@ const reviewRoutes = require('./routes/reviews');
 const mediaRoutes = require('./routes/media');
 const transformationRoutes = require('./routes/transformations');
 const moderationRoutes = require('./routes/moderation');
+const accountDeletionRequestRoutes = require('./routes/accountDeletionRequests');
 
 const app = express();
 
@@ -106,9 +107,11 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/transformations', transformationRoutes);
 app.use('/api/moderation', moderationRoutes);
+app.use('/api/account-deletion', accountDeletionRequestRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));
+app.get('/delete-account', (req, res) => res.sendFile(path.join(__dirname, 'public', 'delete-account.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
