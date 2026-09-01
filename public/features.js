@@ -2309,7 +2309,171 @@ function renderWorkoutBody(subscriptionId, isCoach) {
 }
 
 function newFood() {
-  return { name: '', quantity: '', calories: null, protein: null, carbs: null, fat: null, alternative: '' };
+  return { name: '', food_id: null, quantity: '', calories: null, protein: null, carbs: null, fat: null, alternative: '' };
+}
+
+// -------------------- مكتبة الأطعمة --------------------
+
+const FOOD_CATEGORY_LABELS = {
+  protein: 'categoryProtein', carb: 'categoryCarb', fat: 'categoryFat',
+  vegetable: 'categoryVegetable', fruit: 'categoryFruit', dairy: 'categoryDairy',
+};
+
+function foodTagLine(f) {
+  const parts = [];
+  if (f.category) parts.push(t(FOOD_CATEGORY_LABELS[f.category]));
+  parts.push(Math.round(f.calories_per_100g) + ' ' + t('kcalUnit') + ' ' + t('per100gLabel'));
+  return parts.join(' · ');
+}
+
+function openFoodLibrary(onSelect) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  const libState = { scope: 'all', search: '', category: '' };
+
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('foodLibraryTitle')}</h2>
+      <input id="foodLibSearch" placeholder="${t('searchFoodsPlaceholder')}">
+      <div class="chip-row" id="foodLibTabs" style="margin:8px 0;">
+        <span class="filter-chip active" data-scope="all">${t('allFoodsTab')}</span>
+        <span class="filter-chip" data-scope="favorites">${t('favoritesTab')}</span>
+        <span class="filter-chip" data-scope="mine">${t('myFoodsTab')}</span>
+      </div>
+      <select id="foodLibCategory" style="margin-bottom:10px;">
+        <option value="">${t('anyCategoryOption')}</option>
+        ${Object.entries(FOOD_CATEGORY_LABELS).map(([k, l]) => `<option value="${k}">${t(l)}</option>`).join('')}
+      </select>
+      <button class="secondary" id="foodLibAddCustomToggle" style="margin-bottom:10px;">${t('addCustomFoodBtn')}</button>
+      <div id="foodLibCustomForm" class="hidden" style="margin-bottom:12px;">
+        <input id="foodLibNewName" placeholder="${t('customFoodNamePlaceholder')}">
+        <select id="foodLibNewCategory" style="margin-bottom:8px;">
+          <option value="">${t('anyCategoryOption')}</option>
+          ${Object.entries(FOOD_CATEGORY_LABELS).map(([k, l]) => `<option value="${k}">${t(l)}</option>`).join('')}
+        </select>
+        <div class="exercise-grid">
+          <input id="foodLibNewCal" type="number" min="0" placeholder="${t('foodCaloriesPlaceholder')} (${t('per100gLabel')})">
+          <input id="foodLibNewPro" type="number" min="0" placeholder="${t('foodProteinPlaceholder')} (${t('per100gLabel')})">
+          <input id="foodLibNewCarb" type="number" min="0" placeholder="${t('foodCarbsPlaceholder')} (${t('per100gLabel')})">
+          <input id="foodLibNewFat" type="number" min="0" placeholder="${t('foodFatPlaceholder')} (${t('per100gLabel')})">
+        </div>
+        <button id="foodLibSaveCustom">${t('saveCustomFoodBtn')}</button>
+      </div>
+      <div id="foodLibList"><div class="skeleton block"></div></div>
+      <button class="secondary" id="closeModal" style="margin-top:10px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+
+  document.getElementById('foodLibAddCustomToggle').onclick = () => {
+    document.getElementById('foodLibCustomForm').classList.toggle('hidden');
+  };
+  document.getElementById('foodLibSaveCustom').onclick = async () => {
+    const name = document.getElementById('foodLibNewName').value.trim();
+    if (!name) return;
+    try {
+      await api('/foods', { method: 'POST', body: JSON.stringify({
+        name,
+        category: document.getElementById('foodLibNewCategory').value || null,
+        calories: document.getElementById('foodLibNewCal').value,
+        protein: document.getElementById('foodLibNewPro').value,
+        carbs: document.getElementById('foodLibNewCarb').value,
+        fat: document.getElementById('foodLibNewFat').value,
+      }) });
+      document.getElementById('foodLibNewName').value = '';
+      document.getElementById('foodLibCustomForm').classList.add('hidden');
+      libState.scope = 'mine';
+      document.querySelectorAll('#foodLibTabs .filter-chip').forEach((c) => c.classList.toggle('active', c.dataset.scope === 'mine'));
+      loadList();
+    } catch (e) { alert(e.message); }
+  };
+
+  document.querySelectorAll('#foodLibTabs .filter-chip').forEach((chip) => {
+    chip.onclick = () => {
+      document.querySelectorAll('#foodLibTabs .filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      libState.scope = chip.dataset.scope;
+      loadList();
+    };
+  });
+  document.getElementById('foodLibSearch').oninput = (e) => { libState.search = e.target.value; loadList(); };
+  document.getElementById('foodLibCategory').onchange = (e) => { libState.category = e.target.value; loadList(); };
+
+  async function loadList() {
+    const listBox = document.getElementById('foodLibList');
+    if (!listBox) return;
+    listBox.innerHTML = `<div class="skeleton block"></div>`;
+    const qs = new URLSearchParams();
+    qs.set('scope', libState.scope);
+    if (libState.search) qs.set('search', libState.search);
+    if (libState.category) qs.set('category', libState.category);
+    let foods;
+    try {
+      ({ foods } = await api('/foods?' + qs.toString()));
+    } catch (e) { return; }
+    if (!document.getElementById('foodLibList')) return;
+    if (!foods.length) {
+      listBox.innerHTML = `<p class="small">${t('noFoodsFoundMsg')}</p>`;
+      return;
+    }
+    listBox.innerHTML = foods.map((f) => `
+      <div class="coach-row" style="gap:8px;" data-food-id="${f.id}">
+        <div style="flex:1; min-width:0;">
+          <div>${escapeHtml(f.name)}</div>
+          <div class="small">${escapeHtml(foodTagLine(f))}</div>
+        </div>
+        <button class="secondary" data-fav-food="${f.id}" data-fav-state="${f.is_favorite}" style="width:auto; padding:6px 10px;">${f.is_favorite ? '♥' : '♡'}</button>
+        ${f.coach_id ? `<button class="secondary" data-del-food="${f.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
+        <button data-select-food="${f.id}" style="width:auto; padding:6px 10px;">${t('selectFoodBtn')}</button>
+      </div>
+    `).join('');
+
+    listBox.querySelectorAll('[data-select-food]').forEach((btn) => {
+      btn.onclick = () => {
+        const f = foods.find((x) => x.id === Number(btn.dataset.selectFood));
+        const qtyStr = prompt(t('enterQuantityPrompt'), '100');
+        if (qtyStr === null) return;
+        const qty = Number(qtyStr);
+        if (!Number.isFinite(qty) || qty <= 0) { alert(t('invalidQuantityAlert')); return; }
+        const ratio = qty / 100;
+        closeModal();
+        onSelect({
+          name: f.name,
+          food_id: f.id,
+          quantity: qty + t('gramUnit'),
+          calories: Math.round(f.calories_per_100g * ratio),
+          protein: Math.round(f.protein_per_100g * ratio * 10) / 10,
+          carbs: Math.round(f.carbs_per_100g * ratio * 10) / 10,
+          fat: Math.round(f.fat_per_100g * ratio * 10) / 10,
+        });
+      };
+    });
+    listBox.querySelectorAll('[data-fav-food]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.dataset.favFood;
+        const isFav = btn.dataset.favState === '1';
+        try {
+          await api('/foods/' + id + '/favorite', { method: isFav ? 'DELETE' : 'POST' });
+          loadList();
+        } catch (e) { alert(e.message); }
+      };
+    });
+    listBox.querySelectorAll('[data-del-food]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm(t('removeBtn') + '?')) return;
+        try {
+          await api('/foods/' + btn.dataset.delFood, { method: 'DELETE' });
+          loadList();
+        } catch (e) { alert(e.message); }
+      };
+    });
+  }
+
+  loadList();
 }
 function newMeal() {
   return { label: '', time: '', description: '', foods: [] };
@@ -2409,7 +2573,10 @@ function renderNutritionBody(subscriptionId, isCoach) {
         <input data-meal="description:${mi}" value="${escapeHtml(m.description)}" placeholder="${t('mealDescPlaceholder')}">
         ${(m.foods || []).map((f, fi) => `
           <div class="food-row">
-            <input data-food="name:${mi}:${fi}" value="${escapeHtml(f.name)}" placeholder="${t('foodNamePlaceholder')}">
+            <div style="display:flex; gap:6px;">
+              <input data-food="name:${mi}:${fi}" value="${escapeHtml(f.name)}" placeholder="${t('foodNamePlaceholder')}" style="flex:1;">
+              <button type="button" class="secondary" data-browse-food="${mi}:${fi}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('browseFoodLibraryBtn')}">${svgIcon('search', 16)}</button>
+            </div>
             <div class="macro-grid-2">
               <input data-food="quantity:${mi}:${fi}" value="${escapeHtml(f.quantity)}" placeholder="${t('foodQuantityPlaceholder')}">
               <input data-food="calories:${mi}:${fi}" type="number" min="0" value="${f.calories ?? ''}" placeholder="${t('foodCaloriesPlaceholder')}">
@@ -2450,6 +2617,15 @@ function renderNutritionBody(subscriptionId, isCoach) {
   });
   document.querySelectorAll('[data-add-food]').forEach((el) => {
     el.onclick = () => { np.meals[+el.dataset.addFood].foods.push(newFood()); renderNutritionBody(subscriptionId, isCoach); };
+  });
+  document.querySelectorAll('[data-browse-food]').forEach((el) => {
+    el.onclick = () => {
+      const [mi, fi] = el.dataset.browseFood.split(':').map(Number);
+      openFoodLibrary((chosen) => {
+        np.meals[mi].foods[fi] = { ...np.meals[mi].foods[fi], ...chosen, alternative: np.meals[mi].foods[fi].alternative };
+        renderNutritionBody(subscriptionId, isCoach);
+      });
+    };
   });
   document.querySelectorAll('[data-remove-food]').forEach((el) => {
     el.onclick = () => {

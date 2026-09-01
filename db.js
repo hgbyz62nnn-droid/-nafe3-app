@@ -598,4 +598,83 @@ if (exerciseCount === 0) {
   insertMany(seedExercises);
 }
 
+// مكتبة الأطعمة - نفس فكرة مكتبة التمارين بالظبط: كيان معزول، مش مربوط
+// بمنطق sanitizeFoods الحالي. القيم بالجرام لكل 100 جرام من الطعام، وبيتم
+// حساب القيم الفعلية حسب الكمية وقت الاختيار في الواجهة - صف الأكلة في
+// nutrition_plans (meals_json) لسه بيخزن أرقام مطلقة زي ما هو دايمًا،
+// food_id مجرد رابط اختياري إضافي زي exercise_id بالظبط.
+db.exec(`
+CREATE TABLE IF NOT EXISTS foods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER REFERENCES users(id),
+  name TEXT NOT NULL,
+  category TEXT,
+  calories_per_100g REAL NOT NULL DEFAULT 0,
+  protein_per_100g REAL NOT NULL DEFAULT 0,
+  carbs_per_100g REAL NOT NULL DEFAULT 0,
+  fat_per_100g REAL NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_foods_coach ON foods(coach_id);
+
+CREATE TABLE IF NOT EXISTS food_favorites (
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  food_id INTEGER NOT NULL REFERENCES foods(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (coach_id, food_id)
+);
+`);
+
+const foodCount = db.prepare('SELECT COUNT(*) c FROM foods').get().c;
+if (foodCount === 0) {
+  const insertFood = db.prepare(
+    'INSERT INTO foods (coach_id, name, category, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g) VALUES (NULL, ?, ?, ?, ?, ?, ?)'
+  );
+  const seedFoods = [
+    ['صدور فراخ مشوية', 'protein', 165, 31, 0, 3.6],
+    ['فراخ مسلوقة', 'protein', 150, 28, 0, 3.2],
+    ['لحم بقري نايف', 'protein', 250, 26, 0, 15],
+    ['لحمة مفرومة 90%', 'protein', 176, 20, 0, 10],
+    ['سمك بلطي', 'protein', 96, 20, 0, 1.7],
+    ['سمك سلمون', 'protein', 208, 20, 0, 13],
+    ['تونة في ماء', 'protein', 116, 26, 0, 1],
+    ['بيض كامل', 'protein', 155, 13, 1.1, 11],
+    ['بياض بيض', 'protein', 52, 11, 0.7, 0.2],
+    ['جبنة قريش', 'dairy', 98, 11, 3.4, 4.3],
+    ['زبادي يوناني', 'dairy', 59, 10, 3.6, 0.4],
+    ['لبن خالي الدسم', 'dairy', 42, 3.4, 5, 0.1],
+    ['جبنة موتزاريلا', 'dairy', 280, 28, 3.1, 17],
+    ['أرز أبيض مسلوق', 'carb', 130, 2.7, 28, 0.3],
+    ['أرز بني مسلوق', 'carb', 111, 2.6, 23, 0.9],
+    ['شوفان جاف', 'carb', 389, 17, 66, 7],
+    ['بطاطس مسلوقة', 'carb', 87, 1.9, 20, 0.1],
+    ['بطاطا حلوة مسلوقة', 'carb', 86, 1.6, 20, 0.1],
+    ['خبز أسمر', 'carb', 247, 13, 41, 3.4],
+    ['خبز بلدي', 'carb', 275, 9, 55, 1.6],
+    ['مكرونة مسلوقة', 'carb', 158, 5.8, 31, 0.9],
+    ['كينوا مسلوقة', 'carb', 120, 4.4, 21, 1.9],
+    ['شوفان مطبوخ', 'carb', 71, 2.5, 12, 1.5],
+    ['موز', 'fruit', 89, 1.1, 23, 0.3],
+    ['تفاح', 'fruit', 52, 0.3, 14, 0.2],
+    ['برتقال', 'fruit', 47, 0.9, 12, 0.1],
+    ['فراولة', 'fruit', 32, 0.7, 8, 0.3],
+    ['بروكلي مسلوق', 'vegetable', 35, 2.4, 7, 0.4],
+    ['خيار', 'vegetable', 15, 0.7, 3.6, 0.1],
+    ['طماطم', 'vegetable', 18, 0.9, 3.9, 0.2],
+    ['سبانخ', 'vegetable', 23, 2.9, 3.6, 0.4],
+    ['جزر', 'vegetable', 41, 0.9, 10, 0.2],
+    ['خس', 'vegetable', 15, 1.4, 2.9, 0.2],
+    ['لوز', 'fat', 579, 21, 22, 50],
+    ['زبدة فول سوداني', 'fat', 588, 25, 20, 50],
+    ['زيت زيتون', 'fat', 884, 0, 0, 100],
+    ['أفوكادو', 'fat', 160, 2, 9, 15],
+    ['جوز', 'fat', 654, 15, 14, 65],
+    ['عدس مسلوق', 'protein', 116, 9, 20, 0.4],
+    ['فول مدمس', 'protein', 110, 7.6, 18, 0.6],
+    ['حمص مسلوق', 'protein', 164, 9, 27, 2.6],
+  ];
+  const insertManyFoods = db.transaction((rows) => { for (const r of rows) insertFood.run(...r); });
+  insertManyFoods(seedFoods);
+}
+
 module.exports = db;

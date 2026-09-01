@@ -43,6 +43,7 @@ function sanitizeFoods(foods) {
   if (!Array.isArray(foods)) return [];
   return foods.slice(0, MAX_FOODS_PER_MEAL).map((f) => ({
     name: clampStr(f?.name, 100),
+    food_id: toNullableNumber(f?.food_id),
     quantity: clampStr(f?.quantity, 40),
     calories: toNullableNumber(f?.calories),
     protein: toNullableNumber(f?.protein),
