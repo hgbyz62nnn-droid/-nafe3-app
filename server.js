@@ -28,6 +28,7 @@ const moderationRoutes = require('./routes/moderation');
 const accountDeletionRequestRoutes = require('./routes/accountDeletionRequests');
 const trainerDocumentRoutes = require('./routes/trainerDocuments');
 const checkinRoutes = require('./routes/checkins');
+const availabilityRoutes = require('./routes/availability');
 
 const app = express();
 
@@ -112,6 +113,7 @@ app.use('/api/moderation', moderationRoutes);
 app.use('/api/account-deletion', accountDeletionRequestRoutes);
 app.use('/api/trainer-documents', trainerDocumentRoutes);
 app.use('/api/checkins', checkinRoutes);
+app.use('/api/availability', availabilityRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));

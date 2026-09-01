@@ -86,6 +86,7 @@ async function renderDashboard(admin) {
       <div class="tab" id="tabDeletions">طلبات حذف الحساب</div>
       <div class="tab" id="tabFlagged">محاولات التحايل</div>
       <div class="tab" id="tabReviews">التقييمات</div>
+      <div class="tab" id="tabBookings">الحجوزات</div>
       <div class="tab" id="tabUsers">المستخدمين</div>
       <div class="tab" id="tabSettings">الإعدادات</div>
     </div>
@@ -94,7 +95,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabBookings', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -579,6 +580,59 @@ async function renderDashboard(admin) {
     });
   }
 
+  const BOOKING_STATUS_LABELS = { scheduled: 'محجوزة', completed: 'اتعملت ✓', cancelled: 'ملغية', no_show: 'متغيّب عنها' };
+
+  async function showBookings() {
+    activateTab('tabBookings');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>كل الحجوزات</h2>
+        <div class="filters">
+          <select id="bStatus">
+            <option value="">كل الحالات</option>
+            <option value="scheduled">محجوزة</option>
+            <option value="completed">اتعملت</option>
+            <option value="cancelled">ملغية</option>
+            <option value="no_show">متغيّب عنها</option>
+          </select>
+          <select id="bRange">
+            <option value="">كل الأوقات</option>
+            <option value="today">النهاردة</option>
+            <option value="week">الأسبوع ده</option>
+          </select>
+          <input id="bSearch" placeholder="بحث بإيميل/اسم المدرب أو المتدرب">
+          <button id="bApply" style="width:auto; padding:8px 16px;">فلترة</button>
+        </div>
+        <div id="bookingsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const params = new URLSearchParams();
+      const status = document.getElementById('bStatus').value;
+      const range = document.getElementById('bRange').value;
+      const q = document.getElementById('bSearch').value.trim();
+      if (status) params.set('status', status);
+      if (range) params.set('range', range);
+      if (q) params.set('q', q);
+      const { sessions } = await api('/sessions/admin/all?' + params.toString());
+      document.getElementById('bookingsList').innerHTML = sessions.length === 0
+        ? '<p class="small">مفيش حجوزات مطابقة.</p>'
+        : sessions.map((s) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>${escapeHtml(s.trainee_name)} ← ${escapeHtml(s.coach_name)}</b>
+              <span class="badge ${s.status === 'cancelled' || s.status === 'no_show' ? 'blocked' : ''}">${BOOKING_STATUS_LABELS[s.status] || s.status}</span>
+            </div>
+            <p class="small">${new Date(s.scheduled_at).toLocaleString('ar-EG')}</p>
+            <p class="small">الباقة: ${escapeHtml(s.package)} · ${s.amount} ج · حالة الاشتراك: ${escapeHtml(s.subscription_status)}</p>
+            ${s.notes ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(s.notes)}</p>` : ''}
+          </div>
+        `).join('');
+    }
+    on('bApply', 'click', load);
+    load();
+  }
+
   async function showUsers() {
     activateTab('tabUsers');
     document.getElementById('adminContent').innerHTML = `
@@ -689,6 +743,7 @@ async function renderDashboard(admin) {
   document.getElementById('tabDeletions').onclick = showDeletionRequests;
   document.getElementById('tabFlagged').onclick = showFlagged;
   document.getElementById('tabReviews').onclick = showReviews;
+  document.getElementById('tabBookings').onclick = showBookings;
   document.getElementById('tabUsers').onclick = showUsers;
   document.getElementById('tabSettings').onclick = showSettings;
   showPending();

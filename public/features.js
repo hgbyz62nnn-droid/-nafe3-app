@@ -289,6 +289,7 @@ async function renderMore() {
     ${profileHeader(t('roleCoachLabel'))}
     <div class="card menu-card">
       ${menuRow({ icon: svgIcon('money', 18), label: t('earningsMenuItem'), id: 'menuEarnings' })}
+      ${menuRow({ icon: svgIcon('calendar', 18), label: t('availabilityMenuItem'), id: 'menuAvailability' })}
       ${menuRow({ icon: svgIcon('image', 18), label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: svgIcon('chart', 18), label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: svgIcon('upload', 18), label: t('trainerDocumentsMenuItem'), id: 'menuTrainerDocuments' })}
@@ -310,6 +311,7 @@ async function renderMore() {
   loadAndRenderGallery('galleryBox', state.user.id, true);
   on('editProfileLink', 'click', (e) => { e.preventDefault(); renderCoachDashboard(); });
   on('menuEarnings', 'click', renderEarnings);
+  on('menuAvailability', 'click', renderCoachAvailability);
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuTrainerDocuments', 'click', renderTrainerDocuments);
@@ -883,6 +885,120 @@ async function loadAndRenderPublicTransformations(coachId) {
       const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
       if (tr) openTransformModal(tr, false, () => {}, false);
     };
+  });
+}
+
+// -------------------- إدارة مواعيد الكوتش (Availability) --------------------
+
+let availabilityEditState = { windows: [] };
+
+async function renderCoachAvailability() {
+  const { schedule, blockedDates, settings } = await api('/availability/me');
+  availabilityEditState.windows = schedule.map((w) => ({ ...w }));
+
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card"><h2>${t('availabilityTitle')}</h2></div>
+    <div class="card">
+      <h2>${t('sessionSettingsTitle')}</h2>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('sessionDurationLabel')}</label>
+      <input id="sessionDuration" type="number" min="15" max="240" value="${settings.session_duration_minutes}">
+      <label class="small" style="display:block; margin:10px 0 6px;">${t('bufferMinutesLabel')}</label>
+      <input id="bufferMinutes" type="number" min="0" max="120" value="${settings.buffer_minutes}">
+      <button id="saveSettings" style="margin-top:10px;">${t('saveSettingsBtn')}</button>
+    </div>
+    <div class="card">
+      <h2>${t('weeklyScheduleTitle')}</h2>
+      <div id="windowsList"></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <select id="newWindowDay" style="flex:1; min-width:100px;">
+          ${[0, 1, 2, 3, 4, 5, 6].map((d) => `<option value="${d}">${t('dayLabel' + d)}</option>`).join('')}
+        </select>
+        <input id="newWindowStart" type="time" value="09:00" style="flex:1; min-width:90px;">
+        <input id="newWindowEnd" type="time" value="17:00" style="flex:1; min-width:90px;">
+      </div>
+      <button class="secondary" id="addWindow" style="margin-top:8px;">${t('addWindowBtn')}</button>
+      <button id="saveSchedule" style="margin-top:8px;">${t('saveScheduleBtn')}</button>
+    </div>
+    <div class="card">
+      <h2>${t('blockedDatesTitle')}</h2>
+      <div id="blockedList">
+        ${blockedDates.length === 0 ? `<p class="small">${t('noBlockedDatesYet')}</p>` : blockedDates.map((b) => `
+          <div class="coach-row">
+            <div>${escapeHtml(b.blocked_date)}${b.reason ? ` - ${escapeHtml(b.reason)}` : ''}</div>
+            <button class="secondary" data-remove-blocked="${b.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
+          </div>
+        `).join('')}
+      </div>
+      <input id="newBlockedDate" type="date" style="margin-top:10px;">
+      <input id="newBlockedReason" placeholder="${t('blockedDateReasonPlaceholder')}">
+      <button id="addBlockedDate">${t('addBlockedDateBtn')}</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = renderMore;
+
+  function renderWindowsList() {
+    const box = document.getElementById('windowsList');
+    if (!box) return;
+    box.innerHTML = availabilityEditState.windows.length === 0
+      ? `<p class="small">${t('noWindowsYet')}</p>`
+      : availabilityEditState.windows.map((w, i) => `
+        <div class="coach-row">
+          <div>${t('dayLabel' + w.day_of_week)} · ${escapeHtml(w.start_time)} - ${escapeHtml(w.end_time)}</div>
+          <button class="secondary" data-remove-window="${i}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
+        </div>
+      `).join('');
+    box.querySelectorAll('[data-remove-window]').forEach((el) => {
+      el.onclick = () => {
+        availabilityEditState.windows.splice(Number(el.dataset.removeWindow), 1);
+        renderWindowsList();
+      };
+    });
+  }
+  renderWindowsList();
+
+  on('saveSettings', 'click', async () => {
+    try {
+      await api('/availability/me/settings', { method: 'PUT', body: JSON.stringify({
+        session_duration_minutes: Number(document.getElementById('sessionDuration').value),
+        buffer_minutes: Number(document.getElementById('bufferMinutes').value),
+      })});
+      alert(t('settingsSavedAlert'));
+    } catch (e) { alert(e.message); }
+  });
+
+  on('addWindow', 'click', () => {
+    availabilityEditState.windows.push({
+      day_of_week: Number(document.getElementById('newWindowDay').value),
+      start_time: document.getElementById('newWindowStart').value,
+      end_time: document.getElementById('newWindowEnd').value,
+    });
+    renderWindowsList();
+  });
+
+  on('saveSchedule', 'click', async () => {
+    try {
+      await api('/availability/me/schedule', { method: 'PUT', body: JSON.stringify({ windows: availabilityEditState.windows }) });
+      alert(t('scheduleSavedAlert'));
+    } catch (e) { alert(e.message); }
+  });
+
+  document.querySelectorAll('[data-remove-blocked]').forEach((el) => {
+    el.onclick = async () => {
+      await api('/availability/me/blocked-dates/' + el.dataset.removeBlocked, { method: 'DELETE' });
+      renderCoachAvailability();
+    };
+  });
+
+  on('addBlockedDate', 'click', async () => {
+    const date = document.getElementById('newBlockedDate').value;
+    if (!date) return;
+    try {
+      await api('/availability/me/blocked-dates', { method: 'POST', body: JSON.stringify({
+        date, reason: document.getElementById('newBlockedReason').value,
+      })});
+      renderCoachAvailability();
+    } catch (e) { alert(e.message); }
   });
 }
 
@@ -2142,22 +2258,27 @@ function renderSessionRow(s, isCoach, showActions) {
         ${s.notes ? `<div class="small">${escapeHtml(s.notes)}</div>` : ''}
       </div>
       ${showActions ? `
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
           ${isCoach ? `<button class="secondary" data-complete="${s.id}" style="width:auto; padding:6px 10px;">${t('markCompletedBtn')}</button>` : ''}
+          ${isCoach ? `<button class="secondary" data-noshow="${s.id}" style="width:auto; padding:6px 10px;">${t('markNoShowBtn')}</button>` : ''}
           <button class="secondary" data-cancel="${s.id}" style="width:auto; padding:6px 10px;">${t('cancelSessionBtn')}</button>
         </div>
-      ` : `<span class="pill">${{ completed: t('statusCompleted'), cancelled: t('statusCancelled') }[s.status] || ''}</span>`}
+      ` : `<span class="pill">${{ completed: t('statusCompleted'), cancelled: t('statusCancelled'), no_show: t('statusNoShow') }[s.status] || ''}</span>`}
     </div>
   `;
 }
 
 async function renderSessionsTab(subscriptionId) {
   const isCoach = state.user.role === 'coach';
-  const { sessions } = await api('/sessions/' + subscriptionId);
+  const [{ sessions }, subDetail] = await Promise.all([
+    api('/sessions/' + subscriptionId),
+    isCoach ? Promise.resolve(null) : api('/subscriptions/' + subscriptionId),
+  ]);
+  const coachId = subDetail?.subscription?.coach_id;
   const now = Date.now();
   const isFutureScheduled = (s) => s.status === 'scheduled' && new Date(s.scheduled_at).getTime() > now;
   const upcoming = sessions.filter(isFutureScheduled);
-  const past = sessions.filter((s) => s.status === 'completed' || (s.status === 'scheduled' && !isFutureScheduled(s)));
+  const past = sessions.filter((s) => s.status === 'completed' || s.status === 'no_show' || (s.status === 'scheduled' && !isFutureScheduled(s)));
   const cancelled = sessions.filter((s) => s.status === 'cancelled');
   const groups = { upcoming, past, cancelled };
 
@@ -2185,9 +2306,11 @@ async function renderSessionsTab(subscriptionId) {
     <div class="card">
       <h2>${t('bookSessionBtn')}</h2>
       <div class="error hidden" id="sessionErr"></div>
-      <input id="sessionDate" type="datetime-local">
-      <input id="sessionNotes" placeholder="${t('sessionNotesPlaceholder')}">
-      <button id="bookBtn">${t('bookSessionBtn')}</button>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('pickDateLabel')}</label>
+      <input id="sessionDateOnly" type="date">
+      <div id="slotPickerBox" style="margin-top:8px;"></div>
+      <input id="sessionNotes" placeholder="${t('sessionNotesPlaceholder')}" style="margin-top:8px;">
+      <button id="bookBtn" style="margin-top:8px;">${t('bookSessionBtn')}</button>
     </div>` : ''}
     <div class="tabs">
       <div class="tab ${sessionsSubTab === 'upcoming' ? 'active' : ''}" data-stab="upcoming">${t('upcomingSessionsTitle')}</div>
@@ -2204,23 +2327,56 @@ async function renderSessionsTab(subscriptionId) {
     el.onclick = () => { sessionsSubTab = el.dataset.stab; renderSessionsTab(subscriptionId); };
   });
 
-  on('bookBtn', 'click', async () => {
-    const val = document.getElementById('sessionDate').value;
-    if (!val) return;
-    try {
-      await api('/sessions/' + subscriptionId, { method: 'POST', body: JSON.stringify({
-        scheduled_at: new Date(val).toISOString(),
-        notes: document.getElementById('sessionNotes').value,
-      })});
-      renderSessionsTab(subscriptionId);
-    } catch (e) {
-      const el = document.getElementById('sessionErr');
-      el.textContent = e.message; el.classList.remove('hidden');
+  if (!isCoach && coachId) {
+    async function loadSlots() {
+      const dateVal = document.getElementById('sessionDateOnly').value;
+      const box = document.getElementById('slotPickerBox');
+      if (!dateVal) { box.innerHTML = ''; return; }
+      box.innerHTML = `<p class="small">${t('loadingSlots')}</p>`;
+      try {
+        const { hasSchedule, slots } = await api('/availability/' + coachId + '/slots?date=' + encodeURIComponent(dateVal));
+        if (!hasSchedule) {
+          box.innerHTML = `<input id="sessionTimeOnly" type="time">`;
+        } else if (slots.length === 0) {
+          box.innerHTML = `<p class="small">${t('noSlotsAvailable')}</p>`;
+        } else {
+          box.innerHTML = `
+            <label class="small" style="display:block; margin-bottom:6px;">${t('selectSlotLabel')}</label>
+            <select id="slotSelect">${slots.map((s) => `<option value="${s}">${s}</option>`).join('')}</select>
+          `;
+        }
+      } catch (e) {
+        box.innerHTML = '';
+      }
     }
-  });
+    on('sessionDateOnly', 'change', loadSlots);
+
+    on('bookBtn', 'click', async () => {
+      const date = document.getElementById('sessionDateOnly').value;
+      const timeEl = document.getElementById('slotSelect') || document.getElementById('sessionTimeOnly');
+      const time = timeEl ? timeEl.value : '';
+      if (!date || !time) return;
+      try {
+        await api('/sessions/' + subscriptionId, { method: 'POST', body: JSON.stringify({
+          date, time,
+          notes: document.getElementById('sessionNotes').value,
+        })});
+        renderSessionsTab(subscriptionId);
+      } catch (e) {
+        const el = document.getElementById('sessionErr');
+        el.textContent = e.message; el.classList.remove('hidden');
+      }
+    });
+  }
   document.querySelectorAll('[data-complete]').forEach((el) => {
     el.onclick = async () => {
       await api('/sessions/' + subscriptionId + '/' + el.dataset.complete + '/status', { method: 'POST', body: JSON.stringify({ status: 'completed' }) });
+      renderSessionsTab(subscriptionId);
+    };
+  });
+  document.querySelectorAll('[data-noshow]').forEach((el) => {
+    el.onclick = async () => {
+      await api('/sessions/' + subscriptionId + '/' + el.dataset.noshow + '/status', { method: 'POST', body: JSON.stringify({ status: 'no_show' }) });
       renderSessionsTab(subscriptionId);
     };
   });

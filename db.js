@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS booked_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
   scheduled_at TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','completed','cancelled')),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','completed','cancelled','no_show')),
   notes TEXT,
   reminder_24h_sent INTEGER NOT NULL DEFAULT 0,
   reminder_1h_sent INTEGER NOT NULL DEFAULT 0,
@@ -334,6 +334,28 @@ CREATE TABLE IF NOT EXISTS check_ins (
   reviewed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_checkins_subscription ON check_ins(subscription_id);
+
+-- الجدول الأسبوعي الثابت لمواعيد الكوتش (مثال: كل يوم أحد من 5 لـ 9 مساءً).
+-- day_of_week زي JS's Date.getDay(): 0=الأحد لغاية 6=السبت.
+CREATE TABLE IF NOT EXISTS coach_availability (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_availability_coach ON coach_availability(coach_id);
+
+-- أيام مستثناة من الجدول الأسبوعي (إجازة، يوم مشغول استثنائيًا).
+CREATE TABLE IF NOT EXISTS coach_blocked_dates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  blocked_date TEXT NOT NULL,
+  reason TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_blocked_dates_coach ON coach_blocked_dates(coach_id);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}
@@ -345,6 +367,8 @@ try { db.exec("ALTER TABLE subscriptions ADD COLUMN coach_last_seen_at TEXT"); }
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN protein_target INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN carbs_target INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN fat_target INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN session_duration_minutes INTEGER NOT NULL DEFAULT 60"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN buffer_minutes INTEGER NOT NULL DEFAULT 0"); } catch (e) {}
 
 // SQLite مبيسمحش تعدّل CHECK constraint في مكانها بـ ALTER TABLE، فلازم
 // نعيد إنشاء الجدول لما نوسّع visibility من (public/private) لـ
@@ -384,6 +408,27 @@ if (transformationsTableSql && !transformationsTableSql.sql.includes('client_onl
         created_at
       FROM transformations_old;
     DROP TABLE transformations_old;
+  `);
+}
+
+// نفس أسلوب إعادة الإنشاء المحروسة فوق - بنوسّع status عشان تقبل 'no_show'
+// (جلسة المتدرب متغيبش عنها من غير إلغاء)، القيم القديمة تفضل زي ما هي.
+const bookedSessionsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='booked_sessions'").get();
+if (bookedSessionsSql && !bookedSessionsSql.sql.includes('no_show')) {
+  db.exec(`
+    ALTER TABLE booked_sessions RENAME TO booked_sessions_old;
+    CREATE TABLE booked_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+      scheduled_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','completed','cancelled','no_show')),
+      notes TEXT,
+      reminder_24h_sent INTEGER NOT NULL DEFAULT 0,
+      reminder_1h_sent INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO booked_sessions SELECT * FROM booked_sessions_old;
+    DROP TABLE booked_sessions_old;
   `);
 }
 
