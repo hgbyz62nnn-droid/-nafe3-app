@@ -224,7 +224,7 @@ async function renderTraineeHome() {
 
   render(`
     <div class="search-bar" id="homeSearchWrap">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon">${svgIcon('search', 16)}</span>
       <input id="homeSearch" placeholder="${t('searchTrainersPlaceholder')}" readonly style="cursor:pointer;">
     </div>
 
@@ -485,10 +485,10 @@ async function renderCoachDashboard() {
     </div>
 
     <div class="stat-grid-2">
-      ${statCardV2(stats.activeTrainees, '👥', t('activeClientsStatLabel'))}
-      ${statCardV2(stats.sessionsToday, '📅', t('sessionsTodayStatLabel'))}
-      ${statCardV2(stats.monthRevenue + ' ' + t('currency'), '💰', t('thisMonthLabel'))}
-      ${statCardV2(stats.satisfactionPct != null ? stats.satisfactionPct + '%' : '-', '❤️', t('satisfactionStatLabel'))}
+      ${statCardV2(stats.activeTrainees, svgIcon('client', 15), t('activeClientsStatLabel'))}
+      ${statCardV2(stats.sessionsToday, svgIcon('calendar', 15), t('sessionsTodayStatLabel'))}
+      ${statCardV2(stats.monthRevenue + ' ' + t('currency'), svgIcon('money', 15), t('thisMonthLabel'))}
+      ${statCardV2(stats.satisfactionPct != null ? stats.satisfactionPct + '%' : '-', svgIcon('heart', 15), t('satisfactionStatLabel'))}
     </div>
 
     <div class="section-header">

@@ -62,28 +62,25 @@ function renderBottomNav(active) {
   if (!state.user) { navEl.classList.add('hidden'); navEl.innerHTML = ''; return; }
 
   const items = state.user.role === 'coach' ? [
-    ['dashboard', 'navDashboardTab', renderCoachDashboard],
-    ['clients', 'navClientsTab', renderMyClients],
-    ['csessions', 'navCoachSessionsTab', renderMyBookings],
-    ['messages', 'navMessagesTab', renderMyMessages],
-    ['more', 'navMoreTab', renderMore],
+    ['dashboard', 'navDashboardTab', 'home-outline', 'home-filled', renderCoachDashboard],
+    ['clients', 'navClientsTab', 'client', 'client', renderMyClients],
+    ['csessions', 'navCoachSessionsTab', 'calendar', 'calendar', renderMyBookings],
+    ['messages', 'navMessagesTab', 'message', 'message', renderMyMessages],
+    ['more', 'navMoreTab', 'more', 'more', renderMore],
   ] : [
-    ['home', 'navHomeTab', renderTraineeHome],
-    ['discover', 'navDiscoverTab', renderDiscover],
-    ['bookings', 'navBookingsTab', renderMyBookings],
-    ['messages', 'navMessagesTab', renderMyMessages],
-    ['profile', 'navProfileTab', renderProfile],
+    ['home', 'navHomeTab', 'home-outline', 'home-filled', renderTraineeHome],
+    ['discover', 'navDiscoverTab', 'search', 'search', renderDiscover],
+    ['bookings', 'navBookingsTab', 'calendar', 'calendar', renderMyBookings],
+    ['messages', 'navMessagesTab', 'message', 'message', renderMyMessages],
+    ['profile', 'navProfileTab', 'profile', 'profile', renderProfile],
   ];
 
   navEl.classList.remove('hidden');
-  navEl.innerHTML = items.map(([key, labelKey]) => {
-    const label = t(labelKey);
-    const spaceIdx = label.indexOf(' ');
-    const icon = spaceIdx === -1 ? label : label.slice(0, spaceIdx);
-    const text = spaceIdx === -1 ? '' : label.slice(spaceIdx + 1);
-    return `<button class="nav-item ${active === key ? 'active' : ''}" data-nav="${key}"><span class="nav-icon">${icon}</span><span>${escapeHtml(text)}</span></button>`;
+  navEl.innerHTML = items.map(([key, labelKey, iconName, activeIconName]) => {
+    const isActive = active === key;
+    return `<button class="nav-item ${isActive ? 'active' : ''}" data-nav="${key}"><span class="nav-icon">${svgIcon(isActive ? activeIconName : iconName, 22)}</span><span>${escapeHtml(t(labelKey))}</span></button>`;
   }).join('');
-  items.forEach(([key, , fn]) => {
+  items.forEach(([key, , , , fn]) => {
     const btn = navEl.querySelector(`[data-nav="${key}"]`);
     if (btn) btn.onclick = () => { clearInterval(state.chatTimer); fn(); };
   });
@@ -151,7 +148,7 @@ async function renderMyMessages() {
 
   render(`
     <div class="search-bar">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon">${svgIcon('search', 16)}</span>
       <input id="messagesSearch" placeholder="${t('searchConversationsPlaceholder')}">
     </div>
     <div id="conversationsList"></div>
@@ -259,13 +256,13 @@ async function renderProfile() {
   render(`
     ${profileHeader(t('roleTraineeLabel'))}
     <div class="card menu-card">
-      ${menuRow({ icon: '📅', label: t('myBookingsTitle'), id: 'menuBookings' })}
-      ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
-      ${menuRow({ icon: '🚫', label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
-      ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
-      ${menuRow({ icon: '🗑️', label: t('deleteAccountMenuItem'), id: 'menuDeleteAccount', danger: true })}
-      ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
-      ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
+      ${menuRow({ icon: svgIcon('calendar', 18), label: t('myBookingsTitle'), id: 'menuBookings' })}
+      ${menuRow({ icon: svgIcon('message', 18), label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: svgIcon('close', 18), label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
+      ${menuRow({ icon: svgIcon('document', 18), label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
+      ${menuRow({ icon: svgIcon('close', 18), label: t('deleteAccountMenuItem'), id: 'menuDeleteAccount', danger: true })}
+      ${menuRow({ icon: svgIcon('settings', 18), label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
+      ${menuRow({ icon: svgIcon('close', 18), label: t('logoutBtn'), id: 'menuLogout', danger: true })}
     </div>
     <div class="card">
       <h2>${t('accountSection')}</h2>
@@ -291,15 +288,15 @@ async function renderMore() {
   render(`
     ${profileHeader(t('roleCoachLabel'))}
     <div class="card menu-card">
-      ${menuRow({ icon: '💰', label: t('earningsMenuItem'), id: 'menuEarnings' })}
-      ${menuRow({ icon: '📸', label: t('transformationsTitle'), id: 'menuTransformations' })}
-      ${menuRow({ icon: '📊', label: t('viewStatsBtn'), id: 'menuStats' })}
-      ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
-      ${menuRow({ icon: '🚫', label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
-      ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
-      ${menuRow({ icon: '🗑️', label: t('deleteAccountMenuItem'), id: 'menuDeleteAccount', danger: true })}
-      ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
-      ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
+      ${menuRow({ icon: svgIcon('money', 18), label: t('earningsMenuItem'), id: 'menuEarnings' })}
+      ${menuRow({ icon: svgIcon('image', 18), label: t('transformationsTitle'), id: 'menuTransformations' })}
+      ${menuRow({ icon: svgIcon('chart', 18), label: t('viewStatsBtn'), id: 'menuStats' })}
+      ${menuRow({ icon: svgIcon('message', 18), label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: svgIcon('close', 18), label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
+      ${menuRow({ icon: svgIcon('document', 18), label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
+      ${menuRow({ icon: svgIcon('close', 18), label: t('deleteAccountMenuItem'), id: 'menuDeleteAccount', danger: true })}
+      ${menuRow({ icon: svgIcon('settings', 18), label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
+      ${menuRow({ icon: svgIcon('close', 18), label: t('logoutBtn'), id: 'menuLogout', danger: true })}
     </div>
     <div class="card">
       <h2>${t('accountSection')}</h2>
@@ -903,7 +900,7 @@ async function renderDiscover() {
   render(`
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
       <div class="search-bar" style="flex:1; margin-bottom:0;">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon">${svgIcon('search', 16)}</span>
         <input id="discoverSearch" placeholder="${t('searchTrainersPlaceholder')}" value="${escapeHtml(discoverState.q)}">
       </div>
       <button class="secondary" id="openFilterScreen" style="width:auto; padding:11px 14px; position:relative;">
