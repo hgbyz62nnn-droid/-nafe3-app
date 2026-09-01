@@ -112,7 +112,9 @@ function renderLoginForm() {
     <input id="email" type="email" placeholder="${t('emailPlaceholder')}">
     <input id="password" type="password" placeholder="${t('passwordPlaceholder')}">
     <button id="doLogin">${t('loginBtn')}</button>
+    <p class="small" style="margin-top:10px; text-align:center;"><a class="link" href="#" id="forgotPasswordLink">${t('forgotPasswordLink')}</a></p>
   `;
+  on('forgotPasswordLink', 'click', (e) => { e.preventDefault(); renderForgotPasswordForm(); });
   on('doLogin', 'click', async () => {
     try {
       await api('/auth/login', { method: 'POST', body: JSON.stringify({
@@ -190,6 +192,74 @@ function renderVerifyForm() {
     try {
       await api('/auth/resend-code', { method: 'POST', body: JSON.stringify({ email: state.pendingEmail }) });
       alert(t('codeResentAlert'));
+    } catch (e) { alert(e.message); }
+  });
+}
+
+function renderForgotPasswordForm() {
+  render(`
+    <button class="secondary" id="back">${t('backToLoginLink')}</button>
+    <div class="card">
+      <h2>${t('forgotPasswordTitle')}</h2>
+      <p class="small" style="line-height:1.8; margin-bottom:14px;">${t('forgotPasswordHint')}</p>
+      <div class="error hidden" id="forgotErr"></div>
+      <input id="forgotEmail" type="email" placeholder="${t('emailPlaceholder')}">
+      <button id="sendResetCode">${t('sendResetCodeBtn')}</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = () => renderAuth('login');
+  on('sendResetCode', 'click', async () => {
+    const email = document.getElementById('forgotEmail').value.trim();
+    if (!email) return;
+    const btn = document.getElementById('sendResetCode');
+    btn.disabled = true;
+    try {
+      await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+      state.pendingEmail = email;
+      renderResetPasswordForm();
+    } catch (e) {
+      const el = document.getElementById('forgotErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+      btn.disabled = false;
+    }
+  });
+}
+
+function renderResetPasswordForm() {
+  render(`
+    <button class="secondary" id="back">${t('backToLoginLink')}</button>
+    <div class="card">
+      <h2>${t('resetPasswordTitle')}</h2>
+      <p class="small" style="line-height:1.8; margin-bottom:10px;">
+        ${t('resetPasswordHint', { email: state.pendingEmail })}
+      </p>
+      <div class="notice">${t('resetCodeSentMessage')}</div>
+      <div class="error hidden" id="resetErr"></div>
+      <input id="resetCode" placeholder="${t('resetCodePlaceholder')}" maxlength="6" style="text-align:center; font-size:20px; letter-spacing:6px;">
+      <input id="newPassword" type="password" placeholder="${t('newPasswordPlaceholder')}">
+      <button id="doReset">${t('resetPasswordBtn')}</button>
+      <button class="secondary" id="resendResetCode" style="margin-top:10px;">${t('resendResetCodeBtn')}</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = () => renderAuth('login');
+  on('doReset', 'click', async () => {
+    try {
+      await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({
+        email: state.pendingEmail,
+        code: document.getElementById('resetCode').value,
+        newPassword: document.getElementById('newPassword').value,
+      })});
+      alert(t('passwordResetSuccessAlert'));
+      boot();
+    } catch (e) {
+      const el = document.getElementById('resetErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  });
+  on('resendResetCode', 'click', async () => {
+    try {
+      await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: state.pendingEmail }) });
+      alert(t('resetCodeResentAlert'));
     } catch (e) { alert(e.message); }
   });
 }

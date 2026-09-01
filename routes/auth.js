@@ -3,14 +3,14 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { requireAdmin } = require('../middleware/adminAuth');
-const { sendVerificationEmail, sendBroadcastEmail } = require('../lib/email');
+const { sendVerificationEmail, sendPasswordResetEmail, sendBroadcastEmail } = require('../lib/email');
 const { emailActionLimiter } = require('../lib/rateLimit');
 const { deleteUserAccount } = require('../lib/accountDeletion');
 
 const router = express.Router();
 
 function signToken(user) {
-  return jwt.sign({ id: user.id, role: user.role, name: user.name }, process.env.JWT_SECRET, {
+  return jwt.sign({ id: user.id, role: user.role, name: user.name, tv: user.token_version ?? 0 }, process.env.JWT_SECRET, {
     expiresIn: '30d',
   });
 }
@@ -93,6 +93,81 @@ router.post('/resend-code', emailActionLimiter, async (req, res) => {
   res.json({ ok: true });
 });
 
+const PASSWORD_RESET_TTL_MS = 15 * 60 * 1000;
+const MAX_RESET_REQUESTS_PER_WINDOW = 3;
+const MAX_RESET_ATTEMPTS = 5;
+
+// نفس رسالة النجاح دايمًا بغض النظر عن وجود الإيميل من عدمه، وحتى لو
+// الإيميل موجود بس وصل للحد الأقصى من الطلبات - عشان محدش يقدر يستخدم
+// الفورم ده يكتشف مين مسجل عندنا (enumeration attack) من شكل الرد نفسه.
+// حد emailActionLimiter (نفس نظام الـ rate limiting الموجود بالفعل،
+// per-IP) بيرفض قبل ما نوصل هنا خالص لو حصل سبام على نفس الـ IP.
+router.post('/forgot-password', emailActionLimiter, async (req, res) => {
+  const genericOk = () => res.json({ ok: true });
+  const email = String(req.body.email ?? '').trim();
+  if (!email) return genericOk();
+
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user || user.banned) return genericOk();
+
+  // حد إضافي لكل إيميل بعينه (مش بس لكل IP) - عشان محدش يقدر يستنزف رصيد
+  // إيميلات Resend أو يضايق صاحب حساب معيّن من عدة أجهزة/IPs مختلفة.
+  const recentCount = db
+    .prepare("SELECT COUNT(*) c FROM password_resets WHERE user_id = ? AND created_at > datetime('now', '-15 minutes')")
+    .get(user.id).c;
+  if (recentCount >= MAX_RESET_REQUESTS_PER_WINDOW) return genericOk();
+
+  const code = generateCode();
+  const expires = new Date(Date.now() + PASSWORD_RESET_TTL_MS).toISOString();
+  db.prepare('INSERT INTO password_resets (user_id, code, expires_at) VALUES (?, ?, ?)').run(user.id, code, expires);
+
+  try {
+    await sendPasswordResetEmail(email, code);
+  } catch (e) {
+    console.log('فشل إرسال إيميل إعادة تعيين كلمة المرور:', e.message);
+  }
+  genericOk();
+});
+
+router.post('/reset-password', async (req, res) => {
+  const email = String(req.body.email ?? '').trim();
+  const code = String(req.body.code ?? '').trim();
+  const newPassword = String(req.body.newPassword ?? '');
+  if (!email || !code || !newPassword) return res.status(400).json({ error: 'البيانات ناقصة' });
+  if (newPassword.length < 8) return res.status(400).json({ error: 'الباسورد لازم يكون 8 حروف على الأقل' });
+
+  const genericInvalid = () => res.status(400).json({ error: 'الكود غلط أو منتهي الصلاحية' });
+
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user) return genericInvalid();
+
+  const reset = db
+    .prepare("SELECT * FROM password_resets WHERE user_id = ? AND used = 0 ORDER BY created_at DESC LIMIT 1")
+    .get(user.id);
+  if (!reset) return genericInvalid();
+  if (new Date(reset.expires_at) < new Date()) return genericInvalid();
+  if (reset.attempts >= MAX_RESET_ATTEMPTS) {
+    return res.status(400).json({ error: 'محاولات كتير غلط، اطلب كود جديد' });
+  }
+  if (reset.code !== code) {
+    db.prepare('UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?').run(reset.id);
+    return res.status(400).json({ error: 'الكود غلط' });
+  }
+
+  const password_hash = bcrypt.hashSync(newPassword, 10);
+  const run = db.transaction(() => {
+    db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(reset.id);
+    // token_version+1 بيلغي أي جلسة دخول قديمة (JWT) فورًا - لو حد كان
+    // مستولي على الحساب قبل كده، بيتقفل بره في اللحظة دي بالظبط.
+    db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(password_hash, user.id);
+  });
+  run();
+
+  const freshUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  setAuthCookie(res, signToken(freshUser));
+  res.json({ user: { id: freshUser.id, role: freshUser.role, name: freshUser.name } });
+});
+
 let loginAttempts = {};
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
@@ -126,8 +201,13 @@ router.get('/me', (req, res) => {
   if (!token) return res.json({ user: null });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = db.prepare('SELECT id, role, name, email, avatar_path, bio, banned FROM users WHERE id = ?').get(decoded.id);
-    if (!user || user.banned) return res.json({ user: null });
+    const user = db.prepare('SELECT id, role, name, email, avatar_path, bio, banned, token_version FROM users WHERE id = ?').get(decoded.id);
+    // نفس فحص token_version اللي في middleware/auth.js - الراوت ده بيعمل
+    // تحقق مستقل من التوكن بدل ما يستخدم requireAuth (عشان الزائر الغير
+    // مسجل يرجع user:null مش 401)، فلازم يتكرر هنا برضو وإلا جلسة اتلغت
+    // بإعادة تعيين كلمة المرور تفضل شغالة هنا بالغلط.
+    const tokenVersion = decoded.tv ?? 0;
+    if (!user || user.banned || tokenVersion !== user.token_version) return res.json({ user: null });
     res.json({ user: { id: user.id, role: user.role, name: user.name, email: user.email, avatarPath: user.avatar_path, bio: user.bio } });
   } catch {
     res.json({ user: null });

@@ -36,8 +36,11 @@ function requireOwnerOrAdmin(req, res, next) {
   if (userToken) {
     try {
       const decoded = jwt.verify(userToken, process.env.JWT_SECRET);
-      const user = db.prepare('SELECT id, role, banned FROM users WHERE id = ?').get(decoded.id);
-      if (user && !user.banned) {
+      const user = db.prepare('SELECT id, role, banned, token_version FROM users WHERE id = ?').get(decoded.id);
+      // نفس فحص token_version اللي في middleware/auth.js - الراوت ده بيعمل
+      // تحقق مستقل من التوكن مش عن طريق requireAuth، فلازم يتكرر هنا برضو.
+      const tokenVersion = decoded.tv ?? 0;
+      if (user && !user.banned && tokenVersion === user.token_version) {
         req.authUser = { id: user.id, role: user.role };
         return next();
       }

@@ -404,10 +404,32 @@ CREATE TABLE IF NOT EXISTS post_saves (
 );
 CREATE INDEX IF NOT EXISTS idx_post_saves_post ON post_saves(post_id);
 CREATE INDEX IF NOT EXISTS idx_post_saves_user ON post_saves(user_id);
+
+-- كود إعادة تعيين كلمة المرور (6 أرقام)، بنفس منطق verify_code/verify_expires
+-- الموجود في users لتأكيد التسجيل، بس في جدول منفصل عشان نقدر نحتفظ
+-- بتاريخ الطلبات القديمة (لحساب معدل الطلبات لكل إيميل) بدل ما نمسحها.
+-- attempts بيتصفر مع كل كود جديد ويوقف الكود عن الشغل بعد 5 محاولات غلط
+-- حتى لو لسه في وقته، عشان محدش يقدر يخمّن الكود بالتجربة.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  code TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN bio TEXT"); } catch (e) {}
+// بيتزود بواحد مع كل إعادة تعيين كلمة مرور ناجحة - أي JWT قديم بيحمل رقم
+// نسخة أقدم من اللي في القاعدة بيترفض فورًا (middleware/auth.js)، يعني
+// أي جلسة دخول مفتوحة قبل إعادة التعيين بتتقفل تلقائيًا. مفيش حاجة تانية
+// في التطبيق بتعدّل password_hash غير التسجيل وده، فمفيش مكان تاني محتاج
+// يزوّد الرقم ده.
+try { db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gender TEXT CHECK(gender IN ('male','female') OR gender IS NULL)"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN location TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE subscriptions ADD COLUMN trainee_last_seen_at TEXT"); } catch (e) {}
