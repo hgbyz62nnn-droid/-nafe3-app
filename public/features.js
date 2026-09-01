@@ -257,6 +257,7 @@ async function renderProfile() {
     ${profileHeader(t('roleTraineeLabel'))}
     <div class="card menu-card">
       ${menuRow({ icon: svgIcon('calendar', 18), label: t('myBookingsTitle'), id: 'menuBookings' })}
+      ${menuRow({ icon: svgIcon('bookmark', 18), label: t('savedPostsMenuItem'), id: 'menuSavedPosts' })}
       ${menuRow({ icon: svgIcon('message', 18), label: t('supportMenuItem'), id: 'menuSupport' })}
       ${menuRow({ icon: svgIcon('close', 18), label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: svgIcon('document', 18), label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
@@ -275,6 +276,7 @@ async function renderProfile() {
   loadAndRenderGallery('galleryBox', state.user.id, true);
   on('editProfileLink', 'click', (e) => { e.preventDefault(); document.getElementById('bioInput')?.scrollIntoView({ behavior: 'smooth' }); });
   on('menuBookings', 'click', renderMyBookings);
+  on('menuSavedPosts', 'click', renderSavedPosts);
   on('menuSupport', 'click', renderSupportHome);
   on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
@@ -291,6 +293,8 @@ async function renderMore() {
       ${menuRow({ icon: svgIcon('money', 18), label: t('earningsMenuItem'), id: 'menuEarnings' })}
       ${menuRow({ icon: svgIcon('calendar', 18), label: t('availabilityMenuItem'), id: 'menuAvailability' })}
       ${menuRow({ icon: svgIcon('client', 18), label: t('trainerNetworkMenuItem'), id: 'menuTrainerNetwork' })}
+      ${menuRow({ icon: svgIcon('document', 18), label: t('contentMenuItem'), id: 'menuMyPosts' })}
+      ${menuRow({ icon: svgIcon('bookmark', 18), label: t('savedPostsMenuItem'), id: 'menuSavedPosts' })}
       ${menuRow({ icon: svgIcon('image', 18), label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: svgIcon('chart', 18), label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: svgIcon('upload', 18), label: t('trainerDocumentsMenuItem'), id: 'menuTrainerDocuments' })}
@@ -314,6 +318,8 @@ async function renderMore() {
   on('menuEarnings', 'click', renderEarnings);
   on('menuAvailability', 'click', renderCoachAvailability);
   on('menuTrainerNetwork', 'click', renderTrainerNetwork);
+  on('menuMyPosts', 'click', renderMyPosts);
+  on('menuSavedPosts', 'click', renderSavedPosts);
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuTrainerDocuments', 'click', renderTrainerDocuments);
@@ -1121,6 +1127,212 @@ async function renderTrainerNetworkProfile(coachId) {
       renderTrainerNetworkProfile(coachId);
     } catch (e) { alert(e.message); }
   });
+}
+
+// -------------------- محتوى المدربين (Trainer Content) --------------------
+// فيد بسيط للمدربين ينشروا فيه (نصايح/محتوى تعليمي/تمارين/تحفيز/إعلانات)
+// - عمدًا بدون تعقيد اجتماعي زيادة (مفيش تعليقات، مفيش خوارزمية ترتيب)،
+// زي ما السبك الأصلي طلب. المحتوى بيودّي لبروفايل المدرب اللي ممكن يودّي
+// لحجز - فتح البروفايل بيتفرّع حسب دور الزائر (متدرب يشوف نسخة الحجز،
+// مدرب يشوف نسخة الشبكة الخفيفة من غير حجز).
+
+const POST_CATEGORY_LABELS = {
+  tip: 'catTip', educational: 'catEducational', exercise: 'catExercise',
+  transformation: 'catTransformationPost', motivation: 'catMotivation', announcement: 'catAnnouncement',
+};
+
+function openAuthorProfile(coachId) {
+  if (state.user.role === 'coach') renderTrainerNetworkProfile(coachId);
+  else renderCoachProfile(coachId);
+}
+
+async function sharePost(p) {
+  const text = `${p.coach_name} - ${t(POST_CATEGORY_LABELS[p.category] || 'catTip')}\n${p.content}`;
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch { /* المستخدم لغى المشاركة */ return; }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    alert(t('shareCopiedAlert'));
+  } catch { /* clipboard مش متاح - نتجاهل بهدوء */ }
+}
+
+function renderPostCard(p) {
+  return `
+    <div class="card">
+      <div class="coach-row" data-open-author="${p.coach_id}" style="cursor:pointer; gap:10px;">
+        ${avatarCircle(p.coach_name, p.coach_avatar, 40)}
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:13px;">${escapeHtml(p.coach_name)} ${p.coach_verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
+          <div class="small">${escapeHtml(p.coach_specialty) || t('coachSpecialtyFallback')}</div>
+        </div>
+        <span class="pill">${t(POST_CATEGORY_LABELS[p.category] || 'catTip')}</span>
+      </div>
+      ${p.photo_path ? `<img src="/uploads/${encodeURIComponent(p.photo_path)}" style="width:100%; border-radius:10px; margin:10px 0; display:block;" alt="">` : ''}
+      <p style="font-size:13.5px; line-height:1.8; margin:10px 0;">${escapeHtml(p.content)}</p>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button class="secondary" data-like="${p.id}" data-liked="${p.is_liked ? '1' : '0'}" style="width:auto; padding:6px 12px;">${p.is_liked ? '❤️' : '🤍'} ${p.like_count}</button>
+        <button class="secondary" data-save="${p.id}" data-saved="${p.is_saved ? '1' : '0'}" style="width:auto; padding:6px 12px;">${p.is_saved ? '🔖' : '📑'} ${p.save_count}</button>
+        <button class="secondary" data-share="${p.id}" style="width:auto; padding:6px 12px;">${t('shareBtn')}</button>
+      </div>
+      <div class="small" style="margin-top:6px;">${new Date(p.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</div>
+    </div>
+  `;
+}
+
+function wirePostCards(box, posts, onChange) {
+  box.querySelectorAll('[data-open-author]').forEach((el) => {
+    el.onclick = () => openAuthorProfile(el.dataset.openAuthor);
+  });
+  box.querySelectorAll('[data-like]').forEach((el) => {
+    el.onclick = async () => {
+      const id = el.dataset.like;
+      const liked = el.dataset.liked === '1';
+      try {
+        await api('/content/' + id + '/like', { method: liked ? 'DELETE' : 'POST' });
+        onChange();
+      } catch (e) { alert(e.message); }
+    };
+  });
+  box.querySelectorAll('[data-save]').forEach((el) => {
+    el.onclick = async () => {
+      const id = el.dataset.save;
+      const saved = el.dataset.saved === '1';
+      try {
+        await api('/content/' + id + '/save', { method: saved ? 'DELETE' : 'POST' });
+        onChange();
+      } catch (e) { alert(e.message); }
+    };
+  });
+  box.querySelectorAll('[data-share]').forEach((el) => {
+    el.onclick = () => {
+      const post = posts.find((p) => p.id === Number(el.dataset.share));
+      if (post) sharePost(post);
+    };
+  });
+}
+
+async function renderContentFeed() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card"><h2>${t('contentFeedTitle')}</h2></div>
+    <div id="feedList"><div class="skeleton block"></div></div>
+  `);
+  document.getElementById('back').onclick = () => (state.user.role === 'coach' ? renderMore() : renderTraineeHome());
+
+  async function load() {
+    const { posts } = await api('/content');
+    const box = document.getElementById('feedList');
+    if (!box) return;
+    box.innerHTML = posts.length === 0 ? `<p class="small">${t('noContentYet')}</p>` : posts.map(renderPostCard).join('');
+    wirePostCards(box, posts, load);
+  }
+  load();
+}
+
+async function renderSavedPosts() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card"><h2>${t('savedPostsTitle')}</h2></div>
+    <div id="savedList"><div class="skeleton block"></div></div>
+  `);
+  document.getElementById('back').onclick = () => (state.user.role === 'coach' ? renderMore() : renderProfile());
+
+  async function load() {
+    const { posts } = await api('/content/saved');
+    const box = document.getElementById('savedList');
+    if (!box) return;
+    box.innerHTML = posts.length === 0 ? `<p class="small">${t('noSavedPostsYet')}</p>` : posts.map(renderPostCard).join('');
+    wirePostCards(box, posts, load);
+  }
+  load();
+}
+
+function openAddPostModal(onDone) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('addPostBtn')}</h2>
+      <div class="error hidden" id="addPostErr"></div>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('postCategoryLabel')}</label>
+      <select id="postCategory" style="margin-bottom:10px;">
+        ${Object.entries(POST_CATEGORY_LABELS).map(([key, labelKey]) => `<option value="${key}">${t(labelKey)}</option>`).join('')}
+      </select>
+      <textarea id="postContent" rows="4" placeholder="${t('postContentPlaceholder')}" style="margin-bottom:10px;"></textarea>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('postPhotoLabel')}</label>
+      <input id="postPhoto" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
+      <button id="submitPost">${t('publishPostBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+  document.getElementById('submitPost').onclick = async () => {
+    const content = document.getElementById('postContent').value.trim();
+    if (!content) {
+      const el = document.getElementById('addPostErr');
+      el.textContent = t('postContentPlaceholder'); el.classList.remove('hidden');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('category', document.getElementById('postCategory').value);
+    fd.append('content', content);
+    const photo = document.getElementById('postPhoto').files[0];
+    if (photo) fd.append('photo', photo);
+    try {
+      await apiUpload('/content', fd);
+      closeModal();
+      onDone();
+    } catch (e) {
+      const el = document.getElementById('addPostErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  };
+}
+
+async function renderMyPosts() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('myPostsTitle')}</h2>
+      <a class="link" href="#" id="viewFeedLink">${t('contentFeedTitle')}</a>
+    </div>
+    <button id="addPostTile" style="margin-bottom:12px;">${t('addPostBtn')}</button>
+    <div id="myPostsList"><div class="skeleton block"></div></div>
+  `);
+  document.getElementById('back').onclick = renderMore;
+  on('viewFeedLink', 'click', (e) => { e.preventDefault(); renderContentFeed(); });
+
+  async function load() {
+    const { posts } = await api('/content/mine');
+    const box = document.getElementById('myPostsList');
+    if (!box) return;
+    box.innerHTML = posts.length === 0 ? `<p class="small">${t('noPostsYet')}</p>` : posts.map((p) => `
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span class="pill">${t(POST_CATEGORY_LABELS[p.category] || 'catTip')}</span>
+          <span class="small">${new Date(p.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</span>
+        </div>
+        ${p.photo_path ? `<img src="/uploads/${encodeURIComponent(p.photo_path)}" style="width:100%; border-radius:10px; margin:10px 0;" alt="">` : ''}
+        <p style="font-size:13.5px; line-height:1.8; margin:8px 0;">${escapeHtml(p.content)}</p>
+        <div class="small">❤️ ${p.like_count} · 🔖 ${p.save_count}</div>
+        <button class="danger" data-delete-post="${p.id}" style="margin-top:8px;">${t('deleteBtn')}</button>
+      </div>
+    `).join('');
+    box.querySelectorAll('[data-delete-post]').forEach((el) => {
+      el.onclick = async () => {
+        if (!confirm(t('deletePostConfirm'))) return;
+        await api('/content/' + el.dataset.deletePost, { method: 'DELETE' });
+        load();
+      };
+    });
+  }
+  on('addPostTile', 'click', () => openAddPostModal(load));
+  load();
 }
 
 async function renderCoachTransformations() {

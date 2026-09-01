@@ -31,6 +31,7 @@ const checkinRoutes = require('./routes/checkins');
 const availabilityRoutes = require('./routes/availability');
 const matchingRoutes = require('./routes/matching');
 const trainerNetworkRoutes = require('./routes/trainerNetwork');
+const contentRoutes = require('./routes/content');
 
 const app = express();
 
@@ -118,6 +119,7 @@ app.use('/api/checkins', checkinRoutes);
 app.use('/api/availability', availabilityRoutes);
 app.use('/api/matching', matchingRoutes);
 app.use('/api/trainer-network', trainerNetworkRoutes);
+app.use('/api/content', contentRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));

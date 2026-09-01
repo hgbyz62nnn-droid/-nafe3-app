@@ -369,6 +369,41 @@ CREATE TABLE IF NOT EXISTS trainer_follows (
 );
 CREATE INDEX IF NOT EXISTS idx_trainer_follows_follower ON trainer_follows(follower_id);
 CREATE INDEX IF NOT EXISTS idx_trainer_follows_followed ON trainer_follows(followed_id);
+
+-- محتوى بسيط ينشره المدربين (نصايح، محتوى تعليمي، تمارين، تحفيز،
+-- إعلانات). hidden للأدمن يقدر يخفي منشور مسيء بعد النشر - مفيش مراجعة
+-- قبل النشر لأنه مش بيانات هوية/سعر حساسة، بس النص بيعدي على نفس فلتر
+-- الخصوصية المستخدم في باقي النصوص الحرة في التطبيق قبل ما يتحفظ.
+CREATE TABLE IF NOT EXISTS trainer_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  category TEXT NOT NULL CHECK(category IN ('tip','educational','exercise','transformation','motivation','announcement')),
+  content TEXT NOT NULL,
+  photo_path TEXT,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_trainer_posts_coach ON trainer_posts(coach_id);
+CREATE INDEX IF NOT EXISTS idx_trainer_posts_created ON trainer_posts(created_at);
+
+CREATE TABLE IF NOT EXISTS post_likes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id INTEGER NOT NULL REFERENCES trainer_posts(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(post_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_post_likes_post ON post_likes(post_id);
+
+CREATE TABLE IF NOT EXISTS post_saves (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id INTEGER NOT NULL REFERENCES trainer_posts(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(post_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_post_saves_post ON post_saves(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_saves_user ON post_saves(user_id);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}

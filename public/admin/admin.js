@@ -87,6 +87,7 @@ async function renderDashboard(admin) {
       <div class="tab" id="tabFlagged">محاولات التحايل</div>
       <div class="tab" id="tabReviews">التقييمات</div>
       <div class="tab" id="tabBookings">الحجوزات</div>
+      <div class="tab" id="tabContent">محتوى المدربين</div>
       <div class="tab" id="tabUsers">المستخدمين</div>
       <div class="tab" id="tabSettings">الإعدادات</div>
     </div>
@@ -95,7 +96,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabBookings', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabBookings', 'tabContent', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -633,6 +634,47 @@ async function renderDashboard(admin) {
     load();
   }
 
+  const POST_CATEGORY_LABELS_ADMIN = { tip: 'نصيحة تدريبية', educational: 'محتوى تعليمي', exercise: 'محتوى تمارين', transformation: 'قصة تحوّل', motivation: 'تحفيز', announcement: 'إعلان' };
+
+  async function showContent() {
+    activateTab('tabContent');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>محتوى المدربين</h2>
+        <div id="contentList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const { posts } = await api('/content/admin/all');
+      document.getElementById('contentList').innerHTML = posts.length === 0
+        ? '<p class="small">مفيش منشورات لسه.</p>'
+        : posts.map((p) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>${escapeHtml(p.coach_name)}</b>
+              <span class="small">${POST_CATEGORY_LABELS_ADMIN[p.category] || p.category}</span>
+            </div>
+            <p class="small">${escapeHtml(p.coach_email)} · ${escapeHtml(p.created_at)}</p>
+            <p style="font-size:12.5px; margin:6px 0;">${escapeHtml(p.content)}</p>
+            ${p.photo_path ? `<img src="/uploads/${encodeURIComponent(p.photo_path)}" style="max-width:200px; border-radius:8px; margin-bottom:6px;">` : ''}
+            ${p.hidden ? '<span class="badge blocked">مخفي</span>' : ''}
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              ${p.hidden
+                ? `<button data-restore-post="${p.id}">↩️ إظهار</button>`
+                : `<button class="danger" data-hide-post="${p.id}">🚫 إخفاء</button>`}
+            </div>
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-hide-post]').forEach((el) => {
+        el.onclick = async () => { await api('/content/admin/' + el.dataset.hidePost + '/hide', { method: 'POST' }); load(); };
+      });
+      document.querySelectorAll('[data-restore-post]').forEach((el) => {
+        el.onclick = async () => { await api('/content/admin/' + el.dataset.restorePost + '/restore', { method: 'POST' }); load(); };
+      });
+    }
+    load();
+  }
+
   async function showUsers() {
     activateTab('tabUsers');
     document.getElementById('adminContent').innerHTML = `
@@ -744,6 +786,7 @@ async function renderDashboard(admin) {
   document.getElementById('tabFlagged').onclick = showFlagged;
   document.getElementById('tabReviews').onclick = showReviews;
   document.getElementById('tabBookings').onclick = showBookings;
+  document.getElementById('tabContent').onclick = showContent;
   document.getElementById('tabUsers').onclick = showUsers;
   document.getElementById('tabSettings').onclick = showSettings;
   showPending();

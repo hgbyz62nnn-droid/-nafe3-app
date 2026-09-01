@@ -212,6 +212,7 @@ async function renderTraineeHome() {
   state.coaches = coaches;
   const { subscriptions } = await api('/subscriptions/mine');
   state.mySubs = subscriptions;
+  const { posts: contentPreview } = await api('/content').catch(() => ({ posts: [] }));
 
   const activeSubs = subscriptions.filter(s => s.status === 'active');
   const topTrainers = [...coaches].sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0)).slice(0, 8);
@@ -254,6 +255,14 @@ async function renderTraineeHome() {
       </div>
     `}
 
+    ${contentPreview.length > 0 ? `
+    <div class="section-header">
+      <h2>${t('contentFeedTitle')}</h2>
+      <a class="link" href="#" id="seeAllContent">${t('seeAllLink')}</a>
+    </div>
+    <div id="homeContentPreview">${contentPreview.slice(0, 2).map(renderPostCard).join('')}</div>
+    ` : ''}
+
     <div class="card">
       <h2>${t('welcome', { name: escapeHtml(state.user.name) })}</h2>
       <p class="small">${t('traineeHomeHint')}</p>
@@ -283,6 +292,9 @@ async function renderTraineeHome() {
     el.onclick = () => { discoverState.q = el.dataset.category; renderDiscover(); };
   });
   on('seeAllTrainers', 'click', (e) => { e.preventDefault(); renderDiscover(); });
+  on('seeAllContent', 'click', (e) => { e.preventDefault(); renderContentFeed(); });
+  const homeContentBox = document.getElementById('homeContentPreview');
+  if (homeContentBox) wirePostCards(homeContentBox, contentPreview, () => renderTraineeHome());
   wireLogout();
 }
 
