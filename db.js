@@ -91,6 +91,16 @@ CREATE TABLE IF NOT EXISTS workout_plans (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- قوالب برامج تمرين جاهزة للكوتش، عشان يبدأ منها بدل ما يكتب كل حاجة من
+-- الأول لكل متدرب جديد. نفس شكل days_json بتاع workout_plans بالظبط.
+CREATE TABLE IF NOT EXISTS workout_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  days_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS nutrition_plans (
   subscription_id INTEGER PRIMARY KEY REFERENCES subscriptions(id),
   daily_calories INTEGER,

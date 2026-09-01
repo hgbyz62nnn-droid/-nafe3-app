@@ -54,6 +54,15 @@ a.link{ color:var(--red-soft); font-size:12.5px; text-decoration:none; }
 .exercise-row:last-child{ border-bottom:none; }
 .exercise-row.read{ display:flex; justify-content:space-between; align-items:center; }
 .exercise-name{ font-weight:700; font-size:13px; }
+.ex-type-badge{ display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--surface-2); color:var(--red-soft); margin-inline-start:4px; }
+.template-toolbar{ display:flex; gap:8px; margin-bottom:12px; }
+.exercise-card{ border:1px solid var(--line); border-radius:10px; padding:8px; margin-bottom:8px; background:var(--surface-2); }
+.exercise-card input, .exercise-card select{ margin-bottom:6px; }
+.exercise-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.exercise-grid input{ margin-bottom:0; }
+.exercise-actions{ display:flex; gap:6px; margin-top:2px; }
+.exercise-actions button{ width:auto; flex:1; padding:7px; font-size:12px; }
+.exercise-actions button:disabled{ opacity:.35; cursor:not-allowed; }
 
 .badge-shelf{ display:flex; gap:10px; overflow-x:auto; padding-bottom:2px; }
 .badge-item{ flex:0 0 auto; width:78px; text-align:center; }

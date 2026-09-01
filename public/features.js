@@ -1327,6 +1327,7 @@ async function renderPlanTab(subscriptionId) {
     ${renderHubTabs(subscriptionId, 'plan')}
     <div class="card">
       <h2>${t('workoutPlanTitle')}</h2>
+      ${isCoach ? `<div id="templateToolbar" class="template-toolbar"></div>` : ''}
       <div id="workoutBody"></div>
     </div>
     <div class="card">
@@ -1337,6 +1338,65 @@ async function renderPlanTab(subscriptionId) {
   wireHubNav(subscriptionId, 'plan');
   renderWorkoutBody(subscriptionId, isCoach);
   renderNutritionBody(subscriptionId, isCoach);
+  if (isCoach) wireTemplateToolbar(subscriptionId);
+}
+
+// -------------------- قوالب برامج التمرين --------------------
+
+async function wireTemplateToolbar(subscriptionId) {
+  const box = document.getElementById('templateToolbar');
+  if (!box) return;
+  let templates = [];
+  try {
+    ({ templates } = await api('/plans/workout-templates'));
+  } catch (e) { return; }
+
+  box.innerHTML = `
+    <select id="templateSelect" style="margin-bottom:0; flex:1;">
+      <option value="">${t('startFromTemplateOption')}</option>
+      ${templates.map((tpl) => `<option value="${tpl.id}">${escapeHtml(tpl.title)}</option>`).join('')}
+    </select>
+    <button class="secondary" id="applyTemplateBtn" style="width:auto; padding:9px 12px;">${t('applyTemplateBtn')}</button>
+    <button class="secondary" id="saveAsTemplateBtn" style="width:auto; padding:9px 12px;">${t('saveAsTemplateBtn')}</button>
+  `;
+
+  on('applyTemplateBtn', 'click', async () => {
+    const id = document.getElementById('templateSelect').value;
+    if (!id) return;
+    if (planEditState.workout.days.length && !confirm(t('confirmApplyTemplate'))) return;
+    try {
+      const { template } = await api('/plans/workout-templates/' + id);
+      planEditState.workout.days = JSON.parse(JSON.stringify(template.days));
+      renderWorkoutBody(subscriptionId, true);
+    } catch (e) { alert(e.message); }
+  });
+
+  on('saveAsTemplateBtn', 'click', async () => {
+    const title = prompt(t('templateNamePrompt'));
+    if (!title) return;
+    try {
+      await api('/plans/workout-templates', { method: 'POST', body: JSON.stringify({ title, days: planEditState.workout.days }) });
+      alert(t('templateSavedAlert'));
+      wireTemplateToolbar(subscriptionId);
+    } catch (e) { alert(e.message); }
+  });
+}
+
+const EXERCISE_TYPE_KEYS = { normal: 'exTypeNormal', superset: 'exTypeSuperset', dropset: 'exTypeDropset', warmup: 'exTypeWarmup', cooldown: 'exTypeCooldown' };
+
+function newExercise() {
+  return { name: '', sets: null, reps: '', weight: '', rest: '', tempo: '', rpe: null, type: 'normal', video_url: '', notes: '' };
+}
+
+function exerciseSummaryLine(ex) {
+  const parts = [];
+  if (ex.sets) parts.push(ex.sets + ' × ' + (ex.reps || '-'));
+  else if (ex.reps) parts.push(escapeHtml(ex.reps));
+  if (ex.weight) parts.push(escapeHtml(ex.weight));
+  if (ex.rest) parts.push(t('restShortLabel', { rest: escapeHtml(ex.rest) }));
+  if (ex.tempo) parts.push('Tempo ' + escapeHtml(ex.tempo));
+  if (ex.rpe) parts.push('RPE ' + ex.rpe);
+  return parts.join(' · ');
 }
 
 function renderWorkoutBody(subscriptionId, isCoach) {
@@ -1350,8 +1410,9 @@ function renderWorkoutBody(subscriptionId, isCoach) {
         ${day.exercises.map((ex) => `
           <div class="exercise-row read">
             <div>
-              <div class="exercise-name">${escapeHtml(ex.name)}</div>
-              <div class="small">${ex.sets ? ex.sets + ' × ' : ''}${escapeHtml(ex.reps)}${ex.notes ? ' · ' + escapeHtml(ex.notes) : ''}</div>
+              <div class="exercise-name">${escapeHtml(ex.name)} ${ex.type && ex.type !== 'normal' ? `<span class="ex-type-badge">${t(EXERCISE_TYPE_KEYS[ex.type])}</span>` : ''}</div>
+              <div class="small">${exerciseSummaryLine(ex)}</div>
+              ${ex.notes ? `<div class="small">${escapeHtml(ex.notes)}</div>` : ''}
             </div>
             ${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener">▶</a>` : ''}
           </div>
@@ -1366,19 +1427,32 @@ function renderWorkoutBody(subscriptionId, isCoach) {
       <div class="plan-day">
         <div style="display:flex; gap:8px; align-items:center;">
           <input data-day="${di}" value="${escapeHtml(day.label)}" placeholder="${t('dayLabelPlaceholder')}" style="margin-bottom:8px;">
+          <button class="secondary" data-duplicate-day="${di}" title="${t('duplicateDayBtn')}" style="width:auto; padding:8px 12px; margin-bottom:8px;">⧉</button>
           <button class="secondary" data-remove-day="${di}" style="width:auto; padding:8px 12px; margin-bottom:8px;">${t('removeBtn')}</button>
         </div>
         ${day.exercises.map((ex, ei) => `
-          <div class="exercise-row">
-            <input data-ex="name:${di}:${ei}" value="${escapeHtml(ex.name)}" placeholder="${t('exerciseNamePlaceholder')}">
+          <div class="exercise-card">
             <div style="display:flex; gap:6px;">
-              <input data-ex="sets:${di}:${ei}" type="number" value="${ex.sets ?? ''}" placeholder="${t('setsPlaceholder')}">
+              <input data-ex="name:${di}:${ei}" value="${escapeHtml(ex.name)}" placeholder="${t('exerciseNamePlaceholder')}" style="flex:1;">
+              <select data-ex="type:${di}:${ei}" style="width:auto; flex-shrink:0;">
+                ${Object.entries(EXERCISE_TYPE_KEYS).map(([val, key]) => `<option value="${val}" ${ex.type === val ? 'selected' : ''}>${t(key)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="exercise-grid">
+              <input data-ex="sets:${di}:${ei}" type="number" min="0" value="${ex.sets ?? ''}" placeholder="${t('setsPlaceholder')}">
               <input data-ex="reps:${di}:${ei}" value="${escapeHtml(ex.reps)}" placeholder="${t('repsPlaceholder')}">
+              <input data-ex="weight:${di}:${ei}" value="${escapeHtml(ex.weight)}" placeholder="${t('weightPlaceholder')}">
+              <input data-ex="rest:${di}:${ei}" value="${escapeHtml(ex.rest)}" placeholder="${t('restPlaceholder')}">
+              <input data-ex="tempo:${di}:${ei}" value="${escapeHtml(ex.tempo)}" placeholder="${t('tempoPlaceholder')}">
+              <input data-ex="rpe:${di}:${ei}" type="number" min="1" max="10" value="${ex.rpe ?? ''}" placeholder="${t('rpePlaceholder')}">
             </div>
             <input data-ex="video_url:${di}:${ei}" value="${escapeHtml(ex.video_url)}" placeholder="${t('videoUrlPlaceholder')}">
-            <div style="display:flex; gap:6px;">
-              <input data-ex="notes:${di}:${ei}" value="${escapeHtml(ex.notes)}" placeholder="${t('exerciseNotesPlaceholder')}">
-              <button class="secondary" data-remove-ex="${di}:${ei}" style="width:auto; padding:8px 12px;">${t('removeBtn')}</button>
+            <input data-ex="notes:${di}:${ei}" value="${escapeHtml(ex.notes)}" placeholder="${t('exerciseNotesPlaceholder')}">
+            <div class="exercise-actions">
+              <button class="secondary" data-move-ex="up:${di}:${ei}" ${ei === 0 ? 'disabled' : ''}>↑</button>
+              <button class="secondary" data-move-ex="down:${di}:${ei}" ${ei === day.exercises.length - 1 ? 'disabled' : ''}>↓</button>
+              <button class="secondary" data-duplicate-ex="${di}:${ei}" title="${t('duplicateExerciseBtn')}">⧉</button>
+              <button class="secondary" data-remove-ex="${di}:${ei}">${t('removeBtn')}</button>
             </div>
           </div>
         `).join('')}
@@ -1393,17 +1467,28 @@ function renderWorkoutBody(subscriptionId, isCoach) {
     el.oninput = () => { wp.days[+el.dataset.day].label = el.value; };
   });
   document.querySelectorAll('[data-ex]').forEach((el) => {
-    el.oninput = () => {
+    const handler = () => {
       const [field, di, ei] = el.dataset.ex.split(':');
-      wp.days[+di].exercises[+ei][field] = field === 'sets' ? (el.value ? Number(el.value) : null) : el.value;
+      const numericFields = ['sets', 'rpe'];
+      wp.days[+di].exercises[+ei][field] = numericFields.includes(field) ? (el.value ? Number(el.value) : null) : el.value;
     };
+    el.oninput = handler;
+    if (el.tagName === 'SELECT') el.onchange = handler;
   });
   document.querySelectorAll('[data-remove-day]').forEach((el) => {
     el.onclick = () => { wp.days.splice(+el.dataset.removeDay, 1); renderWorkoutBody(subscriptionId, isCoach); };
   });
+  document.querySelectorAll('[data-duplicate-day]').forEach((el) => {
+    el.onclick = () => {
+      const di = +el.dataset.duplicateDay;
+      const copy = JSON.parse(JSON.stringify(wp.days[di]));
+      wp.days.splice(di + 1, 0, copy);
+      renderWorkoutBody(subscriptionId, isCoach);
+    };
+  });
   document.querySelectorAll('[data-add-ex]').forEach((el) => {
     el.onclick = () => {
-      wp.days[+el.dataset.addEx].exercises.push({ name: '', sets: null, reps: '', video_url: '', notes: '' });
+      wp.days[+el.dataset.addEx].exercises.push(newExercise());
       renderWorkoutBody(subscriptionId, isCoach);
     };
   });
@@ -1411,6 +1496,25 @@ function renderWorkoutBody(subscriptionId, isCoach) {
     el.onclick = () => {
       const [di, ei] = el.dataset.removeEx.split(':').map(Number);
       wp.days[di].exercises.splice(ei, 1);
+      renderWorkoutBody(subscriptionId, isCoach);
+    };
+  });
+  document.querySelectorAll('[data-duplicate-ex]').forEach((el) => {
+    el.onclick = () => {
+      const [di, ei] = el.dataset.duplicateEx.split(':').map(Number);
+      const copy = JSON.parse(JSON.stringify(wp.days[di].exercises[ei]));
+      wp.days[di].exercises.splice(ei + 1, 0, copy);
+      renderWorkoutBody(subscriptionId, isCoach);
+    };
+  });
+  document.querySelectorAll('[data-move-ex]').forEach((el) => {
+    el.onclick = () => {
+      const [dir, di, ei] = el.dataset.moveEx.split(':');
+      const day = wp.days[+di];
+      const from = +ei;
+      const to = dir === 'up' ? from - 1 : from + 1;
+      if (to < 0 || to >= day.exercises.length) return;
+      [day.exercises[from], day.exercises[to]] = [day.exercises[to], day.exercises[from]];
       renderWorkoutBody(subscriptionId, isCoach);
     };
   });
