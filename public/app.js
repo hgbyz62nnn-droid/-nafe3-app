@@ -61,8 +61,9 @@ function escapeHtml(str) {
 async function boot() {
   const { user } = await api('/auth/me');
   state.user = user;
-  if (!user) return renderAuth();
-  if (user.role === 'coach') return renderCoachDashboard();
+  if (!user) { renderBottomNav(null); return renderAuth(); }
+  if (user.role === 'coach') { renderBottomNav('dashboard'); return renderCoachDashboard(); }
+  renderBottomNav('home');
   return renderTraineeHome();
 }
 
@@ -183,6 +184,7 @@ function wireLogout() {
 }
 
 async function renderTraineeHome() {
+  renderBottomNav('home');
   const { coaches } = await api('/coaches');
   state.coaches = coaches;
   const { subscriptions } = await api('/subscriptions/mine');
@@ -227,12 +229,16 @@ async function renderTraineeHome() {
 }
 
 async function renderCoachProfile(coachId) {
-  const { coach } = await api('/coaches/' + coachId);
+  const [{ coach }, { reviews }] = await Promise.all([
+    api('/coaches/' + coachId),
+    api('/reviews/coach/' + coachId),
+  ]);
   render(`
     <button class="secondary" id="back">${t('back')}</button>
     <div class="card">
-      <h2>${escapeHtml(coach.name)}</h2>
+      <h2>${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
       <p class="small">${escapeHtml(coach.specialty)}</p>
+      <p class="small">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
       <p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.bio) || t('noBioYet')}</p>
       <p class="small" style="margin-top:8px;">${t('certificationLabel', { cert: escapeHtml(coach.certification) || '-' })}</p>
     </div>
@@ -249,6 +255,19 @@ async function renderCoachProfile(coachId) {
         <option value="6m">${t('package6m')} - ${coach.price_6m} ${t('currency')}</option>
       </select>
       <button id="subscribeBtn">${t('subscribeBtn')}</button>
+    </div>
+    <div class="card">
+      <h2>${t('reviewsTitle')}</h2>
+      ${reviews.length === 0 ? `<p class="small">${t('noReviewsYet')}</p>` : reviews.map((r) => `
+        <div class="coach-row" style="display:block;">
+          <div style="display:flex; justify-content:space-between;">
+            <b style="font-size:12.5px;">${escapeHtml(r.trainee_name)}</b>
+            <span class="rating">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+          </div>
+          ${r.comment ? `<p class="small" style="margin-top:4px;">${escapeHtml(r.comment)}</p>` : ''}
+          ${r.coach_response ? `<p class="small" style="margin-top:6px; background:var(--surface-2); padding:8px 10px; border-radius:8px;"><b>${t('coachResponseLabel')}</b> ${escapeHtml(r.coach_response)}</p>` : ''}
+        </div>
+      `).join('')}
     </div>
   `);
   document.getElementById('back').onclick = renderTraineeHome;
@@ -327,6 +346,7 @@ async function renderChat(subscriptionId) {
 }
 
 async function renderCoachDashboard() {
+  renderBottomNav('dashboard');
   const { profile } = await api('/coaches/me/profile');
   const { subscriptions } = await api('/subscriptions/mine');
   const activeSubs = subscriptions.filter(s => s.status === 'active');

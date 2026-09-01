@@ -125,9 +125,9 @@ router.get('/me', (req, res) => {
   if (!token) return res.json({ user: null });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = db.prepare('SELECT id, role, name, banned FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, role, name, email, banned FROM users WHERE id = ?').get(decoded.id);
     if (!user || user.banned) return res.json({ user: null });
-    res.json({ user: { id: user.id, role: user.role, name: user.name } });
+    res.json({ user: { id: user.id, role: user.role, name: user.name, email: user.email } });
   } catch {
     res.json({ user: null });
   }

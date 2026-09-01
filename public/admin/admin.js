@@ -79,7 +79,9 @@ async function renderDashboard(admin) {
     </div>
     <div class="tabs">
       <div class="tab active" id="tabPending">طلبات المدربين</div>
+      <div class="tab" id="tabSupport">تذاكر الدعم</div>
       <div class="tab" id="tabFlagged">محاولات التحايل</div>
+      <div class="tab" id="tabReviews">التقييمات</div>
       <div class="tab" id="tabUsers">المستخدمين</div>
       <div class="tab" id="tabSettings">الإعدادات</div>
     </div>
@@ -88,7 +90,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabFlagged', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabSupport', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -174,6 +176,130 @@ async function renderDashboard(admin) {
     }
     on('fApply', 'click', load);
     load();
+  }
+
+  const CATEGORY_LABELS = { payment: 'الدفع', booking: 'الحجز', account: 'الحساب', trainer: 'المدرب', technical: 'مشكلة تقنية', report: 'بلاغ', other: 'حاجة تانية' };
+  const STATUS_LABELS = { open: 'مفتوحة', in_progress: 'قيد المعالجة', waiting_user: 'محتاجة رد اليوزر', resolved: 'اتحلت', closed: 'مقفولة' };
+  const PRIORITY_LABELS = { low: 'منخفضة', normal: 'عادية', high: 'عالية', urgent: 'عاجلة' };
+
+  async function showSupport() {
+    activateTab('tabSupport');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>تذاكر الدعم الفني</h2>
+        <div class="filters">
+          <select id="sStatus"><option value="">كل الحالات</option>${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+          <select id="sPriority"><option value="">كل الأولويات</option>${Object.entries(PRIORITY_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+          <select id="sCategory"><option value="">كل الأنواع</option>${Object.entries(CATEGORY_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+          <button id="sApply" style="width:auto; padding:8px 16px;">فلترة</button>
+        </div>
+        <div id="ticketsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const params = new URLSearchParams();
+      const status = document.getElementById('sStatus').value;
+      const priority = document.getElementById('sPriority').value;
+      const category = document.getElementById('sCategory').value;
+      if (status) params.set('status', status);
+      if (priority) params.set('priority', priority);
+      if (category) params.set('category', category);
+      const { tickets } = await api('/support/admin/all?' + params.toString());
+      document.getElementById('ticketsList').innerHTML = tickets.length === 0
+        ? '<p class="small">مفيش تذاكر.</p>'
+        : tickets.map((tk) => `
+          <div class="coach-row" data-open-ticket="${tk.id}">
+            <div>
+              <b>${escapeHtml(tk.subject)}</b> ${tk.unread ? '<span class="badge blocked">جديد</span>' : ''}
+              <div class="small">${escapeHtml(tk.user_name)} (${tk.user_role === 'coach' ? 'مدرب' : 'متدرب'}) · ${CATEGORY_LABELS[tk.category]} · ${escapeHtml(tk.updated_at)}</div>
+            </div>
+            <div>
+              <span class="badge ${tk.priority === 'urgent' || tk.priority === 'high' ? 'blocked' : 'review'}">${PRIORITY_LABELS[tk.priority]}</span>
+              <div class="small">${STATUS_LABELS[tk.status]}</div>
+            </div>
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-open-ticket]').forEach((el) => {
+        el.onclick = () => showTicketDetail(el.dataset.openTicket);
+      });
+    }
+    on('sApply', 'click', load);
+    load();
+  }
+
+  async function showTicketDetail(ticketId) {
+    const { ticket, messages, context } = await api('/support/admin/' + ticketId);
+    document.getElementById('adminContent').innerHTML = `
+      <button class="secondary" id="ticketBack" style="margin-bottom:12px;">← رجوع لكل التذاكر</button>
+      <div class="card">
+        <h2>${escapeHtml(ticket.subject)}</h2>
+        <p class="small">${escapeHtml(ticket.user_name)} (${escapeHtml(ticket.user_email)}) · ${ticket.user_role === 'coach' ? 'مدرب' : 'متدرب'}${ticket.user_banned ? ' · <span style="color:var(--danger)">محظور</span>' : ''}</p>
+        ${context && context.activeSubscription ? `<p class="small">${ticket.user_role === 'trainee' ? `مشترك حاليًا مع: ${escapeHtml(context.activeSubscription.coach_name)}` : `عدد المتدربين النشطين: ${context.activeSubscription.c}`}</p>` : ''}
+        <div class="filters" style="margin-top:10px;">
+          <select id="chStatus">${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === ticket.status ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <select id="chPriority">${Object.entries(PRIORITY_LABELS).map(([k, v]) => `<option value="${k}" ${k === ticket.priority ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <select id="chCategory">${Object.entries(CATEGORY_LABELS).map(([k, v]) => `<option value="${k}" ${k === ticket.category ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <button id="applyChanges" style="width:auto; padding:8px 16px;">حفظ</button>
+        </div>
+      </div>
+      <div class="card" style="min-height:180px;">
+        ${messages.map((m) => `
+          <div class="msg ${m.sender_type === 'admin' ? 'me' : 'them'}">${escapeHtml(m.content)}</div>
+        `).join('')}
+      </div>
+      <div class="card" style="display:flex; gap:8px;">
+        <input id="adminReply" placeholder="اكتب ردك..." style="margin:0;">
+        <button id="sendReply" style="width:90px;">إرسال</button>
+      </div>
+    `;
+    document.getElementById('ticketBack').onclick = showSupport;
+    on('sendReply', 'click', async () => {
+      const input = document.getElementById('adminReply');
+      const message = input.value.trim();
+      if (!message) return;
+      input.value = '';
+      await api('/support/admin/' + ticketId + '/reply', { method: 'POST', body: JSON.stringify({ message }) });
+      showTicketDetail(ticketId);
+    });
+    on('applyChanges', 'click', async () => {
+      await api('/support/admin/' + ticketId + '/status', { method: 'POST', body: JSON.stringify({
+        status: document.getElementById('chStatus').value,
+        priority: document.getElementById('chPriority').value,
+        category: document.getElementById('chCategory').value,
+      })});
+      showTicketDetail(ticketId);
+    });
+  }
+
+  async function showReviews() {
+    activateTab('tabReviews');
+    const { reviews } = await api('/reviews/admin/all');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>مراجعة التقييمات</h2>
+        ${reviews.length === 0 ? '<p class="small">مفيش تقييمات لسه.</p>' : reviews.map((r) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>${escapeHtml(r.trainee_name)} ← ${escapeHtml(r.coach_name)}</b>
+              <span style="color:#FFC94D;">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+            </div>
+            ${r.comment ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.comment)}</p>` : ''}
+            ${r.hidden ? '<span class="badge blocked">مخفي</span>' : ''}
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              ${r.hidden
+                ? `<button data-restore="${r.id}">↩️ إظهار</button>`
+                : `<button class="danger" data-hide="${r.id}">🚫 إخفاء</button>`}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.querySelectorAll('[data-hide]').forEach((el) => {
+      el.onclick = async () => { await api('/reviews/admin/' + el.dataset.hide + '/hide', { method: 'POST' }); showReviews(); };
+    });
+    document.querySelectorAll('[data-restore]').forEach((el) => {
+      el.onclick = async () => { await api('/reviews/admin/' + el.dataset.restore + '/restore', { method: 'POST' }); showReviews(); };
+    });
   }
 
   async function showUsers() {
@@ -279,7 +405,9 @@ async function renderDashboard(admin) {
   }
 
   document.getElementById('tabPending').onclick = showPending;
+  document.getElementById('tabSupport').onclick = showSupport;
   document.getElementById('tabFlagged').onclick = showFlagged;
+  document.getElementById('tabReviews').onclick = showReviews;
   document.getElementById('tabUsers').onclick = showUsers;
   document.getElementById('tabSettings').onclick = showSettings;
   showPending();

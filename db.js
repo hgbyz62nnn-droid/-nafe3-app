@@ -144,6 +144,42 @@ CREATE TABLE IF NOT EXISTS booked_sessions (
   reminder_1h_sent INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- تذاكر الدعم الفني: بتتفتح من المتدرب أو الكوتش، وبيرد عليها الأدمن من
+-- نفس لوحة التحكم الحالية (مش نظام تاني منفصل).
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  category TEXT NOT NULL CHECK(category IN ('payment','booking','account','trainer','technical','report','other')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','in_progress','waiting_user','resolved','closed')),
+  subject TEXT NOT NULL,
+  user_last_seen_at TEXT DEFAULT (datetime('now')),
+  admin_last_seen_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS support_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id INTEGER NOT NULL REFERENCES support_tickets(id),
+  sender_type TEXT NOT NULL CHECK(sender_type IN ('user','admin')),
+  content TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- تقييم واحد لكل اشتراك، بس بعد ما يكون فيه جلسة مكتملة على الأقل.
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL UNIQUE REFERENCES subscriptions(id),
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  trainee_id INTEGER NOT NULL REFERENCES users(id),
+  rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+  comment TEXT,
+  coach_response TEXT,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
 
 module.exports = db;

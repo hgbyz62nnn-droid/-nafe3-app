@@ -5,25 +5,40 @@ const { requireAdmin } = require('../middleware/adminAuth');
 
 const router = express.Router();
 
+const COACH_LIST_SELECT = `
+  SELECT u.id, u.name, u.verified, c.specialty, c.bio, c.certification, c.status, c.price_1m, c.price_3m, c.price_6m,
+    (SELECT COUNT(*) FROM subscriptions WHERE coach_id = u.id AND status IN ('active','expired')) AS client_count,
+    (SELECT ROUND(AVG(rating), 1) FROM reviews WHERE coach_id = u.id AND hidden = 0) AS avg_rating,
+    (SELECT COUNT(*) FROM reviews WHERE coach_id = u.id AND hidden = 0) AS review_count
+  FROM coach_profiles c JOIN users u ON u.id = c.user_id
+`;
+
 router.get('/', (req, res) => {
+  const clauses = ["c.status = 'approved'"];
+  const params = [];
+  if (req.query.q) {
+    clauses.push('(u.name LIKE ? OR c.specialty LIKE ?)');
+    const like = '%' + req.query.q + '%';
+    params.push(like, like);
+  }
+  if (req.query.minPrice) { clauses.push('c.price_1m >= ?'); params.push(Number(req.query.minPrice) || 0); }
+  if (req.query.maxPrice) { clauses.push('c.price_1m <= ?'); params.push(Number(req.query.maxPrice) || 999999); }
+
+  const sortMap = {
+    price_asc: 'c.price_1m ASC',
+    price_desc: 'c.price_1m DESC',
+    rating: 'avg_rating IS NULL, avg_rating DESC',
+  };
+  const orderBy = sortMap[req.query.sort] || 'u.id DESC';
+
   const coaches = db
-    .prepare(
-      `SELECT u.id, u.name, c.specialty, c.bio, c.certification, c.price_1m, c.price_3m, c.price_6m
-       FROM coach_profiles c JOIN users u ON u.id = c.user_id
-       WHERE c.status = 'approved'`
-    )
-    .all();
+    .prepare(`${COACH_LIST_SELECT} WHERE ${clauses.join(' AND ')} ORDER BY ${orderBy}`)
+    .all(...params);
   res.json({ coaches });
 });
 
 router.get('/:id', (req, res) => {
-  const coach = db
-    .prepare(
-      `SELECT u.id, u.name, c.specialty, c.bio, c.certification, c.status, c.price_1m, c.price_3m, c.price_6m
-       FROM coach_profiles c JOIN users u ON u.id = c.user_id
-       WHERE u.id = ?`
-    )
-    .get(req.params.id);
+  const coach = db.prepare(`${COACH_LIST_SELECT} WHERE u.id = ?`).get(req.params.id);
   if (!coach) return res.status(404).json({ error: 'المدرب غير موجود' });
   res.json({ coach });
 });

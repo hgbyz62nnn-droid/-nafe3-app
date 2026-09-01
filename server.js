@@ -20,6 +20,8 @@ const habitRoutes = require('./routes/habits');
 const sessionRoutes = require('./routes/sessions');
 const coachStatsRoutes = require('./routes/coachStats');
 const badgeRoutes = require('./routes/badges');
+const supportRoutes = require('./routes/support');
+const reviewRoutes = require('./routes/reviews');
 
 const app = express();
 
@@ -96,6 +98,8 @@ app.use('/api/habits', habitRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/coach-stats', coachStatsRoutes);
 app.use('/api/badges', badgeRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

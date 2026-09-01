@@ -1,6 +1,429 @@
 // شاشات الميزات الإضافية (خطط، تقدم، عادات، جلسات، إنجازات، لوحة أداء
-// الكوتش). بتستخدم نفس المساعدات العامة من app.js (render, on, api, state,
-// escapeHtml, t, getLang) وبتتحمّل قبله في index.html.
+// الكوتش، الشات بوت للدعم، السوق، التقييمات، متدربيني، الأرباح). بتستخدم
+// نفس المساعدات العامة من app.js (render, on, api, state, escapeHtml, t,
+// getLang) وبتتحمّل قبله في index.html.
+
+function renderEmptyState(icon, title, hint) {
+  return `<div class="empty-state"><div class="empty-icon">${icon}</div><div class="empty-title">${escapeHtml(title)}</div><div class="empty-hint">${escapeHtml(hint)}</div></div>`;
+}
+
+// -------------------- الناف بار السفلي --------------------
+
+function renderBottomNav(active) {
+  const navEl = document.getElementById('bottomNav');
+  if (!navEl) return;
+  if (!state.user) { navEl.classList.add('hidden'); navEl.innerHTML = ''; return; }
+
+  const items = state.user.role === 'coach' ? [
+    ['dashboard', 'navDashboardTab', renderCoachDashboard],
+    ['clients', 'navClientsTab', renderMyClients],
+    ['csessions', 'navCoachSessionsTab', renderMyBookings],
+    ['messages', 'navMessagesTab', renderMyMessages],
+    ['more', 'navMoreTab', renderMore],
+  ] : [
+    ['home', 'navHomeTab', renderTraineeHome],
+    ['discover', 'navDiscoverTab', renderDiscover],
+    ['bookings', 'navBookingsTab', renderMyBookings],
+    ['messages', 'navMessagesTab', renderMyMessages],
+    ['profile', 'navProfileTab', renderProfile],
+  ];
+
+  navEl.classList.remove('hidden');
+  navEl.innerHTML = items.map(([key, labelKey]) => {
+    const label = t(labelKey);
+    const spaceIdx = label.indexOf(' ');
+    const icon = spaceIdx === -1 ? label : label.slice(0, spaceIdx);
+    const text = spaceIdx === -1 ? '' : label.slice(spaceIdx + 1);
+    return `<button class="nav-item ${active === key ? 'active' : ''}" data-nav="${key}"><span class="nav-icon">${icon}</span><span>${escapeHtml(text)}</span></button>`;
+  }).join('');
+  items.forEach(([key, , fn]) => {
+    const btn = navEl.querySelector(`[data-nav="${key}"]`);
+    if (btn) btn.onclick = () => { clearInterval(state.chatTimer); fn(); };
+  });
+}
+
+// -------------------- حجوزاتي / جلساتي (تجميع كل الاشتراكات) --------------------
+
+async function renderMyBookings() {
+  renderBottomNav(state.user.role === 'coach' ? 'csessions' : 'bookings');
+  const { subscriptions } = await api('/subscriptions/mine');
+  const activeSubs = subscriptions.filter((s) => s.status === 'active');
+  const perSub = await Promise.all(activeSubs.map((s) =>
+    api('/sessions/' + s.id).then((r) => r.sessions.map((sess) => ({ ...sess, partnerName: s.other_party_name, subscriptionId: s.id })))
+  ));
+  const all = perSub.flat().sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+  const now = Date.now();
+  const isFutureScheduled = (s) => s.status === 'scheduled' && new Date(s.scheduled_at).getTime() > now;
+  const upcoming = all.filter(isFutureScheduled);
+  const past = all.filter((s) => !isFutureScheduled(s));
+  const statusLabel = { scheduled: t('statusScheduled'), completed: t('statusCompleted'), cancelled: t('statusCancelled') };
+
+  function fmt(dt) {
+    return new Date(dt).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  render(`
+    <div class="topbar"><h2 style="margin:0;">${t('myBookingsTitle')}</h2></div>
+    <div class="card">
+      ${upcoming.length === 0 && past.length === 0 ? renderEmptyState('📅', t('emptyBookingsTitle'), t('emptyBookingsHint')) : `
+        ${upcoming.length ? `<h2>${t('upcomingSessionsTitle')}</h2>${upcoming.map((s) => `
+          <div class="coach-row" data-open-sub="${s.subscriptionId}">
+            <div>${escapeHtml(s.partnerName)}<div class="small">${fmt(s.scheduled_at)}</div></div>
+            <span class="pill">${statusLabel[s.status]}</span>
+          </div>
+        `).join('')}` : ''}
+        ${past.length ? `<h2 style="margin-top:14px;">${t('pastSessionsTitle')}</h2>${past.map((s) => `
+          <div class="coach-row" data-open-sub="${s.subscriptionId}">
+            <div>${escapeHtml(s.partnerName)}<div class="small">${fmt(s.scheduled_at)}</div></div>
+            <span class="small">${statusLabel[s.status]}</span>
+          </div>
+        `).join('')}` : ''}
+      `}
+    </div>
+  `);
+  document.querySelectorAll('[data-open-sub]').forEach((el) => {
+    el.onclick = () => renderSessionsTab(el.dataset.openSub);
+  });
+}
+
+// -------------------- رسائلي (تجميع كل محادثات الاشتراكات) --------------------
+
+async function renderMyMessages() {
+  renderBottomNav('messages');
+  const { subscriptions } = await api('/subscriptions/mine');
+  const activeSubs = subscriptions.filter((s) => s.status === 'active');
+  render(`
+    <div class="topbar"><h2 style="margin:0;">${t('myMessagesTitle')}</h2></div>
+    <div class="card">
+      ${activeSubs.length === 0 ? renderEmptyState('💬', t('emptyMessagesTitle'), t('emptyMessagesHint')) : activeSubs.map((s) => `
+        <div class="coach-row" data-open-chat="${s.id}">
+          <div>${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
+          <div class="small">${t('chatLink')}</div>
+        </div>
+      `).join('')}
+    </div>
+  `);
+  document.querySelectorAll('[data-open-chat]').forEach((el) => {
+    el.onclick = () => renderChat(el.dataset.openChat);
+  });
+}
+
+// -------------------- حسابي (متدرب) / المزيد (كوتش) --------------------
+
+async function renderProfile() {
+  renderBottomNav('profile');
+  render(`
+    <div class="topbar"><h2 style="margin:0;">${t('profileTitle')}</h2></div>
+    <div class="card">
+      <h2>${t('accountSection')}</h2>
+      <div class="coach-row"><div>${t('nameLabel')}</div><div>${escapeHtml(state.user.name)}</div></div>
+      <div class="coach-row"><div>${t('emailLabel')}</div><div class="small">${escapeHtml(state.user.email || '')}</div></div>
+      <div class="coach-row"><div>${t('roleLabel')}</div><div>${t('roleTraineeLabel')}</div></div>
+    </div>
+    <div class="card">
+      <button class="secondary" id="goSupport">${t('supportMenuItem')}</button>
+    </div>
+    ${logoutBtn()}
+  `);
+  on('goSupport', 'click', renderSupportHome);
+  wireLogout();
+}
+
+async function renderMore() {
+  renderBottomNav('more');
+  render(`
+    <div class="topbar"><h2 style="margin:0;">${t('moreTitle')}</h2></div>
+    <div class="card">
+      <h2>${t('accountSection')}</h2>
+      <div class="coach-row"><div>${t('nameLabel')}</div><div>${escapeHtml(state.user.name)}</div></div>
+      <div class="coach-row"><div>${t('emailLabel')}</div><div class="small">${escapeHtml(state.user.email || '')}</div></div>
+      <div class="coach-row"><div>${t('roleLabel')}</div><div>${t('roleCoachLabel')}</div></div>
+    </div>
+    <div class="card">
+      <button class="secondary" id="goEarnings" style="margin-bottom:8px;">${t('earningsMenuItem')}</button>
+      <button class="secondary" id="goSupport">${t('supportMenuItem')}</button>
+    </div>
+    ${logoutBtn()}
+  `);
+  on('goEarnings', 'click', renderEarnings);
+  on('goSupport', 'click', renderSupportHome);
+  wireLogout();
+}
+
+// -------------------- الدعم الفني --------------------
+
+const TICKET_CATEGORIES = ['payment', 'booking', 'account', 'trainer', 'technical', 'report', 'other'];
+const TICKET_CATEGORY_KEYS = { payment: 'catPayment', booking: 'catBooking', account: 'catAccount', trainer: 'catTrainer', technical: 'catTechnical', report: 'catReport', other: 'catOther' };
+const TICKET_STATUS_KEYS = { open: 'statusOpen', in_progress: 'statusInProgress', waiting_user: 'statusWaitingUser', resolved: 'statusResolved', closed: 'statusClosed' };
+const TICKET_PRIORITY_KEYS = { low: 'priorityLow', normal: 'priorityNormal', high: 'priorityHigh', urgent: 'priorityUrgent' };
+
+async function renderSupportHome() {
+  const { tickets } = await api('/support/mine');
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('helpSupportTitle')}</h2>
+      <button id="newTicket">${t('newTicketBtn')}</button>
+    </div>
+    <div class="card">
+      ${tickets.length === 0 ? `<p class="small">${t('noTicketsYet')}</p>` : tickets.map((tk) => `
+        <div class="coach-row" data-open-ticket="${tk.id}">
+          <div>${escapeHtml(tk.subject)}
+            <div class="small">${t(TICKET_CATEGORY_KEYS[tk.category])} · ${new Date(tk.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${tk.unread ? '<span class="pill">●</span>' : ''}
+            <span class="small">${t(TICKET_STATUS_KEYS[tk.status])}</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `);
+  document.getElementById('back').onclick = boot;
+  on('newTicket', 'click', renderNewTicket);
+  document.querySelectorAll('[data-open-ticket]').forEach((el) => {
+    el.onclick = () => renderTicketDetail(el.dataset.openTicket);
+  });
+}
+
+function renderNewTicket() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('newTicketBtn')}</h2>
+      <div class="error hidden" id="ticketErr"></div>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('ticketCategoryLabel')}</label>
+      <select id="category">
+        ${TICKET_CATEGORIES.map((c) => `<option value="${c}">${t(TICKET_CATEGORY_KEYS[c])}</option>`).join('')}
+      </select>
+      <input id="subject" placeholder="${t('ticketSubjectPlaceholder')}">
+      <textarea id="message" rows="4" placeholder="${t('ticketMessagePlaceholder')}"></textarea>
+      <button id="submitTicket">${t('submitTicketBtn')}</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = renderSupportHome;
+  on('submitTicket', 'click', async () => {
+    try {
+      const { ticketId } = await api('/support', { method: 'POST', body: JSON.stringify({
+        category: document.getElementById('category').value,
+        subject: document.getElementById('subject').value,
+        message: document.getElementById('message').value,
+      })});
+      alert(t('ticketSentAlert'));
+      renderTicketDetail(ticketId);
+    } catch (e) {
+      const el = document.getElementById('ticketErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  });
+}
+
+async function renderTicketDetail(ticketId) {
+  const { ticket, messages } = await api('/support/' + ticketId);
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${escapeHtml(ticket.subject)}</h2>
+      <p class="small">${t(TICKET_CATEGORY_KEYS[ticket.category])} · <span class="pill">${t(TICKET_STATUS_KEYS[ticket.status])}</span></p>
+    </div>
+    <div class="card" style="min-height:200px;">
+      ${messages.map((m) => `
+        <div class="msg ${m.sender_type === 'user' ? 'me' : 'them'}">${escapeHtml(m.content)}</div>
+      `).join('')}
+    </div>
+    ${ticket.status !== 'closed' ? `
+    <div class="card" style="display:flex; gap:8px;">
+      <input id="replyInput" placeholder="${t('replyPlaceholder')}" style="margin:0;">
+      <button id="replyBtn" style="width:90px;">${t('replyBtn')}</button>
+    </div>` : ''}
+  `);
+  document.getElementById('back').onclick = renderSupportHome;
+  on('replyBtn', 'click', async () => {
+    const input = document.getElementById('replyInput');
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = '';
+    try {
+      await api('/support/' + ticketId + '/reply', { method: 'POST', body: JSON.stringify({ message }) });
+      renderTicketDetail(ticketId);
+    } catch (e) { alert(e.message); }
+  });
+}
+
+// -------------------- اكتشف / سوق المدربين --------------------
+
+function avatarCircle(name) {
+  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  return `<div style="width:44px; height:44px; border-radius:50%; background:var(--surface-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--red-soft); flex-shrink:0;">${escapeHtml(initial)}</div>`;
+}
+
+function renderCoachCard(c) {
+  return `
+    <div class="card" data-open-coach="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
+      ${avatarCircle(c.name)}
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
+        <div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
+        <div class="small">
+          ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span> ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
+          ${c.client_count ? ' · ' + t('clientsCountLabel', { count: c.client_count }) : ''}
+        </div>
+      </div>
+      <div class="small" style="white-space:nowrap;">${t('pricePerMonth', { price: c.price_1m })}</div>
+    </div>
+  `;
+}
+
+let discoverState = { q: '', minPrice: '', maxPrice: '', sort: 'newest' };
+let discoverDebounce = null;
+
+async function renderDiscover() {
+  renderBottomNav('discover');
+  render(`
+    <div class="card">
+      <input id="discoverSearch" placeholder="${t('searchTrainersPlaceholder')}" value="${escapeHtml(discoverState.q)}" style="margin-bottom:12px;">
+      <div style="display:flex; gap:8px;">
+        <input id="minPrice" type="number" placeholder="${t('minPriceLabel')}" value="${escapeHtml(discoverState.minPrice)}">
+        <input id="maxPrice" type="number" placeholder="${t('maxPriceLabel')}" value="${escapeHtml(discoverState.maxPrice)}">
+      </div>
+      <select id="sortSelect">
+        <option value="newest" ${discoverState.sort === 'newest' ? 'selected' : ''}>${t('sortNewest')}</option>
+        <option value="rating" ${discoverState.sort === 'rating' ? 'selected' : ''}>${t('sortRating')}</option>
+        <option value="price_asc" ${discoverState.sort === 'price_asc' ? 'selected' : ''}>${t('sortPriceAsc')}</option>
+        <option value="price_desc" ${discoverState.sort === 'price_desc' ? 'selected' : ''}>${t('sortPriceDesc')}</option>
+      </select>
+      <button id="applyFilters">${t('applyFiltersBtn')}</button>
+    </div>
+    <div id="discoverResults"><div class="skeleton block"></div><div class="skeleton block"></div></div>
+  `);
+
+  async function loadResults() {
+    const params = new URLSearchParams();
+    if (discoverState.q) params.set('q', discoverState.q);
+    if (discoverState.minPrice) params.set('minPrice', discoverState.minPrice);
+    if (discoverState.maxPrice) params.set('maxPrice', discoverState.maxPrice);
+    if (discoverState.sort !== 'newest') params.set('sort', discoverState.sort);
+    const { coaches } = await api('/coaches?' + params.toString());
+    const box = document.getElementById('discoverResults');
+    if (!box) return;
+    box.innerHTML = coaches.length === 0
+      ? renderEmptyState('🔍', t('emptyDiscoverTitle'), t('emptyDiscoverHint'))
+      : coaches.map(renderCoachCard).join('');
+    box.querySelectorAll('[data-open-coach]').forEach((el) => {
+      el.onclick = () => renderCoachProfile(el.dataset.openCoach);
+    });
+  }
+
+  document.getElementById('discoverSearch').oninput = (e) => {
+    discoverState.q = e.target.value;
+    clearTimeout(discoverDebounce);
+    discoverDebounce = setTimeout(loadResults, 350);
+  };
+  document.getElementById('sortSelect').onchange = (e) => { discoverState.sort = e.target.value; loadResults(); };
+  on('applyFilters', 'click', () => {
+    discoverState.minPrice = document.getElementById('minPrice').value;
+    discoverState.maxPrice = document.getElementById('maxPrice').value;
+    loadResults();
+  });
+
+  loadResults();
+}
+
+// -------------------- متدربيني (للكوتش) --------------------
+
+let clientsTab = 'active';
+
+async function renderMyClients() {
+  renderBottomNav('clients');
+  const { subscriptions } = await api('/subscriptions/mine');
+  const groups = {
+    active: subscriptions.filter((s) => s.status === 'active'),
+    pending: subscriptions.filter((s) => s.status === 'pending_payment'),
+    past: subscriptions.filter((s) => s.status === 'expired' || s.status === 'cancelled'),
+  };
+
+  const nextSessionBySub = {};
+  if (groups.active.length) {
+    const now = Date.now();
+    await Promise.all(groups.active.map(async (s) => {
+      const { sessions } = await api('/sessions/' + s.id);
+      const next = sessions
+        .filter((sess) => sess.status === 'scheduled' && new Date(sess.scheduled_at).getTime() > now)
+        .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))[0];
+      if (next) nextSessionBySub[s.id] = next.scheduled_at;
+    }));
+  }
+
+  function renderList() {
+    const list = groups[clientsTab];
+    const emptyMsg = { active: t('noActiveClients'), pending: t('noPendingClients'), past: t('noPastClients') }[clientsTab];
+    document.getElementById('clientsList').innerHTML = list.length === 0
+      ? renderEmptyState('👥', emptyMsg, '')
+      : list.map((s) => `
+        <div class="card" data-open-client="${s.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
+          ${avatarCircle(s.other_party_name)}
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:800; font-size:13.5px;">${escapeHtml(s.other_party_name)}</div>
+            <div class="small">${t('packageLabel', { pkg: s.package })}</div>
+            ${clientsTab === 'active' ? `<div class="small">${nextSessionBySub[s.id] ? t('nextSessionLabel', { date: new Date(nextSessionBySub[s.id]).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US') }) : t('noUpcomingSession')}</div>` : ''}
+          </div>
+        </div>
+      `).join('');
+    document.querySelectorAll('[data-open-client]').forEach((el) => {
+      el.onclick = () => renderProgressTab(el.dataset.openClient);
+    });
+  }
+
+  render(`
+    <div class="topbar"><h2 style="margin:0;">${t('myClientsTitle')}</h2></div>
+    <div class="tabs">
+      <div class="tab ${clientsTab === 'active' ? 'active' : ''}" data-ctab="active">${t('clientsTabActive')}</div>
+      <div class="tab ${clientsTab === 'pending' ? 'active' : ''}" data-ctab="pending">${t('clientsTabPending')}</div>
+      <div class="tab ${clientsTab === 'past' ? 'active' : ''}" data-ctab="past">${t('clientsTabPast')}</div>
+    </div>
+    <div id="clientsList"></div>
+  `);
+  document.querySelectorAll('[data-ctab]').forEach((el) => {
+    el.onclick = () => { clientsTab = el.dataset.ctab; renderMyClients(); };
+  });
+  renderList();
+}
+
+// -------------------- الأرباح (للكوتش) --------------------
+
+async function renderEarnings() {
+  const { subscriptions } = await api('/subscriptions/mine');
+  const paid = subscriptions.filter((s) => s.coach_payout != null).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const totalEarnings = paid.reduce((sum, s) => sum + (s.coach_payout || 0), 0);
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthEarnings = paid.filter((s) => (s.created_at || '').slice(0, 7) === thisMonth).reduce((sum, s) => sum + (s.coach_payout || 0), 0);
+  const statusLabel = { active: t('statusActive'), expired: t('statusCompleted'), cancelled: t('statusCancelled'), pending_payment: t('statusScheduled') };
+
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('earningsTitle')}</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-value">${totalEarnings} ${t('currency')}</div><div class="small">${t('totalEarningsLabel')}</div></div>
+        <div class="stat-card"><div class="stat-value">${monthEarnings} ${t('currency')}</div><div class="small">${t('thisMonthLabel')}</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>${t('transactionsTitle')}</h2>
+      ${paid.length === 0 ? `<p class="small">${t('noTransactionsYet')}</p>` : paid.map((s) => `
+        <div class="coach-row" style="display:block;">
+          <div style="display:flex; justify-content:space-between;">
+            <b style="font-size:12.5px;">${escapeHtml(s.other_party_name)}</b>
+            <span class="small">${new Date(s.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</span>
+          </div>
+          <div class="small">${t('packageLabel', { pkg: s.package })} · ${statusLabel[s.status] || s.status}</div>
+          <div class="small">${t('platformFeeLabel')}: ${s.commission_amount} ${t('currency')} (${Math.round(s.commission_rate * 100)}%) · <b>${t('netAmountLabel')}: ${s.coach_payout} ${t('currency')}</b></div>
+        </div>
+      `).join('')}
+    </div>
+  `);
+  document.getElementById('back').onclick = renderMore;
+}
 
 const HUB_TABS = [
   ['chat', 'navChat'],
@@ -22,6 +445,10 @@ function renderHubTabs(subscriptionId, active) {
 // اسم الدوال بتتحل وقت الضغط مش وقت التحميل، عشان features.js وapp.js
 // يقدروا يتحملوا بأي ترتيب من غير ما حد يستنى التاني.
 function wireHubNav(subscriptionId, active) {
+  const isCoach = state.user.role === 'coach';
+  if (active === 'chat') renderBottomNav('messages');
+  else if (active === 'sessions') renderBottomNav(isCoach ? 'csessions' : 'bookings');
+
   document.getElementById('back').onclick = () => { clearInterval(state.chatTimer); boot(); };
   document.querySelectorAll('[data-subtab]').forEach((el) => {
     el.onclick = () => {
@@ -376,6 +803,57 @@ async function renderHabitsTab(subscriptionId) {
 
 // -------------------- جدولة الجلسات --------------------
 
+async function renderReviewCard(subscriptionId, isCoach, hasCompletedSession) {
+  if (!hasCompletedSession) return '';
+  const { review } = await api('/reviews/' + subscriptionId + '/mine');
+
+  if (isCoach) {
+    if (!review) return '';
+    return `
+      <div class="card">
+        <h2>${t('yourReviewLabel')}</h2>
+        <span class="rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
+        ${review.comment ? `<p class="small" style="margin-top:6px;">${escapeHtml(review.comment)}</p>` : ''}
+        <textarea id="coachResponse" rows="2" placeholder="${t('coachResponsePlaceholder')}" style="margin-top:10px;">${escapeHtml(review.coach_response)}</textarea>
+        <button id="submitResponse">${t('submitResponseBtn')}</button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card">
+      <h2>${review ? t('yourReviewLabel') : t('leaveReviewTitle')}</h2>
+      ${!review ? `<p class="small" style="margin-bottom:8px;">${t('leaveReviewHint')}</p>` : ''}
+      <select id="reviewRating">
+        ${[5, 4, 3, 2, 1].map((n) => `<option value="${n}" ${review && review.rating === n ? 'selected' : ''}>${'★'.repeat(n)}${'☆'.repeat(5 - n)}</option>`).join('')}
+      </select>
+      <textarea id="reviewComment" rows="2" placeholder="${t('reviewCommentPlaceholder')}">${review ? escapeHtml(review.comment) : ''}</textarea>
+      <button id="submitReview">${review ? t('editReviewBtn') : t('submitReviewBtn')}</button>
+    </div>
+  `;
+}
+
+function wireReviewCard(subscriptionId, isCoach) {
+  on('submitReview', 'click', async () => {
+    try {
+      await api('/reviews/' + subscriptionId, { method: 'POST', body: JSON.stringify({
+        rating: Number(document.getElementById('reviewRating').value),
+        comment: document.getElementById('reviewComment').value,
+      })});
+      alert(t('reviewSavedAlert'));
+      renderSessionsTab(subscriptionId);
+    } catch (e) { alert(e.message); }
+  });
+  on('submitResponse', 'click', async () => {
+    try {
+      await api('/reviews/' + subscriptionId + '/response', { method: 'POST', body: JSON.stringify({
+        response: document.getElementById('coachResponse').value,
+      })});
+      renderSessionsTab(subscriptionId);
+    } catch (e) { alert(e.message); }
+  });
+}
+
 async function renderSessionsTab(subscriptionId) {
   const isCoach = state.user.role === 'coach';
   const { sessions } = await api('/sessions/' + subscriptionId);
@@ -388,6 +866,9 @@ async function renderSessionsTab(subscriptionId) {
   function fmt(dt) {
     return new Date(dt).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
   }
+
+  const hasCompletedSession = sessions.some((s) => s.status === 'completed');
+  const reviewCardHtml = await renderReviewCard(subscriptionId, isCoach, hasCompletedSession);
 
   render(`
     ${renderHubTabs(subscriptionId, 'sessions')}
@@ -418,8 +899,10 @@ async function renderSessionsTab(subscriptionId) {
         <div class="coach-row"><div>${fmt(s.scheduled_at)}</div><div class="small pill">${statusLabel[s.status]}</div></div>
       `).join('')}
     </div>` : ''}
+    ${reviewCardHtml}
   `);
   wireHubNav(subscriptionId, 'sessions');
+  wireReviewCard(subscriptionId, isCoach);
 
   on('bookBtn', 'click', async () => {
     const val = document.getElementById('sessionDate').value;
