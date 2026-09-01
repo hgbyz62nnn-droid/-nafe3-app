@@ -238,7 +238,7 @@ const translations = {
     noSlotsAvailable: 'مفيش مواعيد متاحة في اليوم ده',
     loadingSlots: 'بيحمّل المواعيد المتاحة...',
 
-    availabilityMenuItem: '🗓️ مواعيدي',
+    availabilityMenuItem: 'مواعيدي',
     availabilityTitle: 'إدارة المواعيد',
     weeklyScheduleTitle: 'الجدول الأسبوعي',
     addWindowBtn: '+ إضافة فترة',
@@ -295,7 +295,7 @@ const translations = {
     compatibilityLabel: 'نسبة التوافق',
     changeAnswersBtn: 'غيّر إجاباتك',
 
-    trainerNetworkMenuItem: '🌐 شبكة المدربين',
+    trainerNetworkMenuItem: 'شبكة المدربين',
     trainerNetworkTitle: 'شبكة المدربين',
     followBtn: 'متابعة',
     unfollowBtn: 'إلغاء المتابعة',
@@ -304,7 +304,7 @@ const translations = {
     noOtherTrainersYet: 'مفيش مدربين تانيين لسه.',
     noFollowingYet: 'لسه مبتابعش أي مدرب.',
 
-    contentMenuItem: '📰 منشوراتي',
+    contentMenuItem: 'منشوراتي',
     myPostsTitle: 'منشوراتي',
     contentFeedTitle: 'محتوى المدربين',
     addPostBtn: '+ إضافة منشور',
@@ -318,7 +318,7 @@ const translations = {
     noContentYet: 'مفيش محتوى من المدربين لسه.',
     shareBtn: '↗️ مشاركة',
     shareCopiedAlert: 'اتنسخ الرابط ✅',
-    savedPostsMenuItem: '🔖 المحفوظات',
+    savedPostsMenuItem: 'المحفوظات',
     savedPostsTitle: 'منشورات محفوظة',
     noSavedPostsYet: 'مفيش منشورات محفوظة لسه.',
 
@@ -782,7 +782,7 @@ const translations = {
     noSlotsAvailable: 'No available times on this date',
     loadingSlots: 'Loading available times...',
 
-    availabilityMenuItem: '🗓️ My Schedule',
+    availabilityMenuItem: 'My Schedule',
     availabilityTitle: 'Manage Schedule',
     weeklyScheduleTitle: 'Weekly Schedule',
     addWindowBtn: '+ Add Time Window',
@@ -839,7 +839,7 @@ const translations = {
     compatibilityLabel: 'Compatibility',
     changeAnswersBtn: 'Change Answers',
 
-    trainerNetworkMenuItem: '🌐 Trainer Network',
+    trainerNetworkMenuItem: 'Trainer Network',
     trainerNetworkTitle: 'Trainer Network',
     followBtn: 'Follow',
     unfollowBtn: 'Unfollow',
@@ -848,7 +848,7 @@ const translations = {
     noOtherTrainersYet: 'No other trainers yet.',
     noFollowingYet: "You're not following any trainer yet.",
 
-    contentMenuItem: '📰 My Posts',
+    contentMenuItem: 'My Posts',
     myPostsTitle: 'My Posts',
     contentFeedTitle: 'Trainer Content',
     addPostBtn: '+ Add Post',
@@ -862,7 +862,7 @@ const translations = {
     noContentYet: 'No trainer content yet.',
     shareBtn: '↗️ Share',
     shareCopiedAlert: 'Link copied ✅',
-    savedPostsMenuItem: '🔖 Saved',
+    savedPostsMenuItem: 'Saved',
     savedPostsTitle: 'Saved Posts',
     noSavedPostsYet: 'No saved posts yet.',
 
