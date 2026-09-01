@@ -261,6 +261,7 @@ async function renderProfile() {
     <div class="card menu-card">
       ${menuRow({ icon: '📅', label: t('myBookingsTitle'), id: 'menuBookings' })}
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: '🚫', label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
       ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
@@ -277,6 +278,7 @@ async function renderProfile() {
   on('editProfileLink', 'click', (e) => { e.preventDefault(); document.getElementById('bioInput')?.scrollIntoView({ behavior: 'smooth' }); });
   on('menuBookings', 'click', renderMyBookings);
   on('menuSupport', 'click', renderSupportHome);
+  on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderProfile(); });
   on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
@@ -291,6 +293,7 @@ async function renderMore() {
       ${menuRow({ icon: '📸', label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: '📊', label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: '🚫', label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: '🔒', label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
       ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
@@ -309,6 +312,7 @@ async function renderMore() {
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuSupport', 'click', renderSupportHome);
+  on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderMore(); });
   on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
@@ -552,6 +556,133 @@ function wireAvatarUpload(afterUpload) {
       alert(t('avatarSavedAlert'));
       afterUpload();
     } catch (err) { alert(err.message); }
+  });
+}
+
+// -------------------- الحظر والإبلاغ --------------------
+
+async function fetchModerationStatus(targetUserId) {
+  try {
+    return await api('/moderation/status/' + targetUserId);
+  } catch (e) {
+    return { blockedByMe: false, blockedMe: false };
+  }
+}
+
+function moderationMenuHtml() {
+  return `
+    <div class="mod-menu-wrap">
+      <button class="secondary" id="modMenuBtn" type="button" style="width:auto; padding:6px 12px;">⋮</button>
+      <div id="modMenuDropdown" class="mod-menu-dropdown hidden">
+        <div class="mod-menu-item" id="modBlockItem"><span id="modBlockLabel"></span></div>
+        <div class="mod-menu-item danger-row" id="modReportItem">${t('reportUserMenuItem')}</div>
+      </div>
+    </div>
+  `;
+}
+
+// targetUserId: صاحب الحساب المطلوب حظره/الإبلاغ عنه. status: نتيجة
+// fetchModerationStatus مسبقًا. onBlockChange: بيتنادى بعد نجاح حظر/فك حظر
+// عشان الشاشة اللي نادت الدالة تعيد رسم نفسها بالحالة الجديدة.
+function wireModerationMenu(targetUserId, status, subscriptionId, onBlockChange) {
+  const btn = document.getElementById('modMenuBtn');
+  const dropdown = document.getElementById('modMenuDropdown');
+  if (!btn || !dropdown) return;
+
+  const labelEl = document.getElementById('modBlockLabel');
+  if (labelEl) labelEl.textContent = status.blockedByMe ? t('unblockMenuItem') : t('blockMenuItem');
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle('hidden');
+  };
+  document.addEventListener('click', () => dropdown.classList.add('hidden'));
+
+  on('modBlockItem', 'click', async () => {
+    dropdown.classList.add('hidden');
+    if (status.blockedByMe) {
+      if (!confirm(t('confirmUnblock'))) return;
+      await api('/moderation/block/' + targetUserId, { method: 'DELETE' });
+    } else {
+      if (!confirm(t('confirmBlock'))) return;
+      await api('/moderation/block/' + targetUserId, { method: 'POST' });
+    }
+    if (onBlockChange) onBlockChange();
+  });
+
+  on('modReportItem', 'click', () => {
+    dropdown.classList.add('hidden');
+    openReportModal(targetUserId, subscriptionId);
+  });
+}
+
+function openReportModal(targetUserId, subscriptionId) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('reportUserTitle')}</h2>
+      <div class="error hidden" id="reportErr"></div>
+      <select id="reportReason">
+        <option value="harassment">${t('reportReasonHarassment')}</option>
+        <option value="fraud">${t('reportReasonFraud')}</option>
+        <option value="inappropriate">${t('reportReasonInappropriate')}</option>
+        <option value="impersonation">${t('reportReasonImpersonation')}</option>
+        <option value="other">${t('reportReasonOther')}</option>
+      </select>
+      <textarea id="reportDetails" rows="3" placeholder="${t('reportDetailsPlaceholder')}"></textarea>
+      <button id="submitReport">${t('submitReportBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+  document.getElementById('submitReport').onclick = async () => {
+    try {
+      await api('/moderation/report/' + targetUserId, { method: 'POST', body: JSON.stringify({
+        reason: document.getElementById('reportReason').value,
+        details: document.getElementById('reportDetails').value,
+        subscriptionId: subscriptionId || null,
+      }) });
+      closeModal();
+      alert(t('reportSubmittedAlert'));
+    } catch (e) {
+      const el = document.getElementById('reportErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  };
+}
+
+async function renderBlockedUsers() {
+  const backTarget = state.user.role === 'coach' ? renderMore : renderProfile;
+  render(`
+    <button class="secondary" id="back" style="margin-bottom:14px;">${t('back')}</button>
+    <div class="card">
+      <h2>${t('blockedUsersTitle')}</h2>
+      <div id="blockedList"><div class="skeleton block"></div></div>
+    </div>
+  `);
+  on('back', 'click', backTarget);
+  const { blocked } = await api('/moderation/blocked');
+  document.getElementById('blockedList').innerHTML = blocked.length === 0
+    ? `<p class="small">${t('noBlockedUsers')}</p>`
+    : blocked.map((u) => `
+      <div class="coach-row">
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${avatarCircle(u.name, u.avatar_path, 36)}
+          <b style="font-size:12.5px;">${escapeHtml(u.name)}</b>
+        </div>
+        <button class="secondary" data-unblock="${u.id}" style="width:auto; padding:6px 12px;">${t('unblockMenuItem')}</button>
+      </div>
+    `).join('');
+  document.querySelectorAll('[data-unblock]').forEach((el) => {
+    el.onclick = async () => {
+      await api('/moderation/block/' + el.dataset.unblock, { method: 'DELETE' });
+      renderBlockedUsers();
+    };
   });
 }
 

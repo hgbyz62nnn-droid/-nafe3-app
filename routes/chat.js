@@ -32,6 +32,15 @@ router.post('/:subscriptionId', requireAuth, (req, res) => {
   if (!assertParticipant(sub, req.user.id)) return res.status(403).json({ error: 'مش معاك صلاحية' });
   if (sub.status !== 'active') return res.status(403).json({ error: 'الشات بيتفعّل بعد تأكيد الاشتراك' });
 
+  const otherId = req.user.id === sub.trainee_id ? sub.coach_id : sub.trainee_id;
+  const isUserBlocked = db
+    .prepare(
+      `SELECT 1 FROM blocked_users
+       WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`
+    )
+    .get(req.user.id, otherId, otherId, req.user.id);
+  if (isUserBlocked) return res.status(403).json({ error: 'الشات متوقف بسبب الحظر بين الطرفين' });
+
   const recent = db
     .prepare('SELECT content FROM messages WHERE subscription_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 5')
     .all(req.params.subscriptionId, req.user.id)

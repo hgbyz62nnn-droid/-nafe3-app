@@ -291,12 +291,17 @@ async function renderCoachProfile(coachId) {
     api('/coaches/' + coachId),
     api('/reviews/coach/' + coachId),
   ]);
+  const canModerate = state.user && state.user.id !== Number(coachId);
+  const modStatus = canModerate ? await fetchModerationStatus(coachId) : null;
   render(`
     <div class="cover-header">
       <div class="cover-photo"></div>
       <div class="cover-avatar-wrap">${avatarCircle(coach.name, coach.avatar_path, 78)}</div>
     </div>
-    <button class="secondary" id="back" style="margin-bottom:14px;">${t('back')}</button>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <button class="secondary" id="back">${t('back')}</button>
+      ${canModerate ? moderationMenuHtml() : ''}
+    </div>
     <div class="card">
       <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
       <p class="small">${escapeHtml(coach.specialty) || t('coachSpecialtyFallback')}</p>
@@ -359,6 +364,9 @@ async function renderCoachProfile(coachId) {
     </div>
   `);
   document.getElementById('back').onclick = renderTraineeHome;
+  if (canModerate) {
+    wireModerationMenu(coachId, modStatus, null, () => renderCoachProfile(coachId));
+  }
   loadAndRenderGallery('galleryBox', coachId, false);
   loadAndRenderPublicTransformations(coachId);
   on('subscribeBtn', 'click', async () => {
@@ -394,18 +402,40 @@ async function renderChat(subscriptionId) {
   clearInterval(state.chatTimer);
   state.activeChat = subscriptionId;
 
+  let otherParty = null;
+  let modStatus = { blockedByMe: false, blockedMe: false };
+  try {
+    const data = await api('/subscriptions/' + subscriptionId);
+    otherParty = data.otherParty;
+    if (otherParty) modStatus = await fetchModerationStatus(otherParty.id);
+  } catch (e) {}
+  const isBlocked = modStatus.blockedByMe || modStatus.blockedMe;
+
   render(`
     ${renderHubTabs(subscriptionId, 'chat')}
+    ${otherParty ? `
+      <div class="coach-row" style="margin-bottom:10px; cursor:default;">
+        <b style="font-size:13px;">${escapeHtml(otherParty.name)}</b>
+        ${moderationMenuHtml()}
+      </div>
+    ` : ''}
     <div class="notice">${t('chatPrivacyNotice')}</div>
     <div class="card" id="chatBox" style="min-height:300px; display:flex; flex-direction:column;">
       <div id="msgs" style="flex:1; overflow-y:auto; margin-bottom:10px;"></div>
     </div>
-    <div class="card" style="display:flex; gap:8px;">
-      <input id="msgInput" placeholder="${t('messagePlaceholder')}" style="margin:0;">
-      <button id="sendBtn" style="width:90px;">${t('sendBtn')}</button>
-    </div>
+    ${isBlocked ? `
+      <div class="card"><p class="small">${t('chatBlockedNotice')}</p></div>
+    ` : `
+      <div class="card" style="display:flex; gap:8px;">
+        <input id="msgInput" placeholder="${t('messagePlaceholder')}" style="margin:0;">
+        <button id="sendBtn" style="width:90px;">${t('sendBtn')}</button>
+      </div>
+    `}
   `);
   wireHubNav(subscriptionId, 'chat');
+  if (otherParty) {
+    wireModerationMenu(otherParty.id, modStatus, subscriptionId, () => renderChat(subscriptionId));
+  }
 
   async function loadMsgs() {
     try {

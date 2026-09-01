@@ -25,4 +25,19 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+// زي requireAuth بس من غير ما يرفض الطلب لو مفيش تسجيل دخول - مستخدم في
+// أي مكان لازم يشتغل للزوّار كمان بس محتاج يعرف مين المستخدم لو مسجل.
+function optionalAuth(req, res, next) {
+  const token = req.cookies?.token;
+  if (!token) { req.user = null; return next(); }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = db.prepare('SELECT id, role, name, banned FROM users WHERE id = ?').get(decoded.id);
+    req.user = user && !user.banned ? { id: user.id, role: user.role, name: user.name } : null;
+  } catch {
+    req.user = null;
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireRole, optionalAuth };

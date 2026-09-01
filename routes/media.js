@@ -1,8 +1,7 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, optionalAuth } = require('../middleware/auth');
 const { saveAvatar, saveGalleryPhoto, deleteUploadedFile } = require('../lib/media');
 const { analyzeMessage, shouldBlock } = require('../lib/privacyFilter');
 
@@ -11,21 +10,6 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 
 const MAX_GALLERY_PHOTOS = 20;
 const MAX_BIO_LENGTH = 300;
-
-// زي requireAuth بس من غير ما يرفض الطلب لو مفيش تسجيل دخول - مستخدم في
-// عرض الجاليري العامة اللي أي حد يقدر يشوفها، بس المالك يشوف صوره الخاصة كمان.
-function optionalAuth(req, res, next) {
-  const token = req.cookies?.token;
-  if (!token) { req.user = null; return next(); }
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = db.prepare('SELECT id, role, name, banned FROM users WHERE id = ?').get(decoded.id);
-    req.user = user && !user.banned ? { id: user.id, role: user.role, name: user.name } : null;
-  } catch {
-    req.user = null;
-  }
-  next();
-}
 
 // عشان رسائل الخطأ من multer (زي حجم الملف) ومن sharp تطلع بنفس شكل
 // أخطاء الـ API العادية بدل ما express يرميها كـ error صفحة كاملة.

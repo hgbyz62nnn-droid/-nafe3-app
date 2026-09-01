@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, optionalAuth } = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/adminAuth');
 
 const router = express.Router();
@@ -14,9 +14,16 @@ const COACH_LIST_SELECT = `
   FROM coach_profiles c JOIN users u ON u.id = c.user_id
 `;
 
-router.get('/', (req, res) => {
+router.get('/', optionalAuth, (req, res) => {
   const clauses = ["c.status = 'approved'"];
   const params = [];
+  if (req.user) {
+    clauses.push(
+      `u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = ?)
+       AND u.id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = ?)`
+    );
+    params.push(req.user.id, req.user.id);
+  }
   if (req.query.q) {
     clauses.push('(u.name LIKE ? OR c.specialty LIKE ?)');
     const like = '%' + req.query.q + '%';

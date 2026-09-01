@@ -80,6 +80,7 @@ async function renderDashboard(admin) {
     <div class="tabs">
       <div class="tab active" id="tabPending">طلبات المدربين</div>
       <div class="tab" id="tabSupport">تذاكر الدعم</div>
+      <div class="tab" id="tabReports">بلاغات المستخدمين</div>
       <div class="tab" id="tabFlagged">محاولات التحايل</div>
       <div class="tab" id="tabReviews">التقييمات</div>
       <div class="tab" id="tabUsers">المستخدمين</div>
@@ -90,7 +91,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabSupport', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabSupport', 'tabReports', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -120,6 +121,72 @@ async function renderDashboard(admin) {
     document.querySelectorAll('[data-reject]').forEach((el) => {
       el.onclick = async () => { await api(`/coaches/admin/${el.dataset.reject}/reject`, { method: 'POST' }); showPending(); };
     });
+  }
+
+  const REPORT_REASON_LABELS = {
+    harassment: 'تحرش', fraud: 'احتيال', inappropriate: 'محتوى غير لائق', impersonation: 'انتحال شخصية', other: 'حاجة تانية',
+  };
+  const REPORT_STATUS_LABELS = { open: 'مفتوح', dismissed: 'اتصرف عنه', action_taken: 'اتخد إجراء' };
+
+  async function showReports() {
+    activateTab('tabReports');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>بلاغات المستخدمين</h2>
+        <div class="filters">
+          <select id="rStatus">
+            <option value="open">مفتوحة</option>
+            <option value="">كل الحالات</option>
+            <option value="dismissed">اتصرف عنها</option>
+            <option value="action_taken">اتخد فيها إجراء</option>
+          </select>
+          <button id="rApply" style="width:auto; padding:8px 16px;">فلترة</button>
+        </div>
+        <div id="reportsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const params = new URLSearchParams();
+      const status = document.getElementById('rStatus').value;
+      if (status) params.set('status', status);
+      const { reports } = await api('/moderation/admin/reports?' + params.toString());
+      document.getElementById('reportsList').innerHTML = reports.length === 0
+        ? '<p class="small">مفيش بلاغات.</p>'
+        : reports.map((r) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>${escapeHtml(r.reporter_name)} ← ${escapeHtml(r.reported_name)}</b>
+              <span class="badge ${r.status === 'open' ? 'blocked' : 'review'}">${REPORT_STATUS_LABELS[r.status]}</span>
+            </div>
+            <p class="small">سبب البلاغ: ${REPORT_REASON_LABELS[r.reason] || r.reason} · ${escapeHtml(r.created_at)}</p>
+            <p class="small">المُبلَّغ: ${escapeHtml(r.reported_email)} ${r.reported_banned ? '· <span style="color:var(--danger)">محظور بالفعل</span>' : ''}</p>
+            ${r.details ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.details)}</p>` : ''}
+            ${r.admin_action ? `<p class="small">آخر إجراء: ${r.admin_action === 'ban' ? 'حظر الحساب' : r.admin_action === 'warn' ? 'إيميل تحذير' : 'تجاهل'}</p>` : ''}
+            ${r.status === 'open' ? `
+              <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+                <button data-dismiss="${r.id}">🙈 تجاهل</button>
+                <button data-warn="${r.id}">✉️ تحذير بالإيميل</button>
+                <button class="danger" data-ban="${r.id}">🚫 حظر الحساب</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-dismiss]').forEach((el) => {
+        el.onclick = async () => { await api('/moderation/admin/reports/' + el.dataset.dismiss + '/action', { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) }); load(); };
+      });
+      document.querySelectorAll('[data-warn]').forEach((el) => {
+        el.onclick = async () => { await api('/moderation/admin/reports/' + el.dataset.warn + '/action', { method: 'POST', body: JSON.stringify({ action: 'warn' }) }); load(); };
+      });
+      document.querySelectorAll('[data-ban]').forEach((el) => {
+        el.onclick = async () => {
+          if (!confirm('متأكد من حظر الحساب المُبلَّغ عنه بالكامل؟')) return;
+          await api('/moderation/admin/reports/' + el.dataset.ban + '/action', { method: 'POST', body: JSON.stringify({ action: 'ban' }) });
+          load();
+        };
+      });
+    }
+    on('rApply', 'click', load);
+    load();
   }
 
   const REASON_LABELS = {
@@ -406,6 +473,7 @@ async function renderDashboard(admin) {
 
   document.getElementById('tabPending').onclick = showPending;
   document.getElementById('tabSupport').onclick = showSupport;
+  document.getElementById('tabReports').onclick = showReports;
   document.getElementById('tabFlagged').onclick = showFlagged;
   document.getElementById('tabReviews').onclick = showReviews;
   document.getElementById('tabUsers').onclick = showUsers;

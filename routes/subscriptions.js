@@ -120,6 +120,16 @@ router.get('/mine', requireAuth, (req, res) => {
   res.json({ subscriptions: subs });
 });
 
+router.get('/:id', requireAuth, (req, res) => {
+  const sub = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(req.params.id);
+  if (!sub || (sub.trainee_id !== req.user.id && sub.coach_id !== req.user.id)) {
+    return res.status(404).json({ error: 'الاشتراك غير موجود' });
+  }
+  const otherId = req.user.id === sub.trainee_id ? sub.coach_id : sub.trainee_id;
+  const otherParty = db.prepare('SELECT id, name, avatar_path FROM users WHERE id = ?').get(otherId);
+  res.json({ subscription: sub, otherParty });
+});
+
 router.get('/admin/all', requireAdmin, (req, res) => {
   const subs = db
     .prepare(

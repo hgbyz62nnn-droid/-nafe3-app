@@ -206,6 +206,30 @@ CREATE TABLE IF NOT EXISTS transformations (
   visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('public','private')),
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- حظر متبادل بين مستخدمين: بعد الحظر مايقدروش يبعتوا رسايل لبعض، ومايظهروش
+-- لبعض في نتائج البحث/التصفح. blocker_id هو اللي حظر، blocked_id هو المحظور.
+CREATE TABLE IF NOT EXISTS blocked_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  blocker_id INTEGER NOT NULL REFERENCES users(id),
+  blocked_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(blocker_id, blocked_id)
+);
+
+-- بلاغات المستخدمين عن بعض، بتظهر في لوحة تحكم الأدمن عشان تتراجع ويتاخد
+-- إجراء (تجاهل / تحذير بإيميل / حظر الحساب بالكامل عبر users.banned).
+CREATE TABLE IF NOT EXISTS user_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id INTEGER NOT NULL REFERENCES users(id),
+  reported_id INTEGER NOT NULL REFERENCES users(id),
+  subscription_id INTEGER REFERENCES subscriptions(id),
+  reason TEXT NOT NULL CHECK(reason IN ('harassment','fraud','inappropriate','impersonation','other')),
+  details TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','dismissed','action_taken')),
+  admin_action TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}
