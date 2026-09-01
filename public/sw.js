@@ -1,8 +1,10 @@
-// Service worker: caches the static app shell so the app is installable
-// and opens instantly on repeat visits. API calls always go to the
-// network - never cached, so data stays live.
-const CACHE = 'traino-v1';
-const APP_SHELL = ['/', '/styles.css', '/app.js', '/i18n.js', '/manifest.json'];
+// Service worker: caches the static app shell so the app still opens
+// offline. Network-first (not cache-first) - the app ships updates
+// constantly, so a visitor with a live connection must always get the
+// current code; the cache is only a fallback for when the network fails.
+// Bump CACHE on any app-shell change so old entries get swept in activate().
+const CACHE = 'traino-v2';
+const APP_SHELL = ['/', '/styles.css', '/app.js', '/features.js', '/i18n.js', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
@@ -24,17 +26,14 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });
