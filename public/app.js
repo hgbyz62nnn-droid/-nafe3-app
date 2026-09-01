@@ -201,8 +201,9 @@ async function renderTraineeHome() {
       <div class="card">
         <h2>${t('mySubscriptions')}</h2>
         ${activeSubs.map(s => `
-          <div class="coach-row" data-open-chat="${s.id}">
-            <div>${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })} · <span class="pill">${t('statusActive')}</span></div></div>
+          <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
+            ${avatarCircle(s.other_party_name, s.other_party_avatar, 36)}
+            <div style="flex:1;">${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })} · <span class="pill">${t('statusActive')}</span></div></div>
             <div class="small">${t('chatLink')}</div>
           </div>
         `).join('')}
@@ -235,12 +236,20 @@ async function renderCoachProfile(coachId) {
   ]);
   render(`
     <button class="secondary" id="back">${t('back')}</button>
-    <div class="card">
-      <h2>${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
+    <div class="card" style="text-align:center;">
+      ${avatarCircle(coach.name, coach.avatar_path, 88)}
+      <h2 style="margin-top:10px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
       <p class="small">${escapeHtml(coach.specialty)}</p>
       <p class="small">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
-      <p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.bio) || t('noBioYet')}</p>
+      ${coach.profile_bio ? `<p style="font-size:13px; line-height:1.8; margin-top:10px; text-align:start;">${escapeHtml(coach.profile_bio)}</p>` : ''}
+    </div>
+    <div class="card">
+      <p style="font-size:13px; line-height:1.8;">${escapeHtml(coach.bio) || t('noBioYet')}</p>
       <p class="small" style="margin-top:8px;">${t('certificationLabel', { cert: escapeHtml(coach.certification) || '-' })}</p>
+    </div>
+    <div class="card">
+      <h2>${t('galleryTitle')}</h2>
+      <div id="galleryBox"><div class="skeleton block"></div></div>
     </div>
     <div class="card">
       <h2>${t('packagesTitle')}</h2>
@@ -271,6 +280,7 @@ async function renderCoachProfile(coachId) {
     </div>
   `);
   document.getElementById('back').onclick = renderTraineeHome;
+  loadAndRenderGallery('galleryBox', coachId, false);
   on('subscribeBtn', 'click', async () => {
     const pkg = document.getElementById('pkg').value;
     try {
@@ -374,8 +384,9 @@ async function renderCoachDashboard() {
       <div class="card">
         <h2>${t('myTrainees')}</h2>
         ${activeSubs.map(s => `
-          <div class="coach-row" data-open-chat="${s.id}">
-            <div>${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
+          <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
+            ${avatarCircle(s.other_party_name, s.other_party_avatar, 36)}
+            <div style="flex:1;">${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
             <div class="small">${t('chatLink')}</div>
           </div>
         `).join('')}

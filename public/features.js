@@ -96,8 +96,9 @@ async function renderMyMessages() {
     <div class="topbar"><h2 style="margin:0;">${t('myMessagesTitle')}</h2></div>
     <div class="card">
       ${activeSubs.length === 0 ? renderEmptyState('💬', t('emptyMessagesTitle'), t('emptyMessagesHint')) : activeSubs.map((s) => `
-        <div class="coach-row" data-open-chat="${s.id}">
-          <div>${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
+        <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
+          ${avatarCircle(s.other_party_name, s.other_party_avatar, 36)}
+          <div style="flex:1;">${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
           <div class="small">${t('chatLink')}</div>
         </div>
       `).join('')}
@@ -110,10 +111,67 @@ async function renderMyMessages() {
 
 // -------------------- حسابي (متدرب) / المزيد (كوتش) --------------------
 
+function avatarUploadWidget() {
+  return `
+    <div class="avatar-upload-wrap">
+      ${avatarCircle(state.user.name, state.user.avatarPath, 88)}
+      <label class="avatar-edit-badge" for="avatarFileInput">📷</label>
+      <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/webp" style="display:none;">
+    </div>
+  `;
+}
+
+function renderAvatarBioCard() {
+  return `
+    <div class="card" style="text-align:center;">
+      ${avatarUploadWidget()}
+      ${state.user.avatarPath ? `<button class="secondary" id="removeAvatar" style="width:auto; padding:6px 14px; font-size:11px; margin-bottom:14px;">${t('removePhotoLabel')}</button>` : ''}
+      <div style="text-align:start;">
+        <div class="error hidden" id="bioErr"></div>
+        <textarea id="bioInput" rows="3" maxlength="300" placeholder="${t('bioPlaceholder2')}">${escapeHtml(state.user.bio)}</textarea>
+        <button class="secondary" id="saveBio">${t('saveBioBtn')}</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireAvatarBioCard(afterChange) {
+  wireAvatarUpload(afterChange);
+  on('removeAvatar', 'click', async () => {
+    await api('/media/avatar', { method: 'DELETE' });
+    afterChange();
+  });
+  on('saveBio', 'click', async () => {
+    try {
+      await api('/media/bio', { method: 'PUT', body: JSON.stringify({ bio: document.getElementById('bioInput').value }) });
+      alert(t('bioSavedAlert'));
+    } catch (e) {
+      const el = document.getElementById('bioErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  });
+}
+
+function renderGalleryCard() {
+  return `
+    <div class="card">
+      <h2>${t('galleryTitle')}</h2>
+      <div id="galleryBox"><div class="skeleton block"></div></div>
+    </div>
+  `;
+}
+
+async function refreshCurrentUser() {
+  const { user } = await api('/auth/me');
+  state.user = user;
+}
+
 async function renderProfile() {
   renderBottomNav('profile');
   render(`
     <div class="topbar"><h2 style="margin:0;">${t('profileTitle')}</h2></div>
+    ${renderAvatarBioCard()}
+    ${renderGalleryCard()}
     <div class="card">
       <h2>${t('accountSection')}</h2>
       <div class="coach-row"><div>${t('nameLabel')}</div><div>${escapeHtml(state.user.name)}</div></div>
@@ -125,6 +183,8 @@ async function renderProfile() {
     </div>
     ${logoutBtn()}
   `);
+  wireAvatarBioCard(async () => { await refreshCurrentUser(); renderProfile(); });
+  loadAndRenderGallery('galleryBox', state.user.id, true);
   on('goSupport', 'click', renderSupportHome);
   wireLogout();
 }
@@ -133,6 +193,8 @@ async function renderMore() {
   renderBottomNav('more');
   render(`
     <div class="topbar"><h2 style="margin:0;">${t('moreTitle')}</h2></div>
+    ${renderAvatarBioCard()}
+    ${renderGalleryCard()}
     <div class="card">
       <h2>${t('accountSection')}</h2>
       <div class="coach-row"><div>${t('nameLabel')}</div><div>${escapeHtml(state.user.name)}</div></div>
@@ -145,6 +207,8 @@ async function renderMore() {
     </div>
     ${logoutBtn()}
   `);
+  wireAvatarBioCard(async () => { await refreshCurrentUser(); renderMore(); });
+  loadAndRenderGallery('galleryBox', state.user.id, true);
   on('goEarnings', 'click', renderEarnings);
   on('goSupport', 'click', renderSupportHome);
   wireLogout();
@@ -250,17 +314,162 @@ async function renderTicketDetail(ticketId) {
   });
 }
 
+// -------------------- الجاليري وصورة البروفايل --------------------
+
+function renderGalleryGrid(photos, isOwner) {
+  const tiles = photos.map((p) => `
+    <div class="gallery-thumb" data-open-photo="${p.id}">
+      <img src="/uploads/${encodeURIComponent(p.photo_path)}" alt="" loading="lazy">
+      ${isOwner && p.visibility === 'private' ? `<span class="private-flag">${t('visibilityPrivate')}</span>` : ''}
+    </div>
+  `).join('');
+  const addTile = isOwner ? `<div class="gallery-add-tile" id="addPhotoTile">+</div>` : '';
+  if (!photos.length && !isOwner) return `<p class="small">${t('noPhotosYet')}</p>`;
+  return `<div class="gallery-grid">${addTile}${tiles}</div>`;
+}
+
+function closeModal() {
+  const el = document.getElementById('modalRoot');
+  if (el) el.remove();
+}
+
+function openPhotoModal(photo, isOwner, onChange) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <img src="/uploads/${encodeURIComponent(photo.photo_path)}" alt="">
+      ${isOwner ? `
+        <div class="error hidden" id="photoModalErr"></div>
+        <textarea id="photoCaption" rows="2" placeholder="${t('captionPlaceholder')}">${escapeHtml(photo.caption)}</textarea>
+        <button class="secondary" id="saveCaption" style="margin-bottom:10px;">${t('saveCaptionBtn')}</button>
+        <label class="small" style="display:block; margin-bottom:6px;">${t('photoVisibilityLabel')}</label>
+        <select id="photoVisibility" style="margin-bottom:10px;">
+          <option value="public" ${photo.visibility === 'public' ? 'selected' : ''}>${t('visibilityPublic')}</option>
+          <option value="private" ${photo.visibility === 'private' ? 'selected' : ''}>${t('visibilityPrivate')}</option>
+        </select>
+        <button class="danger" id="deletePhoto" style="margin-bottom:10px;">${t('deletePhotoConfirm')}</button>
+      ` : (photo.caption ? `<p style="font-size:13px; line-height:1.8;">${escapeHtml(photo.caption)}</p>` : '')}
+      <button class="secondary" id="closeModal">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+
+  if (isOwner) {
+    document.getElementById('saveCaption').onclick = async () => {
+      try {
+        await api('/media/gallery/' + photo.id, { method: 'PATCH', body: JSON.stringify({ caption: document.getElementById('photoCaption').value }) });
+        closeModal();
+        onChange();
+      } catch (e) {
+        const el = document.getElementById('photoModalErr');
+        el.textContent = e.message; el.classList.remove('hidden');
+      }
+    };
+    document.getElementById('photoVisibility').onchange = async (e) => {
+      await api('/media/gallery/' + photo.id, { method: 'PATCH', body: JSON.stringify({ visibility: e.target.value }) });
+      onChange();
+    };
+    document.getElementById('deletePhoto').onclick = async () => {
+      if (!confirm(t('deletePhotoConfirm'))) return;
+      await api('/media/gallery/' + photo.id, { method: 'DELETE' });
+      closeModal();
+      onChange();
+    };
+  }
+}
+
+async function loadAndRenderGallery(containerId, userId, isOwner) {
+  const { photos } = await api('/media/gallery/' + userId);
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  box.innerHTML = renderGalleryGrid(photos, isOwner);
+  if (isOwner) {
+    const addTile = document.getElementById('addPhotoTile');
+    if (addTile) addTile.onclick = () => openAddPhotoModal(() => loadAndRenderGallery(containerId, userId, isOwner));
+  }
+  box.querySelectorAll('[data-open-photo]').forEach((el) => {
+    el.onclick = () => {
+      const photo = photos.find((p) => p.id === Number(el.dataset.openPhoto));
+      if (photo) openPhotoModal(photo, isOwner, () => loadAndRenderGallery(containerId, userId, isOwner));
+    };
+  });
+  return photos.length;
+}
+
+function openAddPhotoModal(onDone) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('addPhotoBtn')}</h2>
+      <div class="error hidden" id="addPhotoErr"></div>
+      <input id="newPhotoFile" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
+      <textarea id="newPhotoCaption" rows="2" placeholder="${t('captionPlaceholder')}"></textarea>
+      <select id="newPhotoVisibility" style="margin-bottom:10px;">
+        <option value="public">${t('visibilityPublic')}</option>
+        <option value="private">${t('visibilityPrivate')}</option>
+      </select>
+      <button id="uploadPhoto">${t('uploadBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+  document.getElementById('uploadPhoto').onclick = async () => {
+    const file = document.getElementById('newPhotoFile').files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('photo', file);
+    fd.append('caption', document.getElementById('newPhotoCaption').value);
+    fd.append('visibility', document.getElementById('newPhotoVisibility').value);
+    try {
+      await apiUpload('/media/gallery', fd);
+      closeModal();
+      onDone();
+    } catch (e) {
+      const el = document.getElementById('addPhotoErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  };
+}
+
+function wireAvatarUpload(afterUpload) {
+  on('avatarFileInput', 'change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('avatar', file);
+    try {
+      await apiUpload('/media/avatar', fd);
+      alert(t('avatarSavedAlert'));
+      afterUpload();
+    } catch (err) { alert(err.message); }
+  });
+}
+
 // -------------------- اكتشف / سوق المدربين --------------------
 
-function avatarCircle(name) {
+function avatarCircle(name, avatarPath, size) {
+  const px = size || 44;
+  if (avatarPath) {
+    return `<img class="avatar-img" src="/uploads/${encodeURIComponent(avatarPath)}" style="width:${px}px; height:${px}px;" alt="">`;
+  }
   const initial = (name || '?').trim().charAt(0).toUpperCase();
-  return `<div style="width:44px; height:44px; border-radius:50%; background:var(--surface-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--red-soft); flex-shrink:0;">${escapeHtml(initial)}</div>`;
+  return `<div style="width:${px}px; height:${px}px; border-radius:50%; background:var(--surface-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--red-soft); flex-shrink:0; font-size:${Math.round(px * 0.4)}px;">${escapeHtml(initial)}</div>`;
 }
 
 function renderCoachCard(c) {
   return `
     <div class="card" data-open-coach="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
-      ${avatarCircle(c.name)}
+      ${avatarCircle(c.name, c.avatar_path)}
       <div style="flex:1; min-width:0;">
         <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
         <div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
@@ -361,7 +570,7 @@ async function renderMyClients() {
       ? renderEmptyState('👥', emptyMsg, '')
       : list.map((s) => `
         <div class="card" data-open-client="${s.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
-          ${avatarCircle(s.other_party_name)}
+          ${avatarCircle(s.other_party_name, s.other_party_avatar)}
           <div style="flex:1; min-width:0;">
             <div style="font-weight:800; font-size:13.5px;">${escapeHtml(s.other_party_name)}</div>
             <div class="small">${t('packageLabel', { pkg: s.package })}</div>

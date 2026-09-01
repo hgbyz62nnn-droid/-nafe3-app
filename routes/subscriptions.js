@@ -106,7 +106,7 @@ router.get('/mine', requireAuth, (req, res) => {
   const col = req.user.role === 'trainee' ? 'trainee_id' : 'coach_id';
   const subs = db
     .prepare(
-      `SELECT s.*, u.name AS other_party_name FROM subscriptions s
+      `SELECT s.*, u.name AS other_party_name, u.avatar_path AS other_party_avatar FROM subscriptions s
        JOIN users u ON u.id = ${col === 'trainee_id' ? 's.coach_id' : 's.trainee_id'}
        WHERE s.${col} = ?`
     )

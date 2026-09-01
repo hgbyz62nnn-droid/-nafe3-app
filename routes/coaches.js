@@ -6,7 +6,8 @@ const { requireAdmin } = require('../middleware/adminAuth');
 const router = express.Router();
 
 const COACH_LIST_SELECT = `
-  SELECT u.id, u.name, u.verified, c.specialty, c.bio, c.certification, c.status, c.price_1m, c.price_3m, c.price_6m,
+  SELECT u.id, u.name, u.verified, u.avatar_path, u.bio AS profile_bio,
+    c.specialty, c.bio, c.certification, c.status, c.price_1m, c.price_3m, c.price_6m,
     (SELECT COUNT(*) FROM subscriptions WHERE coach_id = u.id AND status IN ('active','expired')) AS client_count,
     (SELECT ROUND(AVG(rating), 1) FROM reviews WHERE coach_id = u.id AND hidden = 0) AS avg_rating,
     (SELECT COUNT(*) FROM reviews WHERE coach_id = u.id AND hidden = 0) AS review_count

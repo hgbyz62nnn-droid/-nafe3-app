@@ -180,6 +180,19 @@ CREATE TABLE IF NOT EXISTS reviews (
   hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- جاليري صور عامة/خاصة لأي يوزر (كوتش أو متدرب)، منفصلة عن صورة البروفايل.
+CREATE TABLE IF NOT EXISTS gallery_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  photo_path TEXT NOT NULL,
+  caption TEXT,
+  visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public','private')),
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
+
+try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN bio TEXT"); } catch (e) {}
 
 module.exports = db;
