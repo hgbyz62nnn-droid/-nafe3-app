@@ -369,6 +369,12 @@ try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN carbs_target INTEGER"); } 
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN fat_target INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN session_duration_minutes INTEGER NOT NULL DEFAULT 60"); } catch (e) {}
 try { db.exec("ALTER TABLE coach_profiles ADD COLUMN buffer_minutes INTEGER NOT NULL DEFAULT 0"); } catch (e) {}
+// وسوم مطابقة المدرب (Find My Trainer) - بيانات اكتشاف بسيطة يقدر المدرب
+// يعدّلها بنفسه فورًا من غير مراجعة أدمن (زي مواعيده تمامًا)، عكس
+// specialty/bio/price اللي هي بيانات هوية/سعر حساسة وعدّيلها بيمر بمراجعة.
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN goals_json TEXT NOT NULL DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN training_types_json TEXT NOT NULL DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN experience_levels_json TEXT NOT NULL DEFAULT '[]'"); } catch (e) {}
 
 // SQLite مبيسمحش تعدّل CHECK constraint في مكانها بـ ALTER TABLE، فلازم
 // نعيد إنشاء الجدول لما نوسّع visibility من (public/private) لـ

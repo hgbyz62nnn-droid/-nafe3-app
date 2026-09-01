@@ -1123,6 +1123,17 @@ function avatarCircle(name, avatarPath, size) {
   return `<div style="width:${px}px; height:${px}px; border-radius:50%; background:var(--surface-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--red-soft); flex-shrink:0; font-size:${Math.round(px * 0.4)}px;">${escapeHtml(initial)}</div>`;
 }
 
+// -------------------- خرائط وسوم المطابقة (Find My Trainer) --------------------
+// مشتركة بين شاشة وسوم المدرب (app.js) وشاشة أسئلة المتدرب تحت في الملف
+// ده - features.js بيتحمّل قبل app.js فالخرائط دي متاحة للاتنين.
+
+const GOAL_LABELS = {
+  lose_fat: 'goalLoseFat', build_muscle: 'goalBuildMuscle', get_stronger: 'goalGetStronger',
+  improve_fitness: 'goalImproveFitness', calisthenics: 'goalCalisthenics', athletic_performance: 'goalAthleticPerformance',
+};
+const EXPERIENCE_LABELS = { beginner: 'expBeginner', intermediate: 'expIntermediate', advanced: 'expAdvanced' };
+const TRAINING_TYPE_LABELS = { gym: 'typeGym', home: 'typeHome', online: 'typeOnline', in_person: 'typeInPerson' };
+
 function renderCoachCard(c) {
   return `
     <div class="card" data-open-coach="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
@@ -1134,6 +1145,7 @@ function renderCoachCard(c) {
           ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span> ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
           ${c.client_count ? ' · ' + t('clientsCountLabel', { count: c.client_count }) : ''}
         </div>
+        ${c.compatibilityPct != null ? `<div class="small" style="color:var(--success); font-weight:700; margin-top:2px;">${t('compatibilityLabel')}: ${c.compatibilityPct}%</div>` : ''}
       </div>
       <div class="small" style="white-space:nowrap;">${t('pricePerMonth', { price: c.price_1m })}</div>
     </div>
@@ -1157,6 +1169,10 @@ async function renderDiscover() {
   renderBottomNav('discover');
   const filterCount = activeFilterCount();
   render(`
+    <div class="card" id="findMyTrainerEntry" style="cursor:pointer; margin-bottom:16px; text-align:center;">
+      <h2 style="margin:0 0 4px;">${t('findMyTrainerBtn')}</h2>
+      <p class="small" style="margin:0;">${t('findMyTrainerHint')}</p>
+    </div>
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
       <div class="search-bar" style="flex:1; margin-bottom:0;">
         <span class="search-icon">${svgIcon('search', 16)}</span>
@@ -1202,8 +1218,92 @@ async function renderDiscover() {
   };
   document.getElementById('sortSelect').onchange = (e) => { discoverState.sort = e.target.value; loadResults(); };
   on('openFilterScreen', 'click', renderFilterScreen);
+  on('findMyTrainerEntry', 'click', renderFindMyTrainer);
 
   loadResults();
+}
+
+// -------------------- لاقي مدربك المثالي (Find My Trainer) --------------------
+// مطابقة حتمية بناءً على وسوم حقيقية سجلها المدربين بأنفسهم (lib/matching.js)
+// - مفيش أي ذكاء اصطناعي هنا، والنصوص هنا مقصود متتقالش "AI" في أي حتة.
+
+let findTrainerAnswers = { goal: '', experience: '', trainingType: '', budget: '', location: '' };
+
+async function renderFindMyTrainer() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('findMyTrainerTitle')}</h2>
+      <p class="small" style="margin-bottom:12px;">${t('findMyTrainerHint')}</p>
+      <div class="error hidden" id="findTrainerErr"></div>
+
+      <label class="small" style="display:block; margin-bottom:6px;">${t('selectGoalLabel')}</label>
+      <select id="qGoal" style="margin-bottom:12px;">
+        <option value="">-</option>
+        ${Object.entries(GOAL_LABELS).map(([key, labelKey]) => `<option value="${key}" ${findTrainerAnswers.goal === key ? 'selected' : ''}>${t(labelKey)}</option>`).join('')}
+      </select>
+
+      <label class="small" style="display:block; margin-bottom:6px;">${t('selectExperienceLabel')}</label>
+      <select id="qExperience" style="margin-bottom:12px;">
+        <option value="">${t('noPreferenceOption')}</option>
+        ${Object.entries(EXPERIENCE_LABELS).map(([key, labelKey]) => `<option value="${key}" ${findTrainerAnswers.experience === key ? 'selected' : ''}>${t(labelKey)}</option>`).join('')}
+      </select>
+
+      <label class="small" style="display:block; margin-bottom:6px;">${t('selectTrainingTypeLabel')}</label>
+      <select id="qTrainingType" style="margin-bottom:12px;">
+        <option value="">${t('noPreferenceOption')}</option>
+        ${Object.entries(TRAINING_TYPE_LABELS).map(([key, labelKey]) => `<option value="${key}" ${findTrainerAnswers.trainingType === key ? 'selected' : ''}>${t(labelKey)}</option>`).join('')}
+      </select>
+
+      <label class="small" style="display:block; margin-bottom:6px;">${t('budgetLabel')}</label>
+      <input id="qBudget" type="number" min="0" value="${escapeHtml(findTrainerAnswers.budget)}" style="margin-bottom:12px;">
+
+      <label class="small" style="display:block; margin-bottom:6px;">${t('locationPlaceholder')}</label>
+      <input id="qLocation" value="${escapeHtml(findTrainerAnswers.location)}" style="margin-bottom:12px;">
+
+      <button id="findMatchesBtn">${t('findMatchesBtn')}</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = renderDiscover;
+
+  on('findMatchesBtn', 'click', async () => {
+    const goal = document.getElementById('qGoal').value;
+    if (!goal) {
+      const el = document.getElementById('findTrainerErr');
+      el.textContent = t('selectGoalLabel'); el.classList.remove('hidden');
+      return;
+    }
+    findTrainerAnswers = {
+      goal,
+      experience: document.getElementById('qExperience').value,
+      trainingType: document.getElementById('qTrainingType').value,
+      budget: document.getElementById('qBudget').value,
+      location: document.getElementById('qLocation').value,
+    };
+    try {
+      const { matches } = await api('/matching/find-trainer', { method: 'POST', body: JSON.stringify(findTrainerAnswers) });
+      renderMatchResults(matches);
+    } catch (e) {
+      const el = document.getElementById('findTrainerErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  });
+}
+
+function renderMatchResults(matches) {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('matchResultsTitle')}</h2>
+      <button class="secondary" id="changeAnswers" style="width:auto; padding:6px 10px; margin-top:6px;">${t('changeAnswersBtn')}</button>
+    </div>
+    ${matches.length === 0 ? renderEmptyState('🎯', t('noMatchesFound'), '') : matches.map(renderCoachCard).join('')}
+  `);
+  document.getElementById('back').onclick = renderDiscover;
+  on('changeAnswers', 'click', renderFindMyTrainer);
+  document.querySelectorAll('[data-open-coach]').forEach((el) => {
+    el.onclick = () => renderCoachProfile(el.dataset.openCoach);
+  });
 }
 
 const FILTER_CATEGORIES = ['قوة', 'خسارة وزن', 'بناء أجسام', 'ليونة'];

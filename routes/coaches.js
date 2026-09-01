@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, optionalAuth } = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/adminAuth');
+const { GOALS, EXPERIENCE_LEVELS, TRAINING_TYPES } = require('../lib/matching');
 
 const router = express.Router();
 
@@ -108,6 +109,18 @@ router.get('/me/profile', requireAuth, requireRole('coach'), (req, res) => {
     .prepare("SELECT * FROM coach_profile_edits WHERE coach_id = ? ORDER BY created_at DESC LIMIT 1")
     .get(req.user.id);
   res.json({ profile, pendingEdit: pendingEdit && pendingEdit.status !== 'approved' ? pendingEdit : null });
+});
+
+// وسوم المطابقة (Find My Trainer) - بيانات اكتشاف بحتة (أهداف بيدرّب
+// عليها، أماكن تدريب، مستويات خبرة يتعامل معاها)، مش بيانات هوية أو سعر،
+// فبتتحفظ فورًا من غير مراجعة أدمن - زي مواعيده بالظبط (Stage 7).
+router.put('/me/matching-tags', requireAuth, requireRole('coach'), (req, res) => {
+  const goals = Array.isArray(req.body.goals) ? req.body.goals.filter((g) => GOALS.includes(g)) : [];
+  const trainingTypes = Array.isArray(req.body.trainingTypes) ? req.body.trainingTypes.filter((t) => TRAINING_TYPES.includes(t)) : [];
+  const experienceLevels = Array.isArray(req.body.experienceLevels) ? req.body.experienceLevels.filter((e) => EXPERIENCE_LEVELS.includes(e)) : [];
+  db.prepare('UPDATE coach_profiles SET goals_json = ?, training_types_json = ?, experience_levels_json = ? WHERE user_id = ?')
+    .run(JSON.stringify(goals), JSON.stringify(trainingTypes), JSON.stringify(experienceLevels), req.user.id);
+  res.json({ ok: true });
 });
 
 router.get('/admin/pending', requireAdmin, (req, res) => {

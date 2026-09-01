@@ -532,6 +532,23 @@ async function renderCoachDashboard() {
       <button id="saveProfile">${t('saveProfileBtn')}</button>
       <p class="small" style="margin-top:8px;">${profile.status === 'approved' ? t('profileReviewHintApproved') : t('profileReviewHint')}</p>
     </div>
+    <div class="card">
+      <h2>${t('matchingTagsTitle')}</h2>
+      <p class="small" style="margin-bottom:10px;">${t('matchingTagsHint')}</p>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('goalsLabel')}</label>
+      <div class="chip-row" id="goalsChips">
+        ${Object.entries(GOAL_LABELS).map(([key, labelKey]) => `<span class="filter-chip ${JSON.parse(profile.goals_json || '[]').includes(key) ? 'active' : ''}" data-tag-goal="${key}">${t(labelKey)}</span>`).join('')}
+      </div>
+      <label class="small" style="display:block; margin:12px 0 6px;">${t('trainingTypesLabel')}</label>
+      <div class="chip-row" id="trainingTypeChips">
+        ${Object.entries(TRAINING_TYPE_LABELS).map(([key, labelKey]) => `<span class="filter-chip ${JSON.parse(profile.training_types_json || '[]').includes(key) ? 'active' : ''}" data-tag-type="${key}">${t(labelKey)}</span>`).join('')}
+      </div>
+      <label class="small" style="display:block; margin:12px 0 6px;">${t('experienceLevelsLabel')}</label>
+      <div class="chip-row" id="experienceChips">
+        ${Object.entries(EXPERIENCE_LABELS).map(([key, labelKey]) => `<span class="filter-chip ${JSON.parse(profile.experience_levels_json || '[]').includes(key) ? 'active' : ''}" data-tag-exp="${key}">${t(labelKey)}</span>`).join('')}
+      </div>
+      <button id="saveMatchingTags" style="margin-top:12px;">${t('saveMatchingTagsBtn')}</button>
+    </div>
     ${activeSubs.length ? `
       <div class="card">
         <h2>${t('myTrainees')}</h2>
@@ -565,6 +582,20 @@ async function renderCoachDashboard() {
     el.onclick = () => renderChat(el.dataset.openChat);
   });
   on('seeAllSessions', 'click', (e) => { e.preventDefault(); renderMyBookings(); });
+
+  document.querySelectorAll('[data-tag-goal], [data-tag-type], [data-tag-exp]').forEach((el) => {
+    el.onclick = () => el.classList.toggle('active');
+  });
+  on('saveMatchingTags', 'click', async () => {
+    const goals = Array.from(document.querySelectorAll('[data-tag-goal].active')).map((el) => el.dataset.tagGoal);
+    const trainingTypes = Array.from(document.querySelectorAll('[data-tag-type].active')).map((el) => el.dataset.tagType);
+    const experienceLevels = Array.from(document.querySelectorAll('[data-tag-exp].active')).map((el) => el.dataset.tagExp);
+    try {
+      await api('/coaches/me/matching-tags', { method: 'PUT', body: JSON.stringify({ goals, trainingTypes, experienceLevels }) });
+      alert(t('matchingTagsSavedAlert'));
+    } catch (e) { alert(e.message); }
+  });
+
   wireLogout();
 }
 
