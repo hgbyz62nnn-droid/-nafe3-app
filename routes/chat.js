@@ -17,6 +17,10 @@ router.get('/:subscriptionId', requireAuth, (req, res) => {
   const messages = db
     .prepare('SELECT * FROM messages WHERE subscription_id = ? ORDER BY id ASC')
     .all(req.params.subscriptionId);
+
+  const seenCol = req.user.id === sub.trainee_id ? 'trainee_last_seen_at' : 'coach_last_seen_at';
+  db.prepare(`UPDATE subscriptions SET ${seenCol} = datetime('now') WHERE id = ?`).run(sub.id);
+
   res.json({ messages });
 });
 

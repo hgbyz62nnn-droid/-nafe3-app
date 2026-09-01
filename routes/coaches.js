@@ -7,7 +7,7 @@ const router = express.Router();
 
 const COACH_LIST_SELECT = `
   SELECT u.id, u.name, u.verified, u.avatar_path, u.bio AS profile_bio,
-    c.specialty, c.bio, c.certification, c.status, c.price_1m, c.price_3m, c.price_6m,
+    c.specialty, c.bio, c.certification, c.status, c.gender, c.location, c.price_1m, c.price_3m, c.price_6m,
     (SELECT COUNT(*) FROM subscriptions WHERE coach_id = u.id AND status IN ('active','expired')) AS client_count,
     (SELECT ROUND(AVG(rating), 1) FROM reviews WHERE coach_id = u.id AND hidden = 0) AS avg_rating,
     (SELECT COUNT(*) FROM reviews WHERE coach_id = u.id AND hidden = 0) AS review_count
@@ -24,6 +24,11 @@ router.get('/', (req, res) => {
   }
   if (req.query.minPrice) { clauses.push('c.price_1m >= ?'); params.push(Number(req.query.minPrice) || 0); }
   if (req.query.maxPrice) { clauses.push('c.price_1m <= ?'); params.push(Number(req.query.maxPrice) || 999999); }
+  if (req.query.gender === 'male' || req.query.gender === 'female') {
+    clauses.push('c.gender = ?'); params.push(req.query.gender);
+  }
+  if (req.query.location) { clauses.push('c.location = ?'); params.push(req.query.location); }
+  if (req.query.minRating) { clauses.push('(SELECT AVG(rating) FROM reviews WHERE coach_id = u.id AND hidden = 0) >= ?'); params.push(Number(req.query.minRating) || 0); }
 
   const sortMap = {
     price_asc: 'c.price_1m ASC',
@@ -44,12 +49,22 @@ router.get('/:id', (req, res) => {
   res.json({ coach });
 });
 
+// قايمة المواقع الحقيقية اللي المدربين المعتمدين دخّلوها فعلاً، عشان شاشة
+// الفلتر تعرض خيارات حقيقية بس مش قايمة مواقع وهمية.
+router.get('/meta/locations', (req, res) => {
+  const rows = db
+    .prepare("SELECT DISTINCT c.location FROM coach_profiles c WHERE c.status = 'approved' AND c.location IS NOT NULL AND c.location != '' ORDER BY c.location")
+    .all();
+  res.json({ locations: rows.map((r) => r.location) });
+});
+
 router.put('/me/profile', requireAuth, requireRole('coach'), (req, res) => {
-  const { specialty, bio, certification, price_1m, price_3m, price_6m } = req.body;
+  const { specialty, bio, certification, price_1m, price_3m, price_6m, gender, location } = req.body;
+  const genderVal = ['male', 'female'].includes(gender) ? gender : null;
   db.prepare(
-    `UPDATE coach_profiles SET specialty=?, bio=?, certification=?, price_1m=?, price_3m=?, price_6m=?, status='pending'
+    `UPDATE coach_profiles SET specialty=?, bio=?, certification=?, price_1m=?, price_3m=?, price_6m=?, gender=?, location=?, status='pending'
      WHERE user_id=?`
-  ).run(specialty, bio, certification, price_1m || 0, price_3m || 0, price_6m || 0, req.user.id);
+  ).run(specialty, bio, certification, price_1m || 0, price_3m || 0, price_6m || 0, genderVal, location || null, req.user.id);
   res.json({ ok: true, message: 'اتحفظ البروفايل وهيتراجع قبل ما يظهر للمتدربين' });
 });
 

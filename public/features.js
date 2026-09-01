@@ -3,6 +3,53 @@
 // نفس المساعدات العامة من app.js (render, on, api, state, escapeHtml, t,
 // getLang) وبتتحمّل قبله في index.html.
 
+// -------------------- مساعدات نظام التصميم (stat cards / menu rows / progress ring) --------------------
+
+function statCardV2(num, icon, label) {
+  return `
+    <div class="stat-card-v2">
+      <div class="stat-top">
+        <div class="stat-num">${num}</div>
+        <div class="stat-icon">${icon}</div>
+      </div>
+      <div class="stat-label-v2">${label}</div>
+    </div>
+  `;
+}
+
+function menuRow({ icon, label, value, id, danger }) {
+  return `
+    <div class="menu-row${danger ? ' danger-row' : ''}" ${id ? `id="${id}"` : ''}>
+      <div class="menu-icon">${icon}</div>
+      <div class="menu-label">${label}</div>
+      ${value ? `<div class="menu-value">${escapeHtml(value)}</div>` : ''}
+      <div class="menu-chevron">${getLang() === 'ar' ? '‹' : '›'}</div>
+    </div>
+  `;
+}
+
+// حلقة تقدّم SVG دائرية - مفيش مكتبة تانية، مجرد دايرتين (مسار خلفي +
+// قوس ملوّن بطول نسبي عن طريق stroke-dasharray).
+function renderProgressRing(percent, size = 150, label = '') {
+  const stroke = 12;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, percent));
+  const offset = c - (clamped / 100) * c;
+  return `
+    <div class="progress-ring-wrap">
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg);">
+        <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="${stroke}"/>
+        <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--red)" stroke-width="${stroke}"
+          stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${offset}"/>
+        <text x="${size / 2}" y="${size / 2}" class="progress-ring-value" text-anchor="middle" dominant-baseline="middle"
+          transform="rotate(90 ${size / 2} ${size / 2})">${Math.round(clamped)}%</text>
+      </svg>
+      ${label ? `<div class="small" style="margin-top:8px;">${label}</div>` : ''}
+    </div>
+  `;
+}
+
 function renderEmptyState(icon, title, hint) {
   return `<div class="empty-state"><div class="empty-icon">${icon}</div><div class="empty-title">${escapeHtml(title)}</div><div class="empty-hint">${escapeHtml(hint)}</div></div>`;
 }
@@ -88,25 +135,55 @@ async function renderMyBookings() {
 
 // -------------------- رسائلي (تجميع كل محادثات الاشتراكات) --------------------
 
+function msgTimeLabel(dt) {
+  const d = new Date(dt + 'Z');
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
+}
+
 async function renderMyMessages() {
   renderBottomNav('messages');
   const { subscriptions } = await api('/subscriptions/mine');
   const activeSubs = subscriptions.filter((s) => s.status === 'active');
+
   render(`
-    <div class="topbar"><h2 style="margin:0;">${t('myMessagesTitle')}</h2></div>
-    <div class="card">
-      ${activeSubs.length === 0 ? renderEmptyState('💬', t('emptyMessagesTitle'), t('emptyMessagesHint')) : activeSubs.map((s) => `
-        <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
-          ${avatarCircle(s.other_party_name, s.other_party_avatar, 36)}
-          <div style="flex:1;">${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
-          <div class="small">${t('chatLink')}</div>
-        </div>
-      `).join('')}
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input id="messagesSearch" placeholder="${t('searchConversationsPlaceholder')}">
     </div>
+    <div id="conversationsList"></div>
   `);
-  document.querySelectorAll('[data-open-chat]').forEach((el) => {
-    el.onclick = () => renderChat(el.dataset.openChat);
-  });
+
+  function renderConvos(filterQ) {
+    const q = (filterQ || '').trim().toLowerCase();
+    const list = q ? activeSubs.filter((s) => s.other_party_name.toLowerCase().includes(q)) : activeSubs;
+    document.getElementById('conversationsList').innerHTML = list.length === 0
+      ? renderEmptyState('💬', t('emptyMessagesTitle'), t('emptyMessagesHint'))
+      : `<div class="card">${list.map((s) => `
+          <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
+            ${avatarCircle(s.other_party_name, s.other_party_avatar, 44)}
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; justify-content:space-between; gap:8px;">
+                <span style="font-weight:800; font-size:13px;">${escapeHtml(s.other_party_name)}</span>
+                ${s.last_message_at ? `<span class="small" style="white-space:nowrap;">${msgTimeLabel(s.last_message_at)}</span>` : ''}
+              </div>
+              <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+                <span class="small" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${s.last_message ? escapeHtml(s.last_message) : t('packageLabel', { pkg: s.package })}</span>
+                ${s.unread_count ? `<span class="badge-dot" style="position:static; flex-shrink:0;">${s.unread_count}</span>` : ''}
+              </div>
+            </div>
+          </div>
+        `).join('')}</div>`;
+    document.querySelectorAll('[data-open-chat]').forEach((el) => {
+      el.onclick = () => renderChat(el.dataset.openChat);
+    });
+  }
+
+  document.getElementById('messagesSearch').oninput = (e) => renderConvos(e.target.value);
+  renderConvos('');
 }
 
 // -------------------- حسابي (متدرب) / المزيد (كوتش) --------------------
@@ -166,52 +243,69 @@ async function refreshCurrentUser() {
   state.user = user;
 }
 
+function profileHeader(roleLabel) {
+  return `
+    <div class="card" style="text-align:center;">
+      ${avatarCircle(state.user.name, state.user.avatarPath, 84)}
+      <h2 style="margin-top:10px; margin-bottom:2px;">${escapeHtml(state.user.name)}</h2>
+      <p class="small">${roleLabel}</p>
+      <a class="link" href="#" id="editProfileLink">${t('editProfileMenuItem')}</a>
+    </div>
+  `;
+}
+
 async function renderProfile() {
   renderBottomNav('profile');
   render(`
-    <div class="topbar"><h2 style="margin:0;">${t('profileTitle')}</h2></div>
-    ${renderAvatarBioCard()}
-    ${renderGalleryCard()}
+    ${profileHeader(t('roleTraineeLabel'))}
+    <div class="card menu-card">
+      ${menuRow({ icon: '📅', label: t('myBookingsTitle'), id: 'menuBookings' })}
+      ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
+      ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
+    </div>
     <div class="card">
       <h2>${t('accountSection')}</h2>
-      <div class="coach-row"><div>${t('nameLabel')}</div><div>${escapeHtml(state.user.name)}</div></div>
       <div class="coach-row"><div>${t('emailLabel')}</div><div class="small">${escapeHtml(state.user.email || '')}</div></div>
-      <div class="coach-row"><div>${t('roleLabel')}</div><div>${t('roleTraineeLabel')}</div></div>
     </div>
-    <div class="card">
-      <button class="secondary" id="goSupport">${t('supportMenuItem')}</button>
-    </div>
-    ${logoutBtn()}
+    ${renderAvatarBioCard()}
+    ${renderGalleryCard()}
   `);
   wireAvatarBioCard(async () => { await refreshCurrentUser(); renderProfile(); });
   loadAndRenderGallery('galleryBox', state.user.id, true);
-  on('goSupport', 'click', renderSupportHome);
-  wireLogout();
+  on('editProfileLink', 'click', (e) => { e.preventDefault(); document.getElementById('bioInput')?.scrollIntoView({ behavior: 'smooth' }); });
+  on('menuBookings', 'click', renderMyBookings);
+  on('menuSupport', 'click', renderSupportHome);
+  on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderProfile(); });
+  on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
 }
 
 async function renderMore() {
   renderBottomNav('more');
   render(`
-    <div class="topbar"><h2 style="margin:0;">${t('moreTitle')}</h2></div>
-    ${renderAvatarBioCard()}
-    ${renderGalleryCard()}
+    ${profileHeader(t('roleCoachLabel'))}
+    <div class="card menu-card">
+      ${menuRow({ icon: '💰', label: t('earningsMenuItem'), id: 'menuEarnings' })}
+      ${menuRow({ icon: '📊', label: t('viewStatsBtn'), id: 'menuStats' })}
+      ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
+      ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
+      ${menuRow({ icon: '🚪', label: t('logoutBtn'), id: 'menuLogout', danger: true })}
+    </div>
     <div class="card">
       <h2>${t('accountSection')}</h2>
-      <div class="coach-row"><div>${t('nameLabel')}</div><div>${escapeHtml(state.user.name)}</div></div>
       <div class="coach-row"><div>${t('emailLabel')}</div><div class="small">${escapeHtml(state.user.email || '')}</div></div>
-      <div class="coach-row"><div>${t('roleLabel')}</div><div>${t('roleCoachLabel')}</div></div>
     </div>
-    <div class="card">
-      <button class="secondary" id="goEarnings" style="margin-bottom:8px;">${t('earningsMenuItem')}</button>
-      <button class="secondary" id="goSupport">${t('supportMenuItem')}</button>
-    </div>
-    ${logoutBtn()}
+    ${renderAvatarBioCard()}
+    ${renderGalleryCard()}
   `);
   wireAvatarBioCard(async () => { await refreshCurrentUser(); renderMore(); });
   loadAndRenderGallery('galleryBox', state.user.id, true);
-  on('goEarnings', 'click', renderEarnings);
-  on('goSupport', 'click', renderSupportHome);
-  wireLogout();
+  on('editProfileLink', 'click', (e) => { e.preventDefault(); renderCoachDashboard(); });
+  on('menuEarnings', 'click', renderEarnings);
+  on('menuStats', 'click', renderCoachStats);
+  on('menuSupport', 'click', renderSupportHome);
+  on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderMore(); });
+  on('menuLogout', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
 }
 
 // -------------------- الدعم الفني --------------------
@@ -483,26 +577,38 @@ function renderCoachCard(c) {
   `;
 }
 
-let discoverState = { q: '', minPrice: '', maxPrice: '', sort: 'newest' };
+const PRICE_RANGE_MAX = 3000;
+let discoverState = { q: '', minPrice: '', maxPrice: '', sort: 'newest', gender: '', location: '', minRating: '' };
 let discoverDebounce = null;
+
+function activeFilterCount() {
+  let n = 0;
+  if (discoverState.minPrice || discoverState.maxPrice) n++;
+  if (discoverState.gender) n++;
+  if (discoverState.location) n++;
+  if (discoverState.minRating) n++;
+  return n;
+}
 
 async function renderDiscover() {
   renderBottomNav('discover');
+  const filterCount = activeFilterCount();
   render(`
-    <div class="card">
-      <input id="discoverSearch" placeholder="${t('searchTrainersPlaceholder')}" value="${escapeHtml(discoverState.q)}" style="margin-bottom:12px;">
-      <div style="display:flex; gap:8px;">
-        <input id="minPrice" type="number" placeholder="${t('minPriceLabel')}" value="${escapeHtml(discoverState.minPrice)}">
-        <input id="maxPrice" type="number" placeholder="${t('maxPriceLabel')}" value="${escapeHtml(discoverState.maxPrice)}">
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+      <div class="search-bar" style="flex:1; margin-bottom:0;">
+        <span class="search-icon">🔍</span>
+        <input id="discoverSearch" placeholder="${t('searchTrainersPlaceholder')}" value="${escapeHtml(discoverState.q)}">
       </div>
-      <select id="sortSelect">
-        <option value="newest" ${discoverState.sort === 'newest' ? 'selected' : ''}>${t('sortNewest')}</option>
-        <option value="rating" ${discoverState.sort === 'rating' ? 'selected' : ''}>${t('sortRating')}</option>
-        <option value="price_asc" ${discoverState.sort === 'price_asc' ? 'selected' : ''}>${t('sortPriceAsc')}</option>
-        <option value="price_desc" ${discoverState.sort === 'price_desc' ? 'selected' : ''}>${t('sortPriceDesc')}</option>
-      </select>
-      <button id="applyFilters">${t('applyFiltersBtn')}</button>
+      <button class="secondary" id="openFilterScreen" style="width:auto; padding:11px 14px; position:relative;">
+        ⚙️${filterCount ? `<span class="badge-dot" style="position:static; display:inline-flex; margin-inline-start:4px; border:none;">${filterCount}</span>` : ''}
+      </button>
     </div>
+    <select id="sortSelect" style="margin-bottom:16px;">
+      <option value="newest" ${discoverState.sort === 'newest' ? 'selected' : ''}>${t('sortNewest')}</option>
+      <option value="rating" ${discoverState.sort === 'rating' ? 'selected' : ''}>${t('sortRating')}</option>
+      <option value="price_asc" ${discoverState.sort === 'price_asc' ? 'selected' : ''}>${t('sortPriceAsc')}</option>
+      <option value="price_desc" ${discoverState.sort === 'price_desc' ? 'selected' : ''}>${t('sortPriceDesc')}</option>
+    </select>
     <div id="discoverResults"><div class="skeleton block"></div><div class="skeleton block"></div></div>
   `);
 
@@ -511,6 +617,9 @@ async function renderDiscover() {
     if (discoverState.q) params.set('q', discoverState.q);
     if (discoverState.minPrice) params.set('minPrice', discoverState.minPrice);
     if (discoverState.maxPrice) params.set('maxPrice', discoverState.maxPrice);
+    if (discoverState.gender) params.set('gender', discoverState.gender);
+    if (discoverState.location) params.set('location', discoverState.location);
+    if (discoverState.minRating) params.set('minRating', discoverState.minRating);
     if (discoverState.sort !== 'newest') params.set('sort', discoverState.sort);
     const { coaches } = await api('/coaches?' + params.toString());
     const box = document.getElementById('discoverResults');
@@ -529,13 +638,106 @@ async function renderDiscover() {
     discoverDebounce = setTimeout(loadResults, 350);
   };
   document.getElementById('sortSelect').onchange = (e) => { discoverState.sort = e.target.value; loadResults(); };
-  on('applyFilters', 'click', () => {
-    discoverState.minPrice = document.getElementById('minPrice').value;
-    discoverState.maxPrice = document.getElementById('maxPrice').value;
-    loadResults();
-  });
+  on('openFilterScreen', 'click', renderFilterScreen);
 
   loadResults();
+}
+
+const FILTER_CATEGORIES = ['قوة', 'خسارة وزن', 'بناء أجسام', 'ليونة'];
+
+async function renderFilterScreen() {
+  const { locations } = await api('/coaches/meta/locations');
+  const draft = { ...discoverState };
+
+  render(`
+    <div class="topbar" style="margin-bottom:20px;">
+      <h2 style="margin:0;">${t('filterTitle')}</h2>
+      <a href="#" class="link" id="resetFiltersLink">${t('resetFilters')}</a>
+    </div>
+
+    <div class="filter-section-label">${t('categoriesTitle')}</div>
+    <div class="chip-row" id="specialtyChips">
+      <span class="filter-chip ${!draft.q ? 'active' : ''}" data-specialty="">${t('allOption')}</span>
+      ${FILTER_CATEGORIES.map((c) => `<span class="filter-chip ${draft.q === c ? 'active' : ''}" data-specialty="${escapeHtml(c)}">${escapeHtml(c)}</span>`).join('')}
+    </div>
+
+    <div class="filter-section-label">${t('genderFilterLabel')}</div>
+    <div class="chip-row" id="genderChips">
+      <span class="filter-chip ${!draft.gender ? 'active' : ''}" data-gender="">${t('allOption')}</span>
+      <span class="filter-chip ${draft.gender === 'male' ? 'active' : ''}" data-gender="male">${t('genderMale')}</span>
+      <span class="filter-chip ${draft.gender === 'female' ? 'active' : ''}" data-gender="female">${t('genderFemale')}</span>
+    </div>
+
+    <div class="filter-section-label">${t('priceRangeLabel')}</div>
+    <div class="dual-range">
+      <div class="range-track"></div>
+      <div class="range-fill" id="priceFill"></div>
+      <input type="range" id="minPriceRange" min="0" max="${PRICE_RANGE_MAX}" step="50" value="${draft.minPrice || 0}">
+      <input type="range" id="maxPriceRange" min="0" max="${PRICE_RANGE_MAX}" step="50" value="${draft.maxPrice || PRICE_RANGE_MAX}">
+    </div>
+    <div class="range-values"><span id="minPriceLabel">${draft.minPrice || 0}</span><span id="maxPriceLabel">${draft.maxPrice || PRICE_RANGE_MAX}+</span></div>
+
+    <div class="filter-section-label">${t('locationFilterLabel')}</div>
+    <select id="locationSelect" style="margin-bottom:18px;">
+      <option value="">${t('allOption')}</option>
+      ${locations.map((l) => `<option value="${escapeHtml(l)}" ${draft.location === l ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}
+    </select>
+
+    <div class="filter-section-label">${t('ratingFilterLabel')}</div>
+    <div class="chip-row" id="ratingChips">
+      <span class="filter-chip ${!draft.minRating ? 'active' : ''}" data-rating="">${t('allOption')}</span>
+      <span class="filter-chip ${draft.minRating === '4' ? 'active' : ''}" data-rating="4">★ 4+</span>
+      <span class="filter-chip ${draft.minRating === '4.5' ? 'active' : ''}" data-rating="4.5">★ 4.5+</span>
+      <span class="filter-chip ${draft.minRating === '5' ? 'active' : ''}" data-rating="5">★ 5</span>
+    </div>
+
+    <button id="applyFiltersBtn2">${t('applyFiltersBtn2')}</button>
+    <button class="secondary" id="cancelFilters" style="margin-top:10px;">${t('back')}</button>
+  `);
+
+  function selectChip(container, attr, value) {
+    document.querySelectorAll(`#${container} [data-${attr}]`).forEach((el) => {
+      el.classList.toggle('active', el.dataset[attr] === value);
+    });
+  }
+
+  document.querySelectorAll('#specialtyChips [data-specialty]').forEach((el) => {
+    el.onclick = () => { draft.q = el.dataset.specialty; selectChip('specialtyChips', 'specialty', draft.q); };
+  });
+  document.querySelectorAll('#genderChips [data-gender]').forEach((el) => {
+    el.onclick = () => { draft.gender = el.dataset.gender; selectChip('genderChips', 'gender', draft.gender); };
+  });
+  document.querySelectorAll('#ratingChips [data-rating]').forEach((el) => {
+    el.onclick = () => { draft.minRating = el.dataset.rating; selectChip('ratingChips', 'rating', draft.minRating); };
+  });
+
+  const minRange = document.getElementById('minPriceRange');
+  const maxRange = document.getElementById('maxPriceRange');
+  function updatePriceUi() {
+    let min = Number(minRange.value), max = Number(maxRange.value);
+    if (min > max) { [min, max] = [max, min]; }
+    document.getElementById('minPriceLabel').textContent = min;
+    document.getElementById('maxPriceLabel').textContent = max >= PRICE_RANGE_MAX ? max + '+' : max;
+    document.getElementById('priceFill').style.left = (min / PRICE_RANGE_MAX * 100) + '%';
+    document.getElementById('priceFill').style.width = ((max - min) / PRICE_RANGE_MAX * 100) + '%';
+    draft.minPrice = min > 0 ? min : '';
+    draft.maxPrice = max < PRICE_RANGE_MAX ? max : '';
+  }
+  minRange.oninput = updatePriceUi;
+  maxRange.oninput = updatePriceUi;
+  updatePriceUi();
+
+  on('resetFiltersLink', 'click', (e) => {
+    e.preventDefault();
+    discoverState = { q: '', minPrice: '', maxPrice: '', sort: discoverState.sort, gender: '', location: '', minRating: '' };
+    renderFilterScreen();
+  });
+  on('cancelFilters', 'click', renderDiscover);
+  on('applyFiltersBtn2', 'click', () => {
+    draft.location = document.getElementById('locationSelect').value;
+    discoverState = draft;
+    renderDiscover();
+  });
 }
 
 // -------------------- متدربيني (للكوتش) --------------------
@@ -552,14 +754,19 @@ async function renderMyClients() {
   };
 
   const nextSessionBySub = {};
+  const progressBySub = {};
   if (groups.active.length) {
     const now = Date.now();
     await Promise.all(groups.active.map(async (s) => {
-      const { sessions } = await api('/sessions/' + s.id);
+      const [{ sessions }, { pct }] = await Promise.all([
+        api('/sessions/' + s.id),
+        api('/habits/' + s.id + '/adherence'),
+      ]);
       const next = sessions
         .filter((sess) => sess.status === 'scheduled' && new Date(sess.scheduled_at).getTime() > now)
         .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))[0];
       if (next) nextSessionBySub[s.id] = next.scheduled_at;
+      progressBySub[s.id] = pct;
     }));
   }
 
@@ -574,7 +781,13 @@ async function renderMyClients() {
           <div style="flex:1; min-width:0;">
             <div style="font-weight:800; font-size:13.5px;">${escapeHtml(s.other_party_name)}</div>
             <div class="small">${t('packageLabel', { pkg: s.package })}</div>
-            ${clientsTab === 'active' ? `<div class="small">${nextSessionBySub[s.id] ? t('nextSessionLabel', { date: new Date(nextSessionBySub[s.id]).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US') }) : t('noUpcomingSession')}</div>` : ''}
+            ${clientsTab === 'active' ? `
+              <div class="small">${nextSessionBySub[s.id] ? t('nextSessionLabel', { date: new Date(nextSessionBySub[s.id]).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US') }) : t('noUpcomingSession')}</div>
+              ${progressBySub[s.id] != null ? `
+                <div class="small" style="margin-top:6px;">${t('progressLabel', { pct: progressBySub[s.id] })}</div>
+                <div class="progress-bar-track"><div class="progress-bar-fill" style="width:${progressBySub[s.id]}%;"></div></div>
+              ` : ''}
+            ` : ''}
           </div>
         </div>
       `).join('');
@@ -892,14 +1105,30 @@ function renderWeightChart(entries) {
 
 async function renderProgressTab(subscriptionId) {
   const isCoach = state.user.role === 'coach';
-  const [{ entries }, { badges }] = await Promise.all([
+  const [{ entries }, { badges }, { pct: adherencePct }] = await Promise.all([
     api('/progress/' + subscriptionId),
     api('/badges/' + subscriptionId),
+    api('/habits/' + subscriptionId + '/adherence'),
   ]);
   const weighed = entries.filter((e) => e.weight_kg != null);
+  const weightChange = weighed.length >= 2 ? +(weighed[weighed.length - 1].weight_kg - weighed[0].weight_kg).toFixed(1) : null;
 
   render(`
     ${renderHubTabs(subscriptionId, 'progress')}
+    ${adherencePct != null ? `
+    <div class="card" style="text-align:center;">
+      <h2>${t('progressOverviewTitle')}</h2>
+      ${renderProgressRing(adherencePct)}
+      <p class="small">${adherencePct >= 70 ? t('progressGoodMsg') : t('progressKeepGoingMsg')}</p>
+      ${weightChange != null ? `
+        <div class="stat-grid" style="grid-template-columns:1fr; max-width:180px; margin:14px auto 0;">
+          <div class="stat-card">
+            <div class="stat-value">${weightChange > 0 ? '+' : ''}${weightChange} ${t('kgUnit')}</div>
+            <div class="small">${t('weightChangeLabel')}</div>
+          </div>
+        </div>
+      ` : ''}
+    </div>` : ''}
     ${renderBadgeShelf(badges)}
     ${!isCoach ? `
     <div class="card">
@@ -1063,21 +1292,63 @@ function wireReviewCard(subscriptionId, isCoach) {
   });
 }
 
+let sessionsSubTab = 'upcoming';
+
+function dateGroupLabel(dt) {
+  const d = new Date(dt);
+  const now = new Date();
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(d) - startOf(now)) / 86400000);
+  if (diffDays === 0) return t('todayGroupLabel');
+  if (diffDays === 1) return t('tomorrowGroupLabel');
+  return d.toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
+}
+
+function renderSessionRow(s, isCoach, showActions) {
+  const timeStr = new Date(s.scheduled_at).toLocaleTimeString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' });
+  return `
+    <div class="coach-row">
+      <div>
+        <div style="font-weight:700; font-size:13px;">${timeStr}</div>
+        ${s.notes ? `<div class="small">${escapeHtml(s.notes)}</div>` : ''}
+      </div>
+      ${showActions ? `
+        <div style="display:flex; gap:6px;">
+          ${isCoach ? `<button class="secondary" data-complete="${s.id}" style="width:auto; padding:6px 10px;">${t('markCompletedBtn')}</button>` : ''}
+          <button class="secondary" data-cancel="${s.id}" style="width:auto; padding:6px 10px;">${t('cancelSessionBtn')}</button>
+        </div>
+      ` : `<span class="pill">${{ completed: t('statusCompleted'), cancelled: t('statusCancelled') }[s.status] || ''}</span>`}
+    </div>
+  `;
+}
+
 async function renderSessionsTab(subscriptionId) {
   const isCoach = state.user.role === 'coach';
   const { sessions } = await api('/sessions/' + subscriptionId);
   const now = Date.now();
   const isFutureScheduled = (s) => s.status === 'scheduled' && new Date(s.scheduled_at).getTime() > now;
   const upcoming = sessions.filter(isFutureScheduled);
-  const past = sessions.filter((s) => !isFutureScheduled(s));
-  const statusLabel = { scheduled: t('statusScheduled'), completed: t('statusCompleted'), cancelled: t('statusCancelled') };
-
-  function fmt(dt) {
-    return new Date(dt).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
-  }
+  const past = sessions.filter((s) => s.status === 'completed' || (s.status === 'scheduled' && !isFutureScheduled(s)));
+  const cancelled = sessions.filter((s) => s.status === 'cancelled');
+  const groups = { upcoming, past, cancelled };
 
   const hasCompletedSession = sessions.some((s) => s.status === 'completed');
   const reviewCardHtml = await renderReviewCard(subscriptionId, isCoach, hasCompletedSession);
+
+  function renderList() {
+    const list = groups[sessionsSubTab];
+    if (list.length === 0) return renderEmptyState('📅', t('noSessionsYet'), '');
+    if (sessionsSubTab !== 'upcoming') return `<div class="card">${list.map((s) => renderSessionRow(s, isCoach, false)).join('')}</div>`;
+
+    let html = '';
+    let lastLabel = null;
+    for (const s of list) {
+      const label = dateGroupLabel(s.scheduled_at);
+      if (label !== lastLabel) { html += `<div class="date-group-label">${label}</div>`; lastLabel = label; }
+      html += `<div class="card" style="margin-bottom:8px;">${renderSessionRow(s, isCoach, true)}</div>`;
+    }
+    return html;
+  }
 
   render(`
     ${renderHubTabs(subscriptionId, 'sessions')}
@@ -1089,29 +1360,20 @@ async function renderSessionsTab(subscriptionId) {
       <input id="sessionNotes" placeholder="${t('sessionNotesPlaceholder')}">
       <button id="bookBtn">${t('bookSessionBtn')}</button>
     </div>` : ''}
-    <div class="card">
-      <h2>${t('upcomingSessionsTitle')}</h2>
-      ${upcoming.length === 0 ? `<p class="small">${t('noSessionsYet')}</p>` : upcoming.map((s) => `
-        <div class="coach-row">
-          <div>${fmt(s.scheduled_at)}${s.notes ? `<div class="small">${escapeHtml(s.notes)}</div>` : ''}</div>
-          <div style="display:flex; gap:6px;">
-            ${isCoach ? `<button class="secondary" data-complete="${s.id}" style="width:auto; padding:6px 10px;">${t('markCompletedBtn')}</button>` : ''}
-            <button class="secondary" data-cancel="${s.id}" style="width:auto; padding:6px 10px;">${t('cancelSessionBtn')}</button>
-          </div>
-        </div>
-      `).join('')}
+    <div class="tabs">
+      <div class="tab ${sessionsSubTab === 'upcoming' ? 'active' : ''}" data-stab="upcoming">${t('upcomingSessionsTitle')}</div>
+      <div class="tab ${sessionsSubTab === 'past' ? 'active' : ''}" data-stab="past">${t('pastSessionsTitle')}</div>
+      <div class="tab ${sessionsSubTab === 'cancelled' ? 'active' : ''}" data-stab="cancelled">${t('statusCancelled')}</div>
     </div>
-    ${past.length ? `
-    <div class="card">
-      <h2>${t('pastSessionsTitle')}</h2>
-      ${past.map((s) => `
-        <div class="coach-row"><div>${fmt(s.scheduled_at)}</div><div class="small pill">${statusLabel[s.status]}</div></div>
-      `).join('')}
-    </div>` : ''}
+    <div id="sessionsList">${renderList()}</div>
     ${reviewCardHtml}
   `);
   wireHubNav(subscriptionId, 'sessions');
   wireReviewCard(subscriptionId, isCoach);
+
+  document.querySelectorAll('[data-stab]').forEach((el) => {
+    el.onclick = () => { sessionsSubTab = el.dataset.stab; renderSessionsTab(subscriptionId); };
+  });
 
   on('bookBtn', 'click', async () => {
     const val = document.getElementById('sessionDate').value;

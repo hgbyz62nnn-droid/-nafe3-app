@@ -46,7 +46,11 @@ async function apiUpload(path, formData) {
   return data;
 }
 
-function render(html) { app.innerHTML = html; }
+function render(html) {
+  const topbar = document.querySelector('.topbar');
+  if (topbar) topbar.style.display = '';
+  app.innerHTML = html;
+}
 function on(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
 
 // Escapes any value coming from the server (names, bios, chat messages...)
@@ -61,23 +65,42 @@ function escapeHtml(str) {
 async function boot() {
   const { user } = await api('/auth/me');
   state.user = user;
-  if (!user) { renderBottomNav(null); return renderAuth(); }
+  if (!user) { renderBottomNav(null); return renderSplash(); }
   if (user.role === 'coach') { renderBottomNav('dashboard'); return renderCoachDashboard(); }
   renderBottomNav('home');
   return renderTraineeHome();
 }
 
-function renderAuth() {
+function renderSplash() {
+  render(`
+    <div class="splash">
+      <img src="/icons/icon-512.png" class="splash-logo" alt="Traino">
+      <div class="splash-title">TRAINO</div>
+      <div class="splash-tagline">${t('splashTagline')}</div>
+      <div class="splash-actions">
+        <button id="getStarted">${t('getStartedBtn')}</button>
+        <button class="secondary" id="imTrainer">${t('imTrainerBtn')}</button>
+        <p class="small" style="margin-top:18px;">${t('alreadyHaveAccount')} <a class="link" href="#" id="goLoginLink">${t('loginBtn')}</a></p>
+      </div>
+    </div>
+  `);
+  document.querySelector('.topbar').style.display = 'none';
+  on('getStarted', 'click', () => renderAuth('register', 'trainee'));
+  on('imTrainer', 'click', () => renderAuth('register', 'coach'));
+  on('goLoginLink', 'click', (e) => { e.preventDefault(); renderAuth('login'); });
+}
+
+function renderAuth(tab = 'login', presetRole) {
   render(`
     <div class="tabs">
-      <div class="tab active" id="tabLogin">${t('tabLogin')}</div>
-      <div class="tab" id="tabRegister">${t('tabRegister')}</div>
+      <div class="tab ${tab === 'login' ? 'active' : ''}" id="tabLogin">${t('tabLogin')}</div>
+      <div class="tab ${tab === 'register' ? 'active' : ''}" id="tabRegister">${t('tabRegister')}</div>
     </div>
     <div class="card" id="authCard"></div>
   `);
   document.getElementById('tabLogin').onclick = renderLoginForm;
-  document.getElementById('tabRegister').onclick = renderRegisterForm;
-  renderLoginForm();
+  document.getElementById('tabRegister').onclick = () => renderRegisterForm();
+  if (tab === 'register') renderRegisterForm(presetRole); else renderLoginForm();
 }
 
 function renderLoginForm() {
@@ -108,7 +131,7 @@ function renderLoginForm() {
   });
 }
 
-function renderRegisterForm() {
+function renderRegisterForm(presetRole) {
   document.getElementById('tabRegister').classList.add('active');
   document.getElementById('tabLogin').classList.remove('active');
   document.getElementById('authCard').innerHTML = `
@@ -118,8 +141,8 @@ function renderRegisterForm() {
     <input id="email" type="email" placeholder="${t('emailPlaceholder')}">
     <input id="password" type="password" placeholder="${t('passwordHintPlaceholder')}">
     <select id="role">
-      <option value="trainee">${t('roleTrainee')}</option>
-      <option value="coach">${t('roleCoach')}</option>
+      <option value="trainee" ${presetRole === 'trainee' ? 'selected' : ''}>${t('roleTrainee')}</option>
+      <option value="coach" ${presetRole === 'coach' ? 'selected' : ''}>${t('roleCoach')}</option>
     </select>
     <button id="doRegister">${t('createAccountBtn')}</button>
   `;
@@ -191,8 +214,46 @@ async function renderTraineeHome() {
   state.mySubs = subscriptions;
 
   const activeSubs = subscriptions.filter(s => s.status === 'active');
+  const topTrainers = [...coaches].sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0)).slice(0, 8);
+  const CATEGORIES = [
+    ['💪', t('catStrength'), 'قوة'],
+    ['🔥', t('catWeightLoss'), 'خسارة وزن'],
+    ['🏋️', t('catBodybuilding'), 'بناء أجسام'],
+    ['🤸', t('catMobility'), 'ليونة'],
+  ];
 
   render(`
+    <div class="search-bar" id="homeSearchWrap">
+      <span class="search-icon">🔍</span>
+      <input id="homeSearch" placeholder="${t('searchTrainersPlaceholder')}" readonly style="cursor:pointer;">
+    </div>
+
+    <div class="category-grid">
+      ${CATEGORIES.map(([icon, label, query]) => `
+        <div class="category-item" data-category="${escapeHtml(query)}">
+          <div class="category-icon">${icon}</div>
+          <div class="category-label">${label}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="section-header">
+      <h2>${t('topTrainersTitle')}</h2>
+      <a class="link" href="#" id="seeAllTrainers">${t('seeAllLink')}</a>
+    </div>
+    ${topTrainers.length === 0 ? `<p class="small" style="margin-bottom:16px;">${t('noApprovedCoaches')}</p>` : `
+      <div class="hscroll">
+        ${topTrainers.map((c) => `
+          <div class="trainer-mini-card" data-open-coach="${c.id}">
+            ${avatarCircle(c.name, c.avatar_path, 56)}
+            <div class="tmc-name">${escapeHtml(c.name)}</div>
+            <div class="tmc-spec">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
+            ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span>` : `<span class="small">${t('noReviewsYet')}</span>`}
+          </div>
+        `).join('')}
+      </div>
+    `}
+
     <div class="card">
       <h2>${t('welcome', { name: escapeHtml(state.user.name) })}</h2>
       <p class="small">${t('traineeHomeHint')}</p>
@@ -208,15 +269,6 @@ async function renderTraineeHome() {
           </div>
         `).join('')}
       </div>` : ''}
-    <div class="card">
-      <h2>${t('availableCoaches')}</h2>
-      ${coaches.length === 0 ? `<p class="small">${t('noApprovedCoaches')}</p>` : coaches.map(c => `
-        <div class="coach-row" data-open-coach="${c.id}">
-          <div>${escapeHtml(c.name)}<div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div></div>
-          <div class="small">${t('pricePerMonth', { price: c.price_1m })}</div>
-        </div>
-      `).join('')}
-    </div>
     ${logoutBtn()}
   `);
 
@@ -226,6 +278,11 @@ async function renderTraineeHome() {
   document.querySelectorAll('[data-open-chat]').forEach(el => {
     el.onclick = () => renderChat(el.dataset.openChat);
   });
+  on('homeSearchWrap', 'click', () => renderDiscover());
+  document.querySelectorAll('[data-category]').forEach(el => {
+    el.onclick = () => { discoverState.q = el.dataset.category; renderDiscover(); };
+  });
+  on('seeAllTrainers', 'click', (e) => { e.preventDefault(); renderDiscover(); });
   wireLogout();
 }
 
@@ -235,17 +292,35 @@ async function renderCoachProfile(coachId) {
     api('/reviews/coach/' + coachId),
   ]);
   render(`
-    <button class="secondary" id="back">${t('back')}</button>
-    <div class="card" style="text-align:center;">
-      ${avatarCircle(coach.name, coach.avatar_path, 88)}
-      <h2 style="margin-top:10px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
-      <p class="small">${escapeHtml(coach.specialty)}</p>
-      <p class="small">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
-      ${coach.profile_bio ? `<p style="font-size:13px; line-height:1.8; margin-top:10px; text-align:start;">${escapeHtml(coach.profile_bio)}</p>` : ''}
+    <div class="cover-header">
+      <div class="cover-photo"></div>
+      <div class="cover-avatar-wrap">${avatarCircle(coach.name, coach.avatar_path, 78)}</div>
+    </div>
+    <button class="secondary" id="back" style="margin-bottom:14px;">${t('back')}</button>
+    <div class="card">
+      <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
+      <p class="small">${escapeHtml(coach.specialty) || t('coachSpecialtyFallback')}</p>
+      <p class="small" style="margin-top:4px;">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
+      ${coach.profile_bio ? `<p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.profile_bio)}</p>` : ''}
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:14px;">
+      <div class="stat-card">
+        <div class="stat-value">${coach.client_count || 0}</div>
+        <div class="small">${t('clientsStatLabel')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${coach.avg_rating || '-'}</div>
+        <div class="small">${t('ratingStatLabel')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${coach.review_count || 0}</div>
+        <div class="small">${t('reviewsStatLabel')}</div>
+      </div>
     </div>
     <div class="card">
+      <h2>${t('aboutMeTitle')}</h2>
       <p style="font-size:13px; line-height:1.8;">${escapeHtml(coach.bio) || t('noBioYet')}</p>
-      <p class="small" style="margin-top:8px;">${t('certificationLabel', { cert: escapeHtml(coach.certification) || '-' })}</p>
+      ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default;">🎓 ${escapeHtml(coach.certification)}</span></div>` : ''}
     </div>
     <div class="card">
       <h2>${t('galleryTitle')}</h2>
@@ -359,21 +434,52 @@ async function renderCoachDashboard() {
   renderBottomNav('dashboard');
   const { profile } = await api('/coaches/me/profile');
   const { subscriptions } = await api('/subscriptions/mine');
+  const stats = await api('/coach-stats');
   const activeSubs = subscriptions.filter(s => s.status === 'active');
 
   const statusLabel = { pending: t('statusPending'), approved: t('statusApproved'), rejected: t('statusRejected') }[profile.status];
 
+  function fmtTime(dt) {
+    return new Date(dt).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  }
+
   render(`
     <div class="card">
-      <h2>${t('coachDashboardTitle')}</h2>
+      <h2>${t('greetingText', { name: escapeHtml(state.user.name) })}</h2>
       <p class="small">${t('accountStatusLabel')} <span class="pill">${statusLabel}</span></p>
-      <button class="secondary" id="openStats" style="margin-top:10px;">${t('viewStatsBtn')}</button>
     </div>
+
+    <div class="stat-grid-2">
+      ${statCardV2(stats.activeTrainees, '👥', t('activeClientsStatLabel'))}
+      ${statCardV2(stats.sessionsToday, '📅', t('sessionsTodayStatLabel'))}
+      ${statCardV2(stats.monthRevenue + ' ' + t('currency'), '💰', t('thisMonthLabel'))}
+      ${statCardV2(stats.satisfactionPct != null ? stats.satisfactionPct + '%' : '-', '❤️', t('satisfactionStatLabel'))}
+    </div>
+
+    <div class="section-header">
+      <h2>${t('upcomingSessionsTitle')}</h2>
+      <a class="link" href="#" id="seeAllSessions">${t('seeAllLink')}</a>
+    </div>
+    <div class="card" style="margin-bottom:18px;">
+      ${stats.upcomingList.length === 0 ? `<p class="small">${t('noSessionsYet')}</p>` : stats.upcomingList.map((s) => `
+        <div class="coach-row" style="gap:10px;">
+          ${avatarCircle(s.trainee_name, s.trainee_avatar, 36)}
+          <div style="flex:1;">${escapeHtml(s.trainee_name)}<div class="small">${fmtTime(s.scheduled_at)}</div></div>
+        </div>
+      `).join('')}
+    </div>
+
     <div class="card">
       <h2>${t('myProfile')}</h2>
       <input id="specialty" placeholder="${t('specialtyPlaceholder')}" value="${escapeHtml(profile.specialty)}">
       <textarea id="bio" placeholder="${t('bioPlaceholder')}" rows="3">${escapeHtml(profile.bio)}</textarea>
       <input id="certification" placeholder="${t('certificationPlaceholder')}" value="${escapeHtml(profile.certification)}">
+      <select id="gender">
+        <option value="" ${!profile.gender ? 'selected' : ''}>${t('genderUnspecified')}</option>
+        <option value="male" ${profile.gender === 'male' ? 'selected' : ''}>${t('genderMale')}</option>
+        <option value="female" ${profile.gender === 'female' ? 'selected' : ''}>${t('genderFemale')}</option>
+      </select>
+      <input id="location" placeholder="${t('locationPlaceholder')}" value="${escapeHtml(profile.location)}">
       <input id="price_1m" type="number" placeholder="${t('price1mPlaceholder')}" value="${profile.price_1m || ''}">
       <input id="price_3m" type="number" placeholder="${t('price3mPlaceholder')}" value="${profile.price_3m || ''}">
       <input id="price_6m" type="number" placeholder="${t('price6mPlaceholder')}" value="${profile.price_6m || ''}">
@@ -400,6 +506,8 @@ async function renderCoachDashboard() {
         specialty: document.getElementById('specialty').value,
         bio: document.getElementById('bio').value,
         certification: document.getElementById('certification').value,
+        gender: document.getElementById('gender').value,
+        location: document.getElementById('location').value,
         price_1m: Number(document.getElementById('price_1m').value) || 0,
         price_3m: Number(document.getElementById('price_3m').value) || 0,
         price_6m: Number(document.getElementById('price_6m').value) || 0,
@@ -410,7 +518,7 @@ async function renderCoachDashboard() {
   document.querySelectorAll('[data-open-chat]').forEach(el => {
     el.onclick = () => renderChat(el.dataset.openChat);
   });
-  on('openStats', 'click', renderCoachStats);
+  on('seeAllSessions', 'click', (e) => { e.preventDefault(); renderMyBookings(); });
   wireLogout();
 }
 

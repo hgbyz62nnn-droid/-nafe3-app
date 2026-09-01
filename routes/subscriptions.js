@@ -104,13 +104,19 @@ router.post('/webhook/paymob', express.json(), (req, res) => {
 
 router.get('/mine', requireAuth, (req, res) => {
   const col = req.user.role === 'trainee' ? 'trainee_id' : 'coach_id';
+  const seenCol = req.user.role === 'trainee' ? 's.trainee_last_seen_at' : 's.coach_last_seen_at';
   const subs = db
     .prepare(
-      `SELECT s.*, u.name AS other_party_name, u.avatar_path AS other_party_avatar FROM subscriptions s
+      `SELECT s.*, u.name AS other_party_name, u.avatar_path AS other_party_avatar,
+         (SELECT content FROM messages WHERE subscription_id = s.id ORDER BY id DESC LIMIT 1) AS last_message,
+         (SELECT created_at FROM messages WHERE subscription_id = s.id ORDER BY id DESC LIMIT 1) AS last_message_at,
+         (SELECT COUNT(*) FROM messages WHERE subscription_id = s.id AND sender_id != ?
+           AND (${seenCol} IS NULL OR created_at > ${seenCol})) AS unread_count
+       FROM subscriptions s
        JOIN users u ON u.id = ${col === 'trainee_id' ? 's.coach_id' : 's.trainee_id'}
        WHERE s.${col} = ?`
     )
-    .all(req.user.id);
+    .all(req.user.id, req.user.id);
   res.json({ subscriptions: subs });
 });
 

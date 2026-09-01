@@ -25,6 +25,37 @@ router.get('/', requireAuth, requireRole('coach'), (req, res) => {
     )
     .get(coachId);
 
+  const { sessionsToday } = db
+    .prepare(
+      `SELECT COUNT(*) AS sessionsToday FROM booked_sessions bs
+       JOIN subscriptions s ON s.id = bs.subscription_id
+       WHERE s.coach_id = ? AND bs.status = 'scheduled' AND date(bs.scheduled_at) = date('now')`
+    )
+    .get(coachId);
+
+  const { monthRevenue } = db
+    .prepare(
+      `SELECT COALESCE(SUM(coach_payout), 0) AS monthRevenue FROM subscriptions
+       WHERE coach_id = ? AND status IN ('active','expired') AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`
+    )
+    .get(coachId);
+
+  const { avgRating } = db
+    .prepare('SELECT ROUND(AVG(rating), 1) AS avgRating FROM reviews WHERE coach_id = ? AND hidden = 0')
+    .get(coachId);
+  const satisfactionPct = avgRating ? Math.round((avgRating / 5) * 100) : null;
+
+  const upcomingList = db
+    .prepare(
+      `SELECT bs.id, bs.scheduled_at, t.name AS trainee_name, t.avatar_path AS trainee_avatar
+       FROM booked_sessions bs
+       JOIN subscriptions s ON s.id = bs.subscription_id
+       JOIN users t ON t.id = s.trainee_id
+       WHERE s.coach_id = ? AND bs.status = 'scheduled' AND bs.scheduled_at > datetime('now')
+       ORDER BY bs.scheduled_at ASC LIMIT 3`
+    )
+    .all(coachId);
+
   // معدل الالتزام: نسبة تعليمات "اتعمل" فعليًا من إجمالي الفرص الممكنة (عدد
   // العادات المفعّلة × 7 أيام) لكل اشتراك نشط تحت الكوتش ده في آخر أسبوع.
   const activeSubs = db
@@ -50,7 +81,7 @@ router.get('/', requireAuth, requireRole('coach'), (req, res) => {
   }
   const adherenceRate = totalPossible > 0 ? Math.round((totalDone / totalPossible) * 100) : null;
 
-  res.json({ activeTrainees, revenue, upcomingSessions, adherenceRate });
+  res.json({ activeTrainees, revenue, upcomingSessions, adherenceRate, sessionsToday, monthRevenue, satisfactionPct, upcomingList });
 });
 
 module.exports = router;

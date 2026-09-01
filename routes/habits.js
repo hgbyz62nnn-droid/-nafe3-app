@@ -12,6 +12,24 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// نسبة الالتزام بالعادات في آخر 30 يوم - بتتستخدم كـ "نسبة تقدّم" حقيقية
+// لكل متدرب (مفيش حقل "هدف/progress %" منفصل في قاعدة البيانات).
+router.get('/:subscriptionId/adherence', requireAuth, requireSubscriptionParty, (req, res) => {
+  const { habitCount } = db
+    .prepare('SELECT COUNT(*) AS habitCount FROM habit_definitions WHERE subscription_id = ? AND active = 1')
+    .get(req.sub.id);
+  if (habitCount === 0) return res.json({ pct: null });
+  const { doneCount } = db
+    .prepare(
+      `SELECT COUNT(*) AS doneCount FROM habit_logs hl
+       JOIN habit_definitions hd ON hd.id = hl.habit_id
+       WHERE hd.subscription_id = ? AND hl.done = 1 AND hl.log_date >= date('now', '-30 days')`
+    )
+    .get(req.sub.id);
+  const pct = Math.min(100, Math.round((doneCount / (habitCount * 30)) * 100));
+  res.json({ pct });
+});
+
 router.get('/:subscriptionId/definitions', requireAuth, requireSubscriptionParty, (req, res) => {
   const habits = db
     .prepare('SELECT * FROM habit_definitions WHERE subscription_id = ? AND active = 1 ORDER BY sort_order, id')

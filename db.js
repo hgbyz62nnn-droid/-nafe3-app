@@ -194,5 +194,9 @@ CREATE TABLE IF NOT EXISTS gallery_photos (
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN bio TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN gender TEXT CHECK(gender IN ('male','female') OR gender IS NULL)"); } catch (e) {}
+try { db.exec("ALTER TABLE coach_profiles ADD COLUMN location TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE subscriptions ADD COLUMN trainee_last_seen_at TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE subscriptions ADD COLUMN coach_last_seen_at TEXT"); } catch (e) {}
 
 module.exports = db;
