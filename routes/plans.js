@@ -23,6 +23,7 @@ function sanitizeDays(days) {
           const rpe = toNullableNumber(e?.rpe);
           return {
             name: clampStr(e?.name, 100),
+            exercise_id: toNullableNumber(e?.exercise_id),
             sets: toNullableNumber(e?.sets),
             reps: clampStr(e?.reps, 30),
             weight: clampStr(e?.weight, 30),

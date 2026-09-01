@@ -508,4 +508,94 @@ if (bookedSessionsSql && !bookedSessionsSql.sql.includes('no_show')) {
   `);
 }
 
+// مكتبة التمارين - نفس فكرة trainer_documents: كيان معزول تمامًا، مش
+// مربوط بأي منطق موجود بالفعل في routes/plans.js. coach_id = NULL معناها
+// تمرين عام من مكتبة النظام (متاح لكل الكوتشات)، وأي قيمة تانية معناها
+// تمرين مخصص أضافه كوتش معيّن ومش ظاهر لغيره. برنامج التمرين (days_json في
+// workout_plans) بيفضل يخزن اسم التمرين كنص زي ما هو دايمًا - exercise_id
+// مجرد رابط اختياري إضافي لو الكوتش اختار التمرين من المكتبة، فأي بيانات
+// قديمة أو نص حر يفضل شغال زي ما هو من غير أي تغيير.
+db.exec(`
+CREATE TABLE IF NOT EXISTS exercises (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER REFERENCES users(id),
+  name TEXT NOT NULL,
+  muscle_group TEXT,
+  equipment TEXT,
+  difficulty TEXT,
+  video_url TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_exercises_coach ON exercises(coach_id);
+
+CREATE TABLE IF NOT EXISTS exercise_favorites (
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  exercise_id INTEGER NOT NULL REFERENCES exercises(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (coach_id, exercise_id)
+);
+`);
+
+// تزريع مكتبة تمارين عامة مرة واحدة بس - لو الجدول فاضي (قاعدة جديدة أو
+// أول نشر بعد إضافة الميزة دي). لو فيه تمارين بالفعل (تمارين مخصصة أضافها
+// كوتش حقيقي قبل التزريع ده) منعملش حاجة، عشان منكررش التزريع مع كل تشغيل.
+const exerciseCount = db.prepare('SELECT COUNT(*) c FROM exercises').get().c;
+if (exerciseCount === 0) {
+  const insertExercise = db.prepare(
+    'INSERT INTO exercises (coach_id, name, muscle_group, equipment, difficulty) VALUES (NULL, ?, ?, ?, ?)'
+  );
+  const seedExercises = [
+    ['بنش برس بار', 'chest', 'barbell', 'intermediate'],
+    ['بنش برس دمبل', 'chest', 'dumbbell', 'beginner'],
+    ['بنش برس مايل بار', 'chest', 'barbell', 'intermediate'],
+    ['بنش برس مايل دمبل', 'chest', 'dumbbell', 'intermediate'],
+    ['تفتيح دمبل', 'chest', 'dumbbell', 'beginner'],
+    ['كابل كروس أوفر', 'chest', 'cable', 'intermediate'],
+    ['بار متوازي (تريسبس/صدر)', 'chest', 'bodyweight', 'advanced'],
+    ['بوش أب', 'chest', 'bodyweight', 'beginner'],
+    ['بك سكوات', 'legs', 'barbell', 'intermediate'],
+    ['فرونت سكوات', 'legs', 'barbell', 'advanced'],
+    ['ليج بريس', 'legs', 'machine', 'beginner'],
+    ['لانجز دمبل', 'legs', 'dumbbell', 'beginner'],
+    ['رومانيان ديدليفت', 'legs', 'barbell', 'intermediate'],
+    ['ليج إكستنشن', 'legs', 'machine', 'beginner'],
+    ['ليج كيرل', 'legs', 'machine', 'beginner'],
+    ['هيب ثرست بار', 'legs', 'barbell', 'intermediate'],
+    ['كالف رايز واقف', 'legs', 'machine', 'beginner'],
+    ['بلغاريان سبليت سكوات', 'legs', 'dumbbell', 'advanced'],
+    ['ديدليفت تقليدي', 'back', 'barbell', 'advanced'],
+    ['سحب أرضي (بار)', 'back', 'barbell', 'intermediate'],
+    ['سحب أرضي دمبل', 'back', 'dumbbell', 'beginner'],
+    ['بول أب', 'back', 'bodyweight', 'advanced'],
+    ['لات بول داون', 'back', 'cable', 'beginner'],
+    ['سحب كابل جلوس', 'back', 'cable', 'beginner'],
+    ['تي بار رو', 'back', 'barbell', 'intermediate'],
+    ['هايبر إكستنشن', 'back', 'bodyweight', 'beginner'],
+    ['أوفرهيد برس بار', 'shoulders', 'barbell', 'intermediate'],
+    ['أوفرهيد برس دمبل', 'shoulders', 'dumbbell', 'beginner'],
+    ['رفرفة جانبية دمبل', 'shoulders', 'dumbbell', 'beginner'],
+    ['رفرفة أمامية دمبل', 'shoulders', 'dumbbell', 'beginner'],
+    ['رفرفة خلفية دمبل', 'shoulders', 'dumbbell', 'beginner'],
+    ['فيس بول', 'shoulders', 'cable', 'intermediate'],
+    ['شراج بار', 'shoulders', 'barbell', 'intermediate'],
+    ['بايسبس كيرل بار', 'arms', 'barbell', 'beginner'],
+    ['بايسبس كيرل دمبل', 'arms', 'dumbbell', 'beginner'],
+    ['هامر كيرل', 'arms', 'dumbbell', 'beginner'],
+    ['تريسبس بوش داون كابل', 'arms', 'cable', 'beginner'],
+    ['تريسبس اكستنشن دمبل', 'arms', 'dumbbell', 'beginner'],
+    ['ديبس', 'arms', 'bodyweight', 'advanced'],
+    ['بلانك', 'core', 'bodyweight', 'beginner'],
+    ['كرانش', 'core', 'bodyweight', 'beginner'],
+    ['رفع أرجل معلق', 'core', 'bodyweight', 'advanced'],
+    ['روسي تويست', 'core', 'bodyweight', 'beginner'],
+    ['أب ويل', 'core', 'bodyweight', 'advanced'],
+    ['جري خفيف', 'cardio', 'bodyweight', 'beginner'],
+    ['جامبينج جاك', 'cardio', 'bodyweight', 'beginner'],
+    ['بيربيز', 'cardio', 'bodyweight', 'intermediate'],
+    ['نط الحبل', 'cardio', 'bodyweight', 'beginner'],
+  ];
+  const insertMany = db.transaction((rows) => { for (const r of rows) insertExercise.run(...r); });
+  insertMany(seedExercises);
+}
+
 module.exports = db;

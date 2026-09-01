@@ -1467,6 +1467,167 @@ const GOAL_LABELS = {
 const EXPERIENCE_LABELS = { beginner: 'expBeginner', intermediate: 'expIntermediate', advanced: 'expAdvanced' };
 const TRAINING_TYPE_LABELS = { gym: 'typeGym', home: 'typeHome', online: 'typeOnline', in_person: 'typeInPerson' };
 
+// -------------------- مكتبة التمارين --------------------
+
+const MUSCLE_GROUP_LABELS = {
+  chest: 'muscleGroupChest', back: 'muscleGroupBack', legs: 'muscleGroupLegs',
+  shoulders: 'muscleGroupShoulders', arms: 'muscleGroupArms', core: 'muscleGroupCore', cardio: 'muscleGroupCardio',
+};
+const EQUIPMENT_LABELS = {
+  barbell: 'equipmentBarbell', dumbbell: 'equipmentDumbbell', machine: 'equipmentMachine',
+  cable: 'equipmentCable', bodyweight: 'equipmentBodyweight', bands: 'equipmentBands', kettlebell: 'equipmentKettlebell',
+};
+
+function exerciseTagLine(ex) {
+  const parts = [];
+  if (ex.muscle_group) parts.push(t(MUSCLE_GROUP_LABELS[ex.muscle_group]));
+  if (ex.equipment) parts.push(t(EQUIPMENT_LABELS[ex.equipment]));
+  if (ex.difficulty) parts.push(t(EXPERIENCE_LABELS[ex.difficulty]));
+  return parts.join(' · ');
+}
+
+function openExerciseLibrary(onSelect) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  const libState = { scope: 'all', search: '', muscleGroup: '', equipment: '', difficulty: '' };
+
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('exerciseLibraryTitle')}</h2>
+      <input id="exLibSearch" placeholder="${t('searchExercisesPlaceholder')}">
+      <div class="chip-row" id="exLibTabs" style="margin:8px 0;">
+        <span class="filter-chip active" data-scope="all">${t('allExercisesTab')}</span>
+        <span class="filter-chip" data-scope="favorites">${t('favoritesTab')}</span>
+        <span class="filter-chip" data-scope="mine">${t('myExercisesTab')}</span>
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:10px;">
+        <select id="exLibMuscle" style="flex:1;">
+          <option value="">${t('anyMuscleGroupOption')}</option>
+          ${Object.entries(MUSCLE_GROUP_LABELS).map(([k, l]) => `<option value="${k}">${t(l)}</option>`).join('')}
+        </select>
+        <select id="exLibEquipment" style="flex:1;">
+          <option value="">${t('anyEquipmentOption')}</option>
+          ${Object.entries(EQUIPMENT_LABELS).map(([k, l]) => `<option value="${k}">${t(l)}</option>`).join('')}
+        </select>
+      </div>
+      <button class="secondary" id="exLibAddCustomToggle" style="margin-bottom:10px;">${t('addCustomExerciseBtn')}</button>
+      <div id="exLibCustomForm" class="hidden" style="margin-bottom:12px;">
+        <input id="exLibNewName" placeholder="${t('customExerciseNamePlaceholder')}">
+        <div style="display:flex; gap:6px;">
+          <select id="exLibNewMuscle" style="flex:1;">
+            <option value="">${t('anyMuscleGroupOption')}</option>
+            ${Object.entries(MUSCLE_GROUP_LABELS).map(([k, l]) => `<option value="${k}">${t(l)}</option>`).join('')}
+          </select>
+          <select id="exLibNewEquipment" style="flex:1;">
+            <option value="">${t('anyEquipmentOption')}</option>
+            ${Object.entries(EQUIPMENT_LABELS).map(([k, l]) => `<option value="${k}">${t(l)}</option>`).join('')}
+          </select>
+        </div>
+        <button id="exLibSaveCustom">${t('saveCustomExerciseBtn')}</button>
+      </div>
+      <div id="exLibList"><div class="skeleton block"></div></div>
+      <button class="secondary" id="closeModal" style="margin-top:10px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+
+  document.getElementById('exLibAddCustomToggle').onclick = () => {
+    document.getElementById('exLibCustomForm').classList.toggle('hidden');
+  };
+  document.getElementById('exLibSaveCustom').onclick = async () => {
+    const name = document.getElementById('exLibNewName').value.trim();
+    if (!name) return;
+    try {
+      await api('/exercises', { method: 'POST', body: JSON.stringify({
+        name,
+        muscleGroup: document.getElementById('exLibNewMuscle').value || null,
+        equipment: document.getElementById('exLibNewEquipment').value || null,
+      }) });
+      document.getElementById('exLibNewName').value = '';
+      document.getElementById('exLibCustomForm').classList.add('hidden');
+      libState.scope = 'mine';
+      document.querySelectorAll('#exLibTabs .filter-chip').forEach((c) => c.classList.toggle('active', c.dataset.scope === 'mine'));
+      loadList();
+    } catch (e) { alert(e.message); }
+  };
+
+  document.querySelectorAll('#exLibTabs .filter-chip').forEach((chip) => {
+    chip.onclick = () => {
+      document.querySelectorAll('#exLibTabs .filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      libState.scope = chip.dataset.scope;
+      loadList();
+    };
+  });
+  document.getElementById('exLibSearch').oninput = (e) => { libState.search = e.target.value; loadList(); };
+  document.getElementById('exLibMuscle').onchange = (e) => { libState.muscleGroup = e.target.value; loadList(); };
+  document.getElementById('exLibEquipment').onchange = (e) => { libState.equipment = e.target.value; loadList(); };
+
+  async function loadList() {
+    const listBox = document.getElementById('exLibList');
+    if (!listBox) return;
+    listBox.innerHTML = `<div class="skeleton block"></div>`;
+    const qs = new URLSearchParams();
+    qs.set('scope', libState.scope);
+    if (libState.search) qs.set('search', libState.search);
+    if (libState.muscleGroup) qs.set('muscleGroup', libState.muscleGroup);
+    if (libState.equipment) qs.set('equipment', libState.equipment);
+    let exercises;
+    try {
+      ({ exercises } = await api('/exercises?' + qs.toString()));
+    } catch (e) { return; }
+    if (!document.getElementById('exLibList')) return;
+    if (!exercises.length) {
+      listBox.innerHTML = `<p class="small">${t('noExercisesFoundMsg')}</p>`;
+      return;
+    }
+    listBox.innerHTML = exercises.map((ex) => `
+      <div class="coach-row" style="gap:8px;" data-ex-id="${ex.id}">
+        <div style="flex:1; min-width:0;">
+          <div>${escapeHtml(ex.name)}</div>
+          <div class="small">${escapeHtml(exerciseTagLine(ex))}</div>
+        </div>
+        <button class="secondary" data-fav-ex="${ex.id}" data-fav-state="${ex.is_favorite}" style="width:auto; padding:6px 10px;">${ex.is_favorite ? '♥' : '♡'}</button>
+        ${ex.coach_id ? `<button class="secondary" data-del-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
+        <button data-select-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('selectExerciseBtn')}</button>
+      </div>
+    `).join('');
+
+    listBox.querySelectorAll('[data-select-ex]').forEach((btn) => {
+      btn.onclick = () => {
+        const ex = exercises.find((x) => x.id === Number(btn.dataset.selectEx));
+        closeModal();
+        onSelect(ex);
+      };
+    });
+    listBox.querySelectorAll('[data-fav-ex]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.dataset.favEx;
+        const isFav = btn.dataset.favState === '1';
+        try {
+          await api('/exercises/' + id + '/favorite', { method: isFav ? 'DELETE' : 'POST' });
+          loadList();
+        } catch (e) { alert(e.message); }
+      };
+    });
+    listBox.querySelectorAll('[data-del-ex]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm(t('removeBtn') + '?')) return;
+        try {
+          await api('/exercises/' + btn.dataset.delEx, { method: 'DELETE' });
+          loadList();
+        } catch (e) { alert(e.message); }
+      };
+    });
+  }
+
+  loadList();
+}
+
 function renderCoachCard(c) {
   return `
     <div class="card" data-open-coach="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
@@ -1994,7 +2155,7 @@ async function wireTemplateToolbar(subscriptionId) {
 const EXERCISE_TYPE_KEYS = { normal: 'exTypeNormal', superset: 'exTypeSuperset', dropset: 'exTypeDropset', warmup: 'exTypeWarmup', cooldown: 'exTypeCooldown' };
 
 function newExercise() {
-  return { name: '', sets: null, reps: '', weight: '', rest: '', tempo: '', rpe: null, type: 'normal', video_url: '', notes: '' };
+  return { name: '', exercise_id: null, sets: null, reps: '', weight: '', rest: '', tempo: '', rpe: null, type: 'normal', video_url: '', notes: '' };
 }
 
 function exerciseSummaryLine(ex) {
@@ -2043,6 +2204,7 @@ function renderWorkoutBody(subscriptionId, isCoach) {
           <div class="exercise-card">
             <div style="display:flex; gap:6px;">
               <input data-ex="name:${di}:${ei}" value="${escapeHtml(ex.name)}" placeholder="${t('exerciseNamePlaceholder')}" style="flex:1;">
+              <button type="button" class="secondary" data-browse-ex="${di}:${ei}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('browseLibraryBtn')}">${svgIcon('search', 16)}</button>
               <select data-ex="type:${di}:${ei}" style="width:auto; flex-shrink:0;">
                 ${Object.entries(EXERCISE_TYPE_KEYS).map(([val, key]) => `<option value="${val}" ${ex.type === val ? 'selected' : ''}>${t(key)}</option>`).join('')}
               </select>
@@ -2099,6 +2261,16 @@ function renderWorkoutBody(subscriptionId, isCoach) {
     el.onclick = () => {
       wp.days[+el.dataset.addEx].exercises.push(newExercise());
       renderWorkoutBody(subscriptionId, isCoach);
+    };
+  });
+  document.querySelectorAll('[data-browse-ex]').forEach((el) => {
+    el.onclick = () => {
+      const [di, ei] = el.dataset.browseEx.split(':').map(Number);
+      openExerciseLibrary((chosen) => {
+        wp.days[di].exercises[ei].name = chosen.name;
+        wp.days[di].exercises[ei].exercise_id = chosen.id;
+        renderWorkoutBody(subscriptionId, isCoach);
+      });
     };
   });
   document.querySelectorAll('[data-remove-ex]').forEach((el) => {
