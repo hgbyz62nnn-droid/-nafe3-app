@@ -549,22 +549,12 @@ async function renderChat(subscriptionId) {
 
 async function renderCoachDashboard() {
   renderBottomNav('dashboard');
-  const { profile, pendingEdit } = await api('/coaches/me/profile');
+  const { profile } = await api('/coaches/me/profile');
   const { subscriptions } = await api('/subscriptions/mine');
   const stats = await api('/coach-stats');
   const activeSubs = subscriptions.filter(s => s.status === 'active');
 
   const statusLabel = { pending: t('statusPending'), approved: t('statusApproved'), rejected: t('statusRejected') }[profile.status];
-
-  // لو المدرب معتمد وعنده تعديل قيد المراجعة أو اتراجع، الفورم بيتملى
-  // من التعديل ده مش من النسخة العامة الحالية - عشان يشوف آخر حاجة بعتها
-  // ويقدر يعدّلها ويبعتها تاني، مش يضطر يكتب كل حاجة من الأول.
-  const formValues = pendingEdit || profile;
-  const editBanner = pendingEdit
-    ? pendingEdit.status === 'pending'
-      ? `<div class="notice">${t('profileEditPendingBanner', { date: new Date(pendingEdit.created_at).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US') })}</div>`
-      : `<div class="notice">${t('profileEditRejectedBanner')}${pendingEdit.review_note ? ': ' + escapeHtml(pendingEdit.review_note) : ''}</div>`
-    : '';
 
   function fmtTime(dt) {
     return new Date(dt).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
@@ -583,6 +573,14 @@ async function renderCoachDashboard() {
       ${statCardV2(stats.satisfactionPct != null ? stats.satisfactionPct + '%' : '-', svgIcon('heart', 15), t('satisfactionStatLabel'))}
     </div>
 
+    <div class="card menu-card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:0;">${t('quickActionsTitle')}</h2>
+      ${menuRow({ icon: svgIcon('profile', 18), label: t('editProfileMenuItem'), id: 'qaEditProfile' })}
+      ${menuRow({ icon: svgIcon('client', 18), label: t('myClientsTitle'), id: 'qaMyClients' })}
+      ${menuRow({ icon: svgIcon('calendar', 18), label: t('availabilityMenuItem'), id: 'qaAvailability' })}
+      ${menuRow({ icon: svgIcon('upload', 18), label: t('trainerDocumentsMenuItem'), id: 'qaDocuments' })}
+    </div>
+
     <div class="section-header">
       <h2>${t('upcomingSessionsTitle')}</h2>
       <a class="link" href="#" id="seeAllSessions">${t('seeAllLink')}</a>
@@ -596,6 +594,47 @@ async function renderCoachDashboard() {
       `).join('')}
     </div>
 
+    ${activeSubs.length ? `
+      <div class="card">
+        <h2>${t('myTrainees')}</h2>
+        ${activeSubs.map(s => `
+          <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
+            ${avatarCircle(s.other_party_name, s.other_party_avatar, 36)}
+            <div style="flex:1;">${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
+            <div class="small">${t('chatLink')}</div>
+          </div>
+        `).join('')}
+      </div>` : ''}
+    ${logoutBtn()}
+  `);
+
+  document.querySelectorAll('[data-open-chat]').forEach(el => {
+    el.onclick = () => renderChat(el.dataset.openChat);
+  });
+  on('seeAllSessions', 'click', (e) => { e.preventDefault(); renderMyBookings(); });
+  on('qaEditProfile', 'click', renderCoachProfileEdit);
+  on('qaMyClients', 'click', renderMyClients);
+  on('qaAvailability', 'click', renderCoachAvailability);
+  on('qaDocuments', 'click', renderTrainerDocuments);
+
+  wireLogout();
+}
+
+async function renderCoachProfileEdit() {
+  const { profile, pendingEdit } = await api('/coaches/me/profile');
+
+  // لو المدرب معتمد وعنده تعديل قيد المراجعة أو اتراجع، الفورم بيتملى
+  // من التعديل ده مش من النسخة العامة الحالية - عشان يشوف آخر حاجة بعتها
+  // ويقدر يعدّلها ويبعتها تاني، مش يضطر يكتب كل حاجة من الأول.
+  const formValues = pendingEdit || profile;
+  const editBanner = pendingEdit
+    ? pendingEdit.status === 'pending'
+      ? `<div class="notice">${t('profileEditPendingBanner', { date: new Date(pendingEdit.created_at).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US') })}</div>`
+      : `<div class="notice">${t('profileEditRejectedBanner')}${pendingEdit.review_note ? ': ' + escapeHtml(pendingEdit.review_note) : ''}</div>`
+    : '';
+
+  render(`
+    <button class="secondary" id="back" style="margin-bottom:14px;">${t('back')}</button>
     <div class="card">
       <h2>${t('myProfile')}</h2>
       ${editBanner}
@@ -631,20 +670,9 @@ async function renderCoachDashboard() {
       </div>
       <button id="saveMatchingTags" style="margin-top:12px;">${t('saveMatchingTagsBtn')}</button>
     </div>
-    ${activeSubs.length ? `
-      <div class="card">
-        <h2>${t('myTrainees')}</h2>
-        ${activeSubs.map(s => `
-          <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
-            ${avatarCircle(s.other_party_name, s.other_party_avatar, 36)}
-            <div style="flex:1;">${escapeHtml(s.other_party_name)}<div class="small">${t('packageLabel', { pkg: s.package })}</div></div>
-            <div class="small">${t('chatLink')}</div>
-          </div>
-        `).join('')}
-      </div>` : ''}
-    ${logoutBtn()}
   `);
 
+  on('back', 'click', renderCoachDashboard);
   on('saveProfile', 'click', async () => {
     try {
       await api('/coaches/me/profile', { method: 'PUT', body: JSON.stringify({
@@ -657,13 +685,9 @@ async function renderCoachDashboard() {
         price_3m: Number(document.getElementById('price_3m').value) || 0,
         price_6m: Number(document.getElementById('price_6m').value) || 0,
       })});
-      renderCoachDashboard();
+      renderCoachProfileEdit();
     } catch (e) { alert(e.message); }
   });
-  document.querySelectorAll('[data-open-chat]').forEach(el => {
-    el.onclick = () => renderChat(el.dataset.openChat);
-  });
-  on('seeAllSessions', 'click', (e) => { e.preventDefault(); renderMyBookings(); });
 
   document.querySelectorAll('[data-tag-goal], [data-tag-type], [data-tag-exp]').forEach((el) => {
     el.onclick = () => el.classList.toggle('active');
@@ -677,8 +701,6 @@ async function renderCoachDashboard() {
       alert(t('matchingTagsSavedAlert'));
     } catch (e) { alert(e.message); }
   });
-
-  wireLogout();
 }
 
 wireLangToggle();

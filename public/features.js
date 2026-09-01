@@ -314,7 +314,7 @@ async function renderMore() {
   `);
   wireAvatarBioCard(async () => { await refreshCurrentUser(); renderMore(); });
   loadAndRenderGallery('galleryBox', state.user.id, true);
-  on('editProfileLink', 'click', (e) => { e.preventDefault(); renderCoachDashboard(); });
+  on('editProfileLink', 'click', (e) => { e.preventDefault(); renderCoachProfileEdit(); });
   on('menuEarnings', 'click', renderEarnings);
   on('menuAvailability', 'click', renderCoachAvailability);
   on('menuTrainerNetwork', 'click', renderTrainerNetwork);
