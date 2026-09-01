@@ -191,6 +191,19 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- بلاغ عن تقييم معيّن (مش عن مستخدم بشكل عام زي user_reports) - غالبًا
+-- الكوتش اللي اتقيّم هو اللي بيبلّغ عن تقييم مسيء/غير حقيقي، عشان الأدمن
+-- يراجعه ويقرر يخفيه أو يتجاهله.
+CREATE TABLE IF NOT EXISTS review_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_id INTEGER NOT NULL REFERENCES reviews(id),
+  reporter_id INTEGER NOT NULL REFERENCES users(id),
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','dismissed','action_taken')),
+  admin_action TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- جاليري صور عامة/خاصة لأي يوزر (كوتش أو متدرب)، منفصلة عن صورة البروفايل.
 CREATE TABLE IF NOT EXISTS gallery_photos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,8 +214,11 @@ CREATE TABLE IF NOT EXISTS gallery_photos (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
--- زوج صور "قبل/بعد" بيضيفه الكوتش لمتدرب معيّن، بنفس منطق الخصوصية
--- Public/Private المستخدم في gallery_photos بالظبط.
+-- زوج صور "قبل/بعد" بيضيفه الكوتش لمتدرب معيّن. ثلاث حالات ظهور:
+-- private (الكوتش بس)، client_only (الكوتش والمتدرب - الافتراضي)، public
+-- (يظهر في البروفايل العام). عمدًا مينفعش visibility='public' لوحدها
+-- تنشر الصورة - لازم permission_status = 'granted' كمان (موافقة صريحة من
+-- المتدرب) عشان مفيش نشر تلقائي لصور متدرب من غير علمه أبدًا.
 CREATE TABLE IF NOT EXISTS transformations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
@@ -213,7 +229,11 @@ CREATE TABLE IF NOT EXISTS transformations (
   duration_label TEXT,
   goal TEXT,
   notes TEXT,
-  visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('public','private')),
+  weight_change REAL,
+  body_fat_change REAL,
+  testimonial TEXT,
+  visibility TEXT NOT NULL DEFAULT 'client_only' CHECK(visibility IN ('private','client_only','public')),
+  permission_status TEXT NOT NULL DEFAULT 'not_requested' CHECK(permission_status IN ('not_requested','pending','granted','declined')),
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -325,5 +345,46 @@ try { db.exec("ALTER TABLE subscriptions ADD COLUMN coach_last_seen_at TEXT"); }
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN protein_target INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN carbs_target INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE nutrition_plans ADD COLUMN fat_target INTEGER"); } catch (e) {}
+
+// SQLite مبيسمحش تعدّل CHECK constraint في مكانها بـ ALTER TABLE، فلازم
+// نعيد إنشاء الجدول لما نوسّع visibility من (public/private) لـ
+// (private/client_only/public) ونضيف الأعمدة الجديدة. الـ guard هنا بيتأكد
+// إن ده بيحصل مرة واحدة بس على أي قاعدة قديمة لسه شايلة الـ constraint
+// القديم - قاعدة جديدة أصلًا بتتعمل بالشكل الجديد من CREATE TABLE فوق.
+// صفوف 'private' القديمة كانت فعليًا معناها "يشوفها الكوتش والمتدرب بس
+// مش عامة"، فبتترحّل لـ 'client_only' عشان الشكل يفضل زي ما هو للمتدربين
+// اللي شايفين تحولاتهم دلوقتي. صفوف 'public' القديمة كانت بالفعل ظاهرة
+// عامة، فبتترحّل بـ permission_status='granted' عشان الترحيل ميخبيش
+// حاجة كانت ظاهرة فعليًا لمختبرين حقيقيين دلوقتي.
+const transformationsTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='transformations'").get();
+if (transformationsTableSql && !transformationsTableSql.sql.includes('client_only')) {
+  db.exec(`
+    ALTER TABLE transformations RENAME TO transformations_old;
+    CREATE TABLE transformations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+      coach_id INTEGER NOT NULL REFERENCES users(id),
+      trainee_id INTEGER NOT NULL REFERENCES users(id),
+      before_photo_path TEXT NOT NULL,
+      after_photo_path TEXT NOT NULL,
+      duration_label TEXT,
+      goal TEXT,
+      notes TEXT,
+      weight_change REAL,
+      body_fat_change REAL,
+      testimonial TEXT,
+      visibility TEXT NOT NULL DEFAULT 'client_only' CHECK(visibility IN ('private','client_only','public')),
+      permission_status TEXT NOT NULL DEFAULT 'not_requested' CHECK(permission_status IN ('not_requested','pending','granted','declined')),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO transformations (id, subscription_id, coach_id, trainee_id, before_photo_path, after_photo_path, duration_label, goal, notes, visibility, permission_status, created_at)
+      SELECT id, subscription_id, coach_id, trainee_id, before_photo_path, after_photo_path, duration_label, goal, notes,
+        CASE visibility WHEN 'private' THEN 'client_only' ELSE visibility END,
+        CASE WHEN visibility = 'public' THEN 'granted' ELSE 'not_requested' END,
+        created_at
+      FROM transformations_old;
+    DROP TABLE transformations_old;
+  `);
+}
 
 module.exports = db;

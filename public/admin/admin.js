@@ -522,8 +522,30 @@ async function renderDashboard(admin) {
 
   async function showReviews() {
     activateTab('tabReviews');
-    const { reviews } = await api('/reviews/admin/all');
+    const [{ reviews }, { reports }] = await Promise.all([
+      api('/reviews/admin/all'),
+      api('/reviews/admin/reports?status=open'),
+    ]);
     document.getElementById('adminContent').innerHTML = `
+      ${reports.length > 0 ? `
+      <div class="card">
+        <h2>بلاغات على تقييمات (${reports.length})</h2>
+        ${reports.map((r) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>بلاغ من ${escapeHtml(r.reporter_name)}</b>
+              <span class="badge blocked">مفتوح</span>
+            </div>
+            <p class="small">على تقييم ${escapeHtml(r.trainee_name)}: ${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)} ${r.review_hidden ? '· <span style="color:var(--danger)">التقييم مخفي بالفعل</span>' : ''}</p>
+            ${r.comment ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.comment)}</p>` : ''}
+            ${r.reason ? `<p class="small">سبب البلاغ: ${escapeHtml(r.reason)}</p>` : ''}
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <button data-dismiss-report="${r.id}">🙈 تجاهل البلاغ</button>
+              ${!r.review_hidden ? `<button class="danger" data-hide-report="${r.id}">🚫 إخفاء التقييم</button>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>` : ''}
       <div class="card">
         <h2>مراجعة التقييمات</h2>
         ${reviews.length === 0 ? '<p class="small">مفيش تقييمات لسه.</p>' : reviews.map((r) => `
@@ -548,6 +570,12 @@ async function renderDashboard(admin) {
     });
     document.querySelectorAll('[data-restore]').forEach((el) => {
       el.onclick = async () => { await api('/reviews/admin/' + el.dataset.restore + '/restore', { method: 'POST' }); showReviews(); };
+    });
+    document.querySelectorAll('[data-dismiss-report]').forEach((el) => {
+      el.onclick = async () => { await api('/reviews/admin/reports/' + el.dataset.dismissReport + '/action', { method: 'POST', body: JSON.stringify({ action: 'dismiss' }) }); showReviews(); };
+    });
+    document.querySelectorAll('[data-hide-report]').forEach((el) => {
+      el.onclick = async () => { await api('/reviews/admin/reports/' + el.dataset.hideReport + '/action', { method: 'POST', body: JSON.stringify({ action: 'hide' }) }); showReviews(); };
     });
   }
 

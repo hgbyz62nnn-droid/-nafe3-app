@@ -691,6 +691,12 @@ async function renderBlockedUsers() {
 
 // -------------------- التحولات (قبل/بعد) --------------------
 
+function transformPermissionBadge(tr) {
+  if (tr.visibility !== 'public') return '';
+  const labelKey = { not_requested: 'permissionNotRequestedLabel', pending: 'permissionPendingLabel', granted: 'permissionGrantedLabel', declined: 'permissionDeclinedLabel' }[tr.permission_status];
+  return labelKey ? `<div class="tmeta-small">${t(labelKey)}</div>` : '';
+}
+
 function renderTransformCard(tr, showTraineeName) {
   return `
     <div class="transform-card" data-open-transform="${tr.id}">
@@ -702,13 +708,19 @@ function renderTransformCard(tr, showTraineeName) {
         ${showTraineeName ? `<div class="tname">${escapeHtml(tr.trainee_name)}</div>` : ''}
         ${tr.duration_label ? `<div class="tmeta-small">${escapeHtml(tr.duration_label)}</div>` : ''}
         ${tr.visibility === 'private' ? `<div class="tmeta-small">${t('visibilityPrivate')}</div>` : ''}
+        ${tr.visibility === 'client_only' ? `<div class="tmeta-small">${t('visibilityClientOnly')}</div>` : ''}
+        ${transformPermissionBadge(tr)}
       </div>
     </div>
   `;
 }
 
-function openTransformModal(tr, isCoach, onChange) {
+// isOwnerView: true لما المودال بيتفتح من hub الاشتراك (الكوتش أو المتدرب
+// نفسه)، false للبروفايل العام المفتوح لأي حد - عشان زرار الموافقة/الرفض
+// يظهر بس للمتدرب صاحب التحول، مش لأي زائر عام.
+function openTransformModal(tr, isCoach, onChange, isOwnerView) {
   closeModal();
+  const isTrainee = isOwnerView && !isCoach;
   const root = document.createElement('div');
   root.id = 'modalRoot';
   root.className = 'modal-backdrop';
@@ -718,15 +730,33 @@ function openTransformModal(tr, isCoach, onChange) {
         <img src="/uploads/${encodeURIComponent(tr.before_photo_path)}" alt="">
         <img src="/uploads/${encodeURIComponent(tr.after_photo_path)}" alt="">
       </div>
+      ${tr.duration_label ? `<p class="small"><b>${t('durationLabel')}:</b> ${escapeHtml(tr.duration_label)}</p>` : ''}
       ${tr.goal ? `<p class="small"><b>${t('transformGoalLabel')}:</b> ${escapeHtml(tr.goal)}</p>` : ''}
+      ${tr.weight_change != null ? `<p class="small"><b>${t('weightChangeLabel')}:</b> ${tr.weight_change > 0 ? '+' : ''}${tr.weight_change} ${t('kgUnit')}</p>` : ''}
+      ${tr.body_fat_change != null ? `<p class="small"><b>${t('bodyFatChangeLabel')}:</b> ${tr.body_fat_change > 0 ? '+' : ''}${tr.body_fat_change}%</p>` : ''}
       ${tr.notes ? `<p class="small">${escapeHtml(tr.notes)}</p>` : ''}
+      ${tr.testimonial ? `<p class="small" style="margin-top:8px; font-style:italic;">"${escapeHtml(tr.testimonial)}"</p>` : ''}
+      ${isCoach || isTrainee ? `<div style="margin-top:8px;">${transformPermissionBadge(tr)}</div>` : ''}
       ${isCoach ? `
-        <label class="small" style="display:block; margin-bottom:6px;">${t('photoVisibilityLabel')}</label>
+        <label class="small" style="display:block; margin:10px 0 6px;">${t('photoVisibilityLabel')}</label>
         <select id="transformVisibility" style="margin-bottom:10px;">
           <option value="private" ${tr.visibility === 'private' ? 'selected' : ''}>${t('visibilityPrivate')}</option>
+          <option value="client_only" ${tr.visibility === 'client_only' ? 'selected' : ''}>${t('visibilityClientOnly')}</option>
           <option value="public" ${tr.visibility === 'public' ? 'selected' : ''}>${t('visibilityPublic')}</option>
         </select>
         <button class="danger" id="deleteTransform" style="margin-bottom:10px;">${t('deletePhotoConfirm')}</button>
+      ` : ''}
+      ${isTrainee && tr.visibility === 'public' && tr.permission_status === 'pending' ? `
+        <div class="card" style="background:var(--surface-2); margin:10px 0;">
+          <p class="small">${t('permissionRequestTitle')}</p>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button id="grantPermission">${t('grantPermissionBtn')}</button>
+            <button class="secondary" id="declinePermission">${t('declinePermissionBtn')}</button>
+          </div>
+        </div>
+      ` : ''}
+      ${isTrainee && tr.visibility === 'public' && tr.permission_status === 'granted' ? `
+        <button class="secondary" id="revokePermission" style="margin:10px 0;">${t('revokePermissionBtn')}</button>
       ` : ''}
       <button class="secondary" id="closeModal">${t('closeBtn2')}</button>
     </div>
@@ -737,6 +767,7 @@ function openTransformModal(tr, isCoach, onChange) {
   if (isCoach) {
     document.getElementById('transformVisibility').onchange = async (e) => {
       await api('/transformations/' + tr.subscription_id + '/' + tr.id, { method: 'PATCH', body: JSON.stringify({ visibility: e.target.value }) });
+      closeModal();
       onChange();
     };
     document.getElementById('deleteTransform').onclick = async () => {
@@ -745,6 +776,16 @@ function openTransformModal(tr, isCoach, onChange) {
       closeModal();
       onChange();
     };
+  }
+  if (isTrainee) {
+    const respond = async (decision) => {
+      await api('/transformations/' + tr.subscription_id + '/' + tr.id + '/permission', { method: 'POST', body: JSON.stringify({ decision }) });
+      closeModal();
+      onChange();
+    };
+    on('grantPermission', 'click', () => respond('granted'));
+    on('declinePermission', 'click', () => respond('declined'));
+    on('revokePermission', 'click', () => respond('declined'));
   }
 }
 
@@ -762,7 +803,7 @@ async function loadAndRenderTransformations(containerId, subscriptionId, isCoach
   box.querySelectorAll('[data-open-transform]').forEach((el) => {
     el.onclick = () => {
       const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
-      if (tr) openTransformModal(tr, isCoach, () => loadAndRenderTransformations(containerId, subscriptionId, isCoach));
+      if (tr) openTransformModal(tr, isCoach, () => loadAndRenderTransformations(containerId, subscriptionId, isCoach), true);
     };
   });
 }
@@ -780,11 +821,16 @@ function openAddTransformModal(subscriptionId, onDone) {
       <input id="beforeFile" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
       <label class="small" style="display:block; margin-bottom:6px;">${t('afterPhotoLabel')}</label>
       <input id="afterFile" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
-      <input id="durationLabel" placeholder="${t('durationPlaceholder')}">
+      <input id="durationLabelInput" placeholder="${t('durationPlaceholder')}">
       <input id="goalInput" placeholder="${t('transformGoalLabel')}">
+      <input id="weightChangeInput" type="number" step="0.1" placeholder="${t('transformWeightChangePlaceholder')}">
+      <input id="bodyFatChangeInput" type="number" step="0.1" placeholder="${t('transformBodyFatChangePlaceholder')}">
       <textarea id="notesInput" rows="2" placeholder="${t('progressNotePlaceholder')}"></textarea>
+      <textarea id="testimonialInput" rows="2" placeholder="${t('testimonialPlaceholder')}"></textarea>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('photoVisibilityLabel')}</label>
       <select id="transformVisibilityNew" style="margin-bottom:10px;">
         <option value="private">${t('visibilityPrivate')}</option>
+        <option value="client_only" selected>${t('visibilityClientOnly')}</option>
         <option value="public">${t('visibilityPublic')}</option>
       </select>
       <button id="uploadTransform">${t('uploadBtn')}</button>
@@ -805,9 +851,14 @@ function openAddTransformModal(subscriptionId, onDone) {
     const fd = new FormData();
     fd.append('before', before);
     fd.append('after', after);
-    fd.append('duration_label', document.getElementById('durationLabel').value);
+    fd.append('duration_label', document.getElementById('durationLabelInput').value);
     fd.append('goal', document.getElementById('goalInput').value);
     fd.append('notes', document.getElementById('notesInput').value);
+    fd.append('testimonial', document.getElementById('testimonialInput').value);
+    const weightChange = document.getElementById('weightChangeInput').value;
+    const bodyFatChange = document.getElementById('bodyFatChangeInput').value;
+    if (weightChange) fd.append('weight_change', weightChange);
+    if (bodyFatChange) fd.append('body_fat_change', bodyFatChange);
     fd.append('visibility', document.getElementById('transformVisibilityNew').value);
     try {
       await apiUpload('/transformations/' + subscriptionId, fd);
@@ -830,7 +881,7 @@ async function loadAndRenderPublicTransformations(coachId) {
   box.querySelectorAll('[data-open-transform]').forEach((el) => {
     el.onclick = () => {
       const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
-      if (tr) openTransformModal(tr, false, () => {});
+      if (tr) openTransformModal(tr, false, () => {}, false);
     };
   });
 }
@@ -850,7 +901,7 @@ async function renderCoachTransformations() {
   box.querySelectorAll('[data-open-transform]').forEach((el) => {
     el.onclick = () => {
       const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
-      if (tr) openTransformModal(tr, true, renderCoachTransformations);
+      if (tr) openTransformModal(tr, true, renderCoachTransformations, true);
     };
   });
 }
@@ -2022,6 +2073,7 @@ async function renderReviewCard(subscriptionId, isCoach, hasCompletedSession) {
         ${review.comment ? `<p class="small" style="margin-top:6px;">${escapeHtml(review.comment)}</p>` : ''}
         <textarea id="coachResponse" rows="2" placeholder="${t('coachResponsePlaceholder')}" style="margin-top:10px;">${escapeHtml(review.coach_response)}</textarea>
         <button id="submitResponse">${t('submitResponseBtn')}</button>
+        <button id="reportReview" data-review-id="${review.id}" class="secondary" style="width:auto; padding:6px 10px; margin-top:8px;">${t('reportReviewBtn')}</button>
       </div>
     `;
   }
@@ -2056,6 +2108,15 @@ function wireReviewCard(subscriptionId, isCoach) {
         response: document.getElementById('coachResponse').value,
       })});
       renderSessionsTab(subscriptionId);
+    } catch (e) { alert(e.message); }
+  });
+  on('reportReview', 'click', async () => {
+    const reviewId = document.getElementById('reportReview').dataset.reviewId;
+    const reason = prompt(t('reportReviewPrompt'));
+    if (reason === null) return;
+    try {
+      await api('/reviews/' + reviewId + '/report', { method: 'POST', body: JSON.stringify({ reason }) });
+      alert(t('reportReviewSentAlert'));
     } catch (e) { alert(e.message); }
   });
 }
