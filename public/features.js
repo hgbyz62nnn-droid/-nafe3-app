@@ -286,6 +286,7 @@ async function renderMore() {
     ${profileHeader(t('roleCoachLabel'))}
     <div class="card menu-card">
       ${menuRow({ icon: '💰', label: t('earningsMenuItem'), id: 'menuEarnings' })}
+      ${menuRow({ icon: '📸', label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: '📊', label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: '🆘', label: t('supportMenuItem'), id: 'menuSupport' })}
       ${menuRow({ icon: '🌍', label: t('languageMenuItem'), value: getLang() === 'ar' ? 'العربية' : 'English', id: 'menuLanguage' })}
@@ -302,6 +303,7 @@ async function renderMore() {
   loadAndRenderGallery('galleryBox', state.user.id, true);
   on('editProfileLink', 'click', (e) => { e.preventDefault(); renderCoachDashboard(); });
   on('menuEarnings', 'click', renderEarnings);
+  on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuSupport', 'click', renderSupportHome);
   on('menuLanguage', 'click', () => { setLang(getLang() === 'ar' ? 'en' : 'ar'); renderMore(); });
@@ -546,6 +548,172 @@ function wireAvatarUpload(afterUpload) {
       alert(t('avatarSavedAlert'));
       afterUpload();
     } catch (err) { alert(err.message); }
+  });
+}
+
+// -------------------- التحولات (قبل/بعد) --------------------
+
+function renderTransformCard(tr, showTraineeName) {
+  return `
+    <div class="transform-card" data-open-transform="${tr.id}">
+      <div class="transform-pair">
+        <img src="/uploads/${encodeURIComponent(tr.before_photo_path)}" alt="">
+        <img src="/uploads/${encodeURIComponent(tr.after_photo_path)}" alt="">
+      </div>
+      <div class="transform-meta">
+        ${showTraineeName ? `<div class="tname">${escapeHtml(tr.trainee_name)}</div>` : ''}
+        ${tr.duration_label ? `<div class="tmeta-small">${escapeHtml(tr.duration_label)}</div>` : ''}
+        ${tr.visibility === 'private' ? `<div class="tmeta-small">${t('visibilityPrivate')}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function openTransformModal(tr, isCoach, onChange) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <div class="transform-pair" style="border-radius:10px; overflow:hidden; margin-bottom:12px;">
+        <img src="/uploads/${encodeURIComponent(tr.before_photo_path)}" alt="">
+        <img src="/uploads/${encodeURIComponent(tr.after_photo_path)}" alt="">
+      </div>
+      ${tr.goal ? `<p class="small"><b>${t('transformGoalLabel')}:</b> ${escapeHtml(tr.goal)}</p>` : ''}
+      ${tr.notes ? `<p class="small">${escapeHtml(tr.notes)}</p>` : ''}
+      ${isCoach ? `
+        <label class="small" style="display:block; margin-bottom:6px;">${t('photoVisibilityLabel')}</label>
+        <select id="transformVisibility" style="margin-bottom:10px;">
+          <option value="private" ${tr.visibility === 'private' ? 'selected' : ''}>${t('visibilityPrivate')}</option>
+          <option value="public" ${tr.visibility === 'public' ? 'selected' : ''}>${t('visibilityPublic')}</option>
+        </select>
+        <button class="danger" id="deleteTransform" style="margin-bottom:10px;">${t('deletePhotoConfirm')}</button>
+      ` : ''}
+      <button class="secondary" id="closeModal">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+  if (isCoach) {
+    document.getElementById('transformVisibility').onchange = async (e) => {
+      await api('/transformations/' + tr.subscription_id + '/' + tr.id, { method: 'PATCH', body: JSON.stringify({ visibility: e.target.value }) });
+      onChange();
+    };
+    document.getElementById('deleteTransform').onclick = async () => {
+      if (!confirm(t('deletePhotoConfirm'))) return;
+      await api('/transformations/' + tr.subscription_id + '/' + tr.id, { method: 'DELETE' });
+      closeModal();
+      onChange();
+    };
+  }
+}
+
+async function loadAndRenderTransformations(containerId, subscriptionId, isCoach) {
+  const { transformations } = await api('/transformations/' + subscriptionId);
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  const addTile = isCoach ? `<div class="gallery-add-tile" id="addTransformTile" style="aspect-ratio:auto; padding:20px 0;">+</div>` : '';
+  box.innerHTML = transformations.length === 0 && !isCoach
+    ? `<p class="small">${t('noTransformationsYet')}</p>`
+    : `<div class="transform-grid">${addTile}${transformations.map((tr) => renderTransformCard(tr, false)).join('')}</div>`;
+  if (isCoach) {
+    document.getElementById('addTransformTile').onclick = () => openAddTransformModal(subscriptionId, () => loadAndRenderTransformations(containerId, subscriptionId, isCoach));
+  }
+  box.querySelectorAll('[data-open-transform]').forEach((el) => {
+    el.onclick = () => {
+      const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
+      if (tr) openTransformModal(tr, isCoach, () => loadAndRenderTransformations(containerId, subscriptionId, isCoach));
+    };
+  });
+}
+
+function openAddTransformModal(subscriptionId, onDone) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('addTransformBtn')}</h2>
+      <div class="error hidden" id="addTransformErr"></div>
+      <label class="small" style="display:block; margin-bottom:6px;">${t('beforePhotoLabel')}</label>
+      <input id="beforeFile" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
+      <label class="small" style="display:block; margin-bottom:6px;">${t('afterPhotoLabel')}</label>
+      <input id="afterFile" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
+      <input id="durationLabel" placeholder="${t('durationPlaceholder')}">
+      <input id="goalInput" placeholder="${t('transformGoalLabel')}">
+      <textarea id="notesInput" rows="2" placeholder="${t('progressNotePlaceholder')}"></textarea>
+      <select id="transformVisibilityNew" style="margin-bottom:10px;">
+        <option value="private">${t('visibilityPrivate')}</option>
+        <option value="public">${t('visibilityPublic')}</option>
+      </select>
+      <button id="uploadTransform">${t('uploadBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+  document.getElementById('uploadTransform').onclick = async () => {
+    const before = document.getElementById('beforeFile').files[0];
+    const after = document.getElementById('afterFile').files[0];
+    if (!before || !after) {
+      const el = document.getElementById('addTransformErr');
+      el.textContent = t('needBothPhotosError'); el.classList.remove('hidden');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('before', before);
+    fd.append('after', after);
+    fd.append('duration_label', document.getElementById('durationLabel').value);
+    fd.append('goal', document.getElementById('goalInput').value);
+    fd.append('notes', document.getElementById('notesInput').value);
+    fd.append('visibility', document.getElementById('transformVisibilityNew').value);
+    try {
+      await apiUpload('/transformations/' + subscriptionId, fd);
+      closeModal();
+      onDone();
+    } catch (e) {
+      const el = document.getElementById('addTransformErr');
+      el.textContent = e.message; el.classList.remove('hidden');
+    }
+  };
+}
+
+async function loadAndRenderPublicTransformations(coachId) {
+  const { transformations } = await api('/transformations/coach/' + coachId);
+  const box = document.getElementById('publicTransformBox');
+  if (!box) return;
+  box.innerHTML = transformations.length === 0
+    ? `<p class="small">${t('noTransformationsYet')}</p>`
+    : `<div class="transform-grid">${transformations.map((tr) => renderTransformCard(tr, true)).join('')}</div>`;
+  box.querySelectorAll('[data-open-transform]').forEach((el) => {
+    el.onclick = () => {
+      const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
+      if (tr) openTransformModal(tr, false, () => {});
+    };
+  });
+}
+
+async function renderCoachTransformations() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card"><h2>${t('transformationsTitle')}</h2></div>
+    <div id="allTransformBox"><div class="skeleton block"></div></div>
+  `);
+  document.getElementById('back').onclick = renderMore;
+  const { transformations } = await api('/transformations');
+  const box = document.getElementById('allTransformBox');
+  box.innerHTML = transformations.length === 0
+    ? renderEmptyState('📸', t('noTransformationsYet'), '')
+    : `<div class="transform-grid">${transformations.map((tr) => renderTransformCard(tr, true)).join('')}</div>`;
+  box.querySelectorAll('[data-open-transform]').forEach((el) => {
+    el.onclick = () => {
+      const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
+      if (tr) openTransformModal(tr, true, renderCoachTransformations);
+    };
   });
 }
 
@@ -1157,8 +1325,13 @@ async function renderProgressTab(subscriptionId) {
         </div>
       `).join('')}
     </div>
+    <div class="card">
+      <h2>${t('transformationsTitle')}</h2>
+      <div id="transformBox"><div class="skeleton block"></div></div>
+    </div>
   `);
   wireHubNav(subscriptionId, 'progress');
+  loadAndRenderTransformations('transformBox', subscriptionId, isCoach);
 
   on('saveEntry', 'click', async () => {
     const fd = new FormData();

@@ -201,5 +201,13 @@ a.link{ color:var(--red-soft); font-size:12.5px; text-decoration:none; }
 .filter-row-link{ display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--line); cursor:pointer; }
 .filter-section-label{ font-size:12px; font-weight:800; color:var(--text-dim); margin-bottom:10px; text-transform:uppercase; letter-spacing:.3px; }
 
+.transform-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.transform-card{ background:var(--surface); border:1px solid var(--line); border-radius:14px; overflow:hidden; cursor:pointer; }
+.transform-pair{ display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line); }
+.transform-pair img{ width:100%; aspect-ratio:3/4; object-fit:cover; display:block; }
+.transform-meta{ padding:8px 10px; }
+.transform-meta .tname{ font-weight:800; font-size:12px; }
+.transform-meta .tmeta-small{ font-size:10.5px; color:var(--text-dim); }
+
 .nav-item{ position:relative; }
 .badge-dot{ position:absolute; top:2px; inset-inline-end:20%; min-width:15px; height:15px; padding:0 3px; border-radius:999px; background:var(--red); border:1.5px solid var(--surface); color:#fff; font-size:9px; font-weight:800; display:flex; align-items:center; justify-content:center; }

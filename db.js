@@ -190,6 +190,22 @@ CREATE TABLE IF NOT EXISTS gallery_photos (
   visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public','private')),
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+-- زوج صور "قبل/بعد" بيضيفه الكوتش لمتدرب معيّن، بنفس منطق الخصوصية
+-- Public/Private المستخدم في gallery_photos بالظبط.
+CREATE TABLE IF NOT EXISTS transformations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  trainee_id INTEGER NOT NULL REFERENCES users(id),
+  before_photo_path TEXT NOT NULL,
+  after_photo_path TEXT NOT NULL,
+  duration_label TEXT,
+  goal TEXT,
+  notes TEXT,
+  visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('public','private')),
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}

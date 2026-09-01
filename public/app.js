@@ -323,6 +323,10 @@ async function renderCoachProfile(coachId) {
       ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default;">🎓 ${escapeHtml(coach.certification)}</span></div>` : ''}
     </div>
     <div class="card">
+      <h2>${t('transformationsTitle')}</h2>
+      <div id="publicTransformBox"><div class="skeleton block"></div></div>
+    </div>
+    <div class="card">
       <h2>${t('galleryTitle')}</h2>
       <div id="galleryBox"><div class="skeleton block"></div></div>
     </div>
@@ -356,6 +360,7 @@ async function renderCoachProfile(coachId) {
   `);
   document.getElementById('back').onclick = renderTraineeHome;
   loadAndRenderGallery('galleryBox', coachId, false);
+  loadAndRenderPublicTransformations(coachId);
   on('subscribeBtn', 'click', async () => {
     const pkg = document.getElementById('pkg').value;
     try {

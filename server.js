@@ -23,6 +23,7 @@ const badgeRoutes = require('./routes/badges');
 const supportRoutes = require('./routes/support');
 const reviewRoutes = require('./routes/reviews');
 const mediaRoutes = require('./routes/media');
+const transformationRoutes = require('./routes/transformations');
 
 const app = express();
 
@@ -102,6 +103,7 @@ app.use('/api/badges', badgeRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/transformations', transformationRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
