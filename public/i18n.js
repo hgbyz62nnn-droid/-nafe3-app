@@ -281,6 +281,15 @@ const translations = {
     compatibilityLabel: 'نسبة التوافق',
     changeAnswersBtn: 'غيّر إجاباتك',
 
+    trainerNetworkMenuItem: '🌐 شبكة المدربين',
+    trainerNetworkTitle: 'شبكة المدربين',
+    followBtn: 'متابعة',
+    unfollowBtn: 'إلغاء المتابعة',
+    allTrainersTab: 'الكل',
+    followingTab: 'بتابعهم',
+    noOtherTrainersYet: 'مفيش مدربين تانيين لسه.',
+    noFollowingYet: 'لسه مبتابعش أي مدرب.',
+
     badgesTitle: 'الإنجازات',
     noBadgesYet: 'مفيش إنجازات اتفتحت لسه، كمّل شغل 💪',
     earnedOn: 'اتفتحت في {date}',
@@ -776,6 +785,15 @@ const translations = {
     noMatchesFound: 'No available trainers match your answers right now, try adjusting them.',
     compatibilityLabel: 'Compatibility',
     changeAnswersBtn: 'Change Answers',
+
+    trainerNetworkMenuItem: '🌐 Trainer Network',
+    trainerNetworkTitle: 'Trainer Network',
+    followBtn: 'Follow',
+    unfollowBtn: 'Unfollow',
+    allTrainersTab: 'All',
+    followingTab: 'Following',
+    noOtherTrainersYet: 'No other trainers yet.',
+    noFollowingYet: "You're not following any trainer yet.",
 
     badgesTitle: 'Achievements',
     noBadgesYet: 'No achievements unlocked yet, keep going 💪',

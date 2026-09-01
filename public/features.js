@@ -290,6 +290,7 @@ async function renderMore() {
     <div class="card menu-card">
       ${menuRow({ icon: svgIcon('money', 18), label: t('earningsMenuItem'), id: 'menuEarnings' })}
       ${menuRow({ icon: svgIcon('calendar', 18), label: t('availabilityMenuItem'), id: 'menuAvailability' })}
+      ${menuRow({ icon: svgIcon('client', 18), label: t('trainerNetworkMenuItem'), id: 'menuTrainerNetwork' })}
       ${menuRow({ icon: svgIcon('image', 18), label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: svgIcon('chart', 18), label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: svgIcon('upload', 18), label: t('trainerDocumentsMenuItem'), id: 'menuTrainerDocuments' })}
@@ -312,6 +313,7 @@ async function renderMore() {
   on('editProfileLink', 'click', (e) => { e.preventDefault(); renderCoachDashboard(); });
   on('menuEarnings', 'click', renderEarnings);
   on('menuAvailability', 'click', renderCoachAvailability);
+  on('menuTrainerNetwork', 'click', renderTrainerNetwork);
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuTrainerDocuments', 'click', renderTrainerDocuments);
@@ -998,6 +1000,125 @@ async function renderCoachAvailability() {
         date, reason: document.getElementById('newBlockedReason').value,
       })});
       renderCoachAvailability();
+    } catch (e) { alert(e.message); }
+  });
+}
+
+// -------------------- شبكة المدربين (Trainer Network) --------------------
+// اكتشاف بسيط لمدربين تانيين + متابعة/إلغاء متابعة بس - عمدًا مفيش فيد
+// أو إشعارات أو أي تعقيد اجتماعي زيادة، زي ما السبك الأصلي طلب صراحة.
+
+let trainerNetworkTab = 'all';
+let trainerNetworkQ = '';
+let trainerNetworkDebounce = null;
+
+function renderTrainerNetworkCard(c) {
+  return `
+    <div class="card" data-open-trainer="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
+      ${avatarCircle(c.name, c.avatar_path)}
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
+        <div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
+        <div class="small">
+          ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span> ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
+          ${c.location ? ' · ' + escapeHtml(c.location) : ''}
+        </div>
+      </div>
+      <button class="secondary" data-follow-toggle="${c.id}" data-following="${c.is_following ? '1' : '0'}" style="width:auto; padding:8px 12px; white-space:nowrap;">${c.is_following ? t('unfollowBtn') : t('followBtn')}</button>
+    </div>
+  `;
+}
+
+async function renderTrainerNetwork() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card"><h2>${t('trainerNetworkTitle')}</h2></div>
+    <div class="search-bar" style="margin-bottom:12px;">
+      <span class="search-icon">${svgIcon('search', 16)}</span>
+      <input id="networkSearch" placeholder="${t('searchTrainersPlaceholder')}" value="${escapeHtml(trainerNetworkQ)}">
+    </div>
+    <div class="tabs">
+      <div class="tab ${trainerNetworkTab === 'all' ? 'active' : ''}" data-ntab="all">${t('allTrainersTab')}</div>
+      <div class="tab ${trainerNetworkTab === 'following' ? 'active' : ''}" data-ntab="following">${t('followingTab')}</div>
+    </div>
+    <div id="networkList"><div class="skeleton block"></div></div>
+  `);
+  document.getElementById('back').onclick = renderMore;
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (trainerNetworkQ) params.set('q', trainerNetworkQ);
+    const { coaches } = await api('/trainer-network?' + params.toString());
+    const list = trainerNetworkTab === 'following' ? coaches.filter((c) => c.is_following) : coaches;
+    const box = document.getElementById('networkList');
+    if (!box) return;
+    box.innerHTML = list.length === 0
+      ? `<p class="small">${trainerNetworkTab === 'following' ? t('noFollowingYet') : t('noOtherTrainersYet')}</p>`
+      : list.map(renderTrainerNetworkCard).join('');
+
+    box.querySelectorAll('[data-open-trainer]').forEach((el) => {
+      el.onclick = (e) => {
+        if (e.target.closest('[data-follow-toggle]')) return;
+        renderTrainerNetworkProfile(el.dataset.openTrainer);
+      };
+    });
+    box.querySelectorAll('[data-follow-toggle]').forEach((el) => {
+      el.onclick = async (e) => {
+        e.stopPropagation();
+        const id = el.dataset.followToggle;
+        const following = el.dataset.following === '1';
+        try {
+          if (following) await api('/trainer-network/follow/' + id, { method: 'DELETE' });
+          else await api('/trainer-network/follow/' + id, { method: 'POST' });
+          load();
+        } catch (err) { alert(err.message); }
+      };
+    });
+  }
+
+  document.getElementById('networkSearch').oninput = (e) => {
+    trainerNetworkQ = e.target.value;
+    clearTimeout(trainerNetworkDebounce);
+    trainerNetworkDebounce = setTimeout(load, 350);
+  };
+  document.querySelectorAll('[data-ntab]').forEach((el) => {
+    el.onclick = () => { trainerNetworkTab = el.dataset.ntab; renderTrainerNetwork(); };
+  });
+
+  load();
+}
+
+// عرض بروفايل خفيف للمدرب-يشوف-مدرب (Profile/Specialty/Rating/Location
+// بس زي ما السبك طلب) - مش نفس renderCoachProfile الخاصة بالمتدرب (فيها
+// زرار اشتراك ودفع مالوش أي معنى هنا، وback بترجع لصفحة متدرب أصلًا).
+async function renderTrainerNetworkProfile(coachId) {
+  const { coach } = await api('/coaches/' + coachId);
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="cover-header">
+      <div class="cover-photo"></div>
+      <div class="cover-avatar-wrap">${avatarCircle(coach.name, coach.avatar_path, 78)}</div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
+      <p class="small">${escapeHtml(coach.specialty) || t('coachSpecialtyFallback')}</p>
+      <p class="small" style="margin-top:4px;">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
+      ${coach.location ? `<p class="small" style="margin-top:4px;">📍 ${escapeHtml(coach.location)}</p>` : ''}
+      ${coach.bio ? `<p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.bio)}</p>` : ''}
+      ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default;">🎓 ${escapeHtml(coach.certification)}</span></div>` : ''}
+    </div>
+    <div class="card">
+      <button id="followToggleBtn" data-following="${coach.isFollowing ? '1' : '0'}">${coach.isFollowing ? t('unfollowBtn') : t('followBtn')}</button>
+    </div>
+  `);
+  document.getElementById('back').onclick = renderTrainerNetwork;
+  on('followToggleBtn', 'click', async () => {
+    const btn = document.getElementById('followToggleBtn');
+    const following = btn.dataset.following === '1';
+    try {
+      if (following) await api('/trainer-network/follow/' + coachId, { method: 'DELETE' });
+      else await api('/trainer-network/follow/' + coachId, { method: 'POST' });
+      renderTrainerNetworkProfile(coachId);
     } catch (e) { alert(e.message); }
   });
 }

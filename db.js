@@ -356,6 +356,19 @@ CREATE TABLE IF NOT EXISTS coach_blocked_dates (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_blocked_dates_coach ON coach_blocked_dates(coach_id);
+
+-- متابعة مدرب لمدرب تاني (Trainer Network) - follower هو اللي بيتابع،
+-- followed هو اللي بيتتابع. مقصود بسيط (follow/unfollow بس) من غير أي
+-- تعقيد اجتماعي زيادة (فيد، إشعارات، إلخ) زي ما السبك الأصلي طلب.
+CREATE TABLE IF NOT EXISTS trainer_follows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  follower_id INTEGER NOT NULL REFERENCES users(id),
+  followed_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(follower_id, followed_id)
+);
+CREATE INDEX IF NOT EXISTS idx_trainer_follows_follower ON trainer_follows(follower_id);
+CREATE INDEX IF NOT EXISTS idx_trainer_follows_followed ON trainer_follows(followed_id);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}

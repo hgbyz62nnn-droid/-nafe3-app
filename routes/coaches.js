@@ -51,10 +51,16 @@ router.get('/', optionalAuth, (req, res) => {
   res.json({ coaches });
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', optionalAuth, (req, res) => {
   const coach = db.prepare(`${COACH_LIST_SELECT} WHERE u.id = ?`).get(req.params.id);
   if (!coach) return res.status(404).json({ error: 'المدرب غير موجود' });
-  res.json({ coach });
+  // isFollowing بيتحسب بس لما الطالب مدرب تاني (Trainer Network) - مش
+  // معنى ليه للمتدرب اللي بيشوف نفس الصفحة عشان يحجز.
+  let isFollowing = null;
+  if (req.user && req.user.role === 'coach' && req.user.id !== coach.id) {
+    isFollowing = !!db.prepare('SELECT 1 FROM trainer_follows WHERE follower_id = ? AND followed_id = ?').get(req.user.id, coach.id);
+  }
+  res.json({ coach: { ...coach, isFollowing } });
 });
 
 // قايمة المواقع الحقيقية اللي المدربين المعتمدين دخّلوها فعلاً، عشان شاشة
