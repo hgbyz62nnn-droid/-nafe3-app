@@ -347,13 +347,13 @@ async function renderSupportHome() {
       <button id="newTicket">${t('newTicketBtn')}</button>
     </div>
     <div class="card">
-      ${tickets.length === 0 ? `<p class="small">${t('noTicketsYet')}</p>` : tickets.map((tk) => `
-        <div class="coach-row" data-open-ticket="${tk.id}">
-          <div>${escapeHtml(tk.subject)}
+      ${tickets.length === 0 ? renderEmptyState(svgIcon('message', 30), t('noTicketsYet'), '') : tickets.map((tk) => `
+        <div class="coach-row" data-open-ticket="${tk.id}" style="gap:10px;">
+          <div style="flex:1; min-width:0;">${escapeHtml(tk.subject)}
             <div class="small">${t(TICKET_CATEGORY_KEYS[tk.category])} · ${new Date(tk.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</div>
           </div>
-          <div style="display:flex; align-items:center; gap:6px;">
-            ${tk.unread ? '<span class="pill">●</span>' : ''}
+          <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+            ${tk.unread ? '<span class="badge-dot" style="position:static;"></span>' : ''}
             <span class="small">${t(TICKET_STATUS_KEYS[tk.status])}</span>
           </div>
         </div>
