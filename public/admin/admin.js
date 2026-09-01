@@ -79,6 +79,7 @@ async function renderDashboard(admin) {
     </div>
     <div class="tabs">
       <div class="tab active" id="tabPending">طلبات المدربين</div>
+      <div class="tab" id="tabDocs">مستندات المدربين</div>
       <div class="tab" id="tabSupport">تذاكر الدعم</div>
       <div class="tab" id="tabReports">بلاغات المستخدمين</div>
       <div class="tab" id="tabDeletions">طلبات حذف الحساب</div>
@@ -92,7 +93,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -122,6 +123,65 @@ async function renderDashboard(admin) {
     document.querySelectorAll('[data-reject]').forEach((el) => {
       el.onclick = async () => { await api(`/coaches/admin/${el.dataset.reject}/reject`, { method: 'POST' }); showPending(); };
     });
+  }
+
+  const DOC_TYPE_LABELS = { id: 'بطاقة شخصية', certification: 'شهادة', other: 'مستند تاني' };
+  const DOC_STATUS_LABELS = { pending: 'قيد المراجعة', approved: 'معتمد', rejected: 'مرفوض' };
+
+  async function showTrainerDocuments() {
+    activateTab('tabDocs');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>مستندات المدربين</h2>
+        <div class="filters">
+          <select id="tdStatus">
+            <option value="pending">قيد المراجعة</option>
+            <option value="">كل الحالات</option>
+            <option value="approved">معتمدة</option>
+            <option value="rejected">مرفوضة</option>
+          </select>
+          <button id="tdApply" style="width:auto; padding:8px 16px;">فلترة</button>
+        </div>
+        <div id="docsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const params = new URLSearchParams();
+      const status = document.getElementById('tdStatus').value;
+      if (status) params.set('status', status);
+      const { documents } = await api('/trainer-documents/admin/all?' + params.toString());
+      document.getElementById('docsList').innerHTML = documents.length === 0
+        ? '<p class="small">مفيش مستندات.</p>'
+        : documents.map((d) => `
+          <div class="card" style="background:var(--surface-2);">
+            <div style="display:flex; justify-content:space-between;">
+              <b>${escapeHtml(d.coach_name)}</b>
+              <span class="badge ${d.status === 'pending' ? 'blocked' : 'review'}">${DOC_STATUS_LABELS[d.status]}</span>
+            </div>
+            <p class="small">${escapeHtml(d.coach_email)} · ${DOC_TYPE_LABELS[d.doc_type]} · ${escapeHtml(d.name)} · ${escapeHtml(d.created_at)}</p>
+            ${d.review_note ? `<p class="small">ملاحظة: ${escapeHtml(d.review_note)}</p>` : ''}
+            <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+              <a class="secondary" href="/api/trainer-documents/${d.id}/file" target="_blank" rel="noopener" style="width:auto; padding:8px 14px; border-radius:8px; text-decoration:none; font-size:12.5px; font-weight:700; display:inline-block;">👁️ عرض</a>
+              ${d.status === 'pending' ? `
+                <button data-approve-doc="${d.id}">✅ موافقة</button>
+                <button class="danger" data-reject-doc="${d.id}">❌ رفض</button>
+              ` : ''}
+            </div>
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-approve-doc]').forEach((el) => {
+        el.onclick = async () => { await api(`/trainer-documents/admin/${el.dataset.approveDoc}/review`, { method: 'POST', body: JSON.stringify({ action: 'approve' }) }); load(); };
+      });
+      document.querySelectorAll('[data-reject-doc]').forEach((el) => {
+        el.onclick = async () => {
+          const note = prompt('سبب الرفض (اختياري):') || '';
+          await api(`/trainer-documents/admin/${el.dataset.rejectDoc}/review`, { method: 'POST', body: JSON.stringify({ action: 'reject', note }) });
+          load();
+        };
+      });
+    }
+    on('tdApply', 'click', load);
+    load();
   }
 
   const REPORT_REASON_LABELS = {
@@ -537,6 +597,7 @@ async function renderDashboard(admin) {
   document.getElementById('tabPending').onclick = showPending;
   document.getElementById('tabSupport').onclick = showSupport;
   document.getElementById('tabReports').onclick = showReports;
+  document.getElementById('tabDocs').onclick = showTrainerDocuments;
   document.getElementById('tabDeletions').onclick = showDeletionRequests;
   document.getElementById('tabFlagged').onclick = showFlagged;
   document.getElementById('tabReviews').onclick = showReviews;

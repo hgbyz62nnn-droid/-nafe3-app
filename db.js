@@ -242,6 +242,22 @@ CREATE TABLE IF NOT EXISTS account_deletion_requests (
   created_at TEXT DEFAULT (datetime('now')),
   processed_at TEXT
 );
+
+-- مستندات/شهادات المدرب (بطاقة، شهادة تدريب، إلخ) - خاصة تمامًا، بتتخزن في
+-- مجلد منفصل عن uploads العام مش متاح كـ static، وبتتقرا بس عبر route
+-- مصرح ليه (صاحب المستند أو الأدمن). مش جزء من البروفايل العام أبدًا.
+CREATE TABLE IF NOT EXISTS trainer_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  doc_type TEXT NOT NULL CHECK(doc_type IN ('id','certification','other')),
+  name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+  review_note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  reviewed_at TEXT
+);
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}

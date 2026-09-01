@@ -291,6 +291,7 @@ async function renderMore() {
       ${menuRow({ icon: svgIcon('money', 18), label: t('earningsMenuItem'), id: 'menuEarnings' })}
       ${menuRow({ icon: svgIcon('image', 18), label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: svgIcon('chart', 18), label: t('viewStatsBtn'), id: 'menuStats' })}
+      ${menuRow({ icon: svgIcon('upload', 18), label: t('trainerDocumentsMenuItem'), id: 'menuTrainerDocuments' })}
       ${menuRow({ icon: svgIcon('message', 18), label: t('supportMenuItem'), id: 'menuSupport' })}
       ${menuRow({ icon: svgIcon('close', 18), label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: svgIcon('document', 18), label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
@@ -311,6 +312,7 @@ async function renderMore() {
   on('menuEarnings', 'click', renderEarnings);
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
+  on('menuTrainerDocuments', 'click', renderTrainerDocuments);
   on('menuSupport', 'click', renderSupportHome);
   on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
@@ -850,6 +852,96 @@ async function renderCoachTransformations() {
       const tr = transformations.find((x) => x.id === Number(el.dataset.openTransform));
       if (tr) openTransformModal(tr, true, renderCoachTransformations);
     };
+  });
+}
+
+// -------------------- مستندات المدرب (خاصة، للمراجعة بمعرفة الأدمن) --------------------
+
+const DOC_STATUS_ICON = { pending: 'clock', approved: 'verified', rejected: 'close' };
+
+function renderDocumentCard(doc) {
+  const typeLabel = { id: t('docTypeId'), certification: t('docTypeCertification'), other: t('docTypeOther') }[doc.doc_type];
+  const statusLabel = { pending: t('docStatusPending'), approved: t('docStatusApproved'), rejected: t('docStatusRejected') }[doc.status];
+  return `
+    <div class="card" style="background:var(--surface-2);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+          ${svgIcon(doc.mime_type === 'application/pdf' ? 'document' : 'image', 18)}
+          <b style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(doc.name)}</b>
+        </div>
+        <span class="filter-chip ${doc.status === 'approved' ? 'active' : ''}" style="cursor:default; flex-shrink:0;">${statusLabel}</span>
+      </div>
+      <p class="small" style="margin-top:4px;">${typeLabel} · ${escapeHtml(doc.created_at)}</p>
+      ${doc.status === 'rejected' && doc.review_note ? `<p class="small" style="color:var(--danger); margin-top:4px;">${escapeHtml(doc.review_note)}</p>` : ''}
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <a class="secondary" href="/api/trainer-documents/${doc.id}/file" target="_blank" rel="noopener" style="flex:1; text-align:center; padding:8px; border-radius:10px; text-decoration:none; font-size:12.5px; font-weight:700;">${t('viewDocumentBtn')}</a>
+        <button class="danger" data-delete-doc="${doc.id}" style="width:auto; padding:8px 14px;">${svgIcon('close', 14)}</button>
+      </div>
+    </div>
+  `;
+}
+
+async function renderTrainerDocuments() {
+  render(`
+    <button class="secondary" id="back">${t('back')}</button>
+    <div class="card">
+      <h2>${t('trainerDocumentsTitle')}</h2>
+      <p class="small">${t('trainerDocumentsHint')}</p>
+    </div>
+    <div class="card">
+      <select id="newDocType">
+        <option value="id">${t('docTypeId')}</option>
+        <option value="certification">${t('docTypeCertification')}</option>
+        <option value="other">${t('docTypeOther')}</option>
+      </select>
+      <input id="newDocName" placeholder="${t('docNamePlaceholder')}">
+      <input id="newDocFile" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" style="margin-bottom:10px;">
+      <div class="error hidden" id="docUploadErr"></div>
+      <button id="uploadDocBtn">${t('uploadDocumentBtn')}</button>
+    </div>
+    <div id="documentsList"><div class="skeleton block"></div></div>
+  `);
+  document.getElementById('back').onclick = renderMore;
+
+  async function load() {
+    const { documents } = await api('/trainer-documents/mine');
+    const box = document.getElementById('documentsList');
+    box.innerHTML = documents.length === 0
+      ? renderEmptyState(svgIcon('document', 30), t('noDocumentsYet'), '')
+      : documents.map(renderDocumentCard).join('');
+    box.querySelectorAll('[data-delete-doc]').forEach((el) => {
+      el.onclick = async () => {
+        if (!confirm(t('deleteDocumentConfirm'))) return;
+        await api('/trainer-documents/' + el.dataset.deleteDoc, { method: 'DELETE' });
+        load();
+      };
+    });
+  }
+  await load();
+
+  on('uploadDocBtn', 'click', async () => {
+    const file = document.getElementById('newDocFile').files[0];
+    const name = document.getElementById('newDocName').value.trim();
+    const errEl = document.getElementById('docUploadErr');
+    errEl.classList.add('hidden');
+    if (!file || !name) {
+      errEl.textContent = t('docNameFileRequired');
+      errEl.classList.remove('hidden');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('document', file);
+    fd.append('docType', document.getElementById('newDocType').value);
+    fd.append('name', name);
+    try {
+      await apiUpload('/trainer-documents', fd);
+      document.getElementById('newDocName').value = '';
+      document.getElementById('newDocFile').value = '';
+      load();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
   });
 }
 

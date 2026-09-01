@@ -26,6 +26,7 @@ const mediaRoutes = require('./routes/media');
 const transformationRoutes = require('./routes/transformations');
 const moderationRoutes = require('./routes/moderation');
 const accountDeletionRequestRoutes = require('./routes/accountDeletionRequests');
+const trainerDocumentRoutes = require('./routes/trainerDocuments');
 
 const app = express();
 
@@ -108,6 +109,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/transformations', transformationRoutes);
 app.use('/api/moderation', moderationRoutes);
 app.use('/api/account-deletion', accountDeletionRequestRoutes);
+app.use('/api/trainer-documents', trainerDocumentRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));
