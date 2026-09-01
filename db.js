@@ -258,6 +258,28 @@ CREATE TABLE IF NOT EXISTS trainer_documents (
   created_at TEXT DEFAULT (datetime('now')),
   reviewed_at TEXT
 );
+
+-- طلب تعديل على بروفايل مدرب معتمد بالفعل: البيانات دي مسودة مش هتتطبق
+-- على coach_profiles (النسخة العامة الظاهرة للمتدربين) إلا لما الأدمن
+-- يوافق. الـ index الجزئي تحت بيضمن طلب pending واحد بس لكل مدرب في نفس
+-- الوقت - أي حفظ جديد وهو لسه في المراجعة بيعدّل نفس الصف مش يعمل صف جديد.
+CREATE TABLE IF NOT EXISTS coach_profile_edits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  specialty TEXT,
+  bio TEXT,
+  certification TEXT,
+  price_1m INTEGER,
+  price_3m INTEGER,
+  price_6m INTEGER,
+  gender TEXT CHECK(gender IN ('male','female') OR gender IS NULL),
+  location TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+  review_note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  reviewed_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_coach_pending_edit ON coach_profile_edits(coach_id) WHERE status = 'pending';
 `);
 
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_path TEXT"); } catch (e) {}

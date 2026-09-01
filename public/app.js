@@ -467,12 +467,22 @@ async function renderChat(subscriptionId) {
 
 async function renderCoachDashboard() {
   renderBottomNav('dashboard');
-  const { profile } = await api('/coaches/me/profile');
+  const { profile, pendingEdit } = await api('/coaches/me/profile');
   const { subscriptions } = await api('/subscriptions/mine');
   const stats = await api('/coach-stats');
   const activeSubs = subscriptions.filter(s => s.status === 'active');
 
   const statusLabel = { pending: t('statusPending'), approved: t('statusApproved'), rejected: t('statusRejected') }[profile.status];
+
+  // لو المدرب معتمد وعنده تعديل قيد المراجعة أو اتراجع، الفورم بيتملى
+  // من التعديل ده مش من النسخة العامة الحالية - عشان يشوف آخر حاجة بعتها
+  // ويقدر يعدّلها ويبعتها تاني، مش يضطر يكتب كل حاجة من الأول.
+  const formValues = pendingEdit || profile;
+  const editBanner = pendingEdit
+    ? pendingEdit.status === 'pending'
+      ? `<div class="notice">${t('profileEditPendingBanner', { date: new Date(pendingEdit.created_at).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US') })}</div>`
+      : `<div class="notice">${t('profileEditRejectedBanner')}${pendingEdit.review_note ? ': ' + escapeHtml(pendingEdit.review_note) : ''}</div>`
+    : '';
 
   function fmtTime(dt) {
     return new Date(dt).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
@@ -506,20 +516,21 @@ async function renderCoachDashboard() {
 
     <div class="card">
       <h2>${t('myProfile')}</h2>
-      <input id="specialty" placeholder="${t('specialtyPlaceholder')}" value="${escapeHtml(profile.specialty)}">
-      <textarea id="bio" placeholder="${t('bioPlaceholder')}" rows="3">${escapeHtml(profile.bio)}</textarea>
-      <input id="certification" placeholder="${t('certificationPlaceholder')}" value="${escapeHtml(profile.certification)}">
+      ${editBanner}
+      <input id="specialty" placeholder="${t('specialtyPlaceholder')}" value="${escapeHtml(formValues.specialty)}">
+      <textarea id="bio" placeholder="${t('bioPlaceholder')}" rows="3">${escapeHtml(formValues.bio)}</textarea>
+      <input id="certification" placeholder="${t('certificationPlaceholder')}" value="${escapeHtml(formValues.certification)}">
       <select id="gender">
-        <option value="" ${!profile.gender ? 'selected' : ''}>${t('genderUnspecified')}</option>
-        <option value="male" ${profile.gender === 'male' ? 'selected' : ''}>${t('genderMale')}</option>
-        <option value="female" ${profile.gender === 'female' ? 'selected' : ''}>${t('genderFemale')}</option>
+        <option value="" ${!formValues.gender ? 'selected' : ''}>${t('genderUnspecified')}</option>
+        <option value="male" ${formValues.gender === 'male' ? 'selected' : ''}>${t('genderMale')}</option>
+        <option value="female" ${formValues.gender === 'female' ? 'selected' : ''}>${t('genderFemale')}</option>
       </select>
-      <input id="location" placeholder="${t('locationPlaceholder')}" value="${escapeHtml(profile.location)}">
-      <input id="price_1m" type="number" placeholder="${t('price1mPlaceholder')}" value="${profile.price_1m || ''}">
-      <input id="price_3m" type="number" placeholder="${t('price3mPlaceholder')}" value="${profile.price_3m || ''}">
-      <input id="price_6m" type="number" placeholder="${t('price6mPlaceholder')}" value="${profile.price_6m || ''}">
+      <input id="location" placeholder="${t('locationPlaceholder')}" value="${escapeHtml(formValues.location)}">
+      <input id="price_1m" type="number" placeholder="${t('price1mPlaceholder')}" value="${formValues.price_1m || ''}">
+      <input id="price_3m" type="number" placeholder="${t('price3mPlaceholder')}" value="${formValues.price_3m || ''}">
+      <input id="price_6m" type="number" placeholder="${t('price6mPlaceholder')}" value="${formValues.price_6m || ''}">
       <button id="saveProfile">${t('saveProfileBtn')}</button>
-      <p class="small" style="margin-top:8px;">${t('profileReviewHint')}</p>
+      <p class="small" style="margin-top:8px;">${profile.status === 'approved' ? t('profileReviewHintApproved') : t('profileReviewHint')}</p>
     </div>
     ${activeSubs.length ? `
       <div class="card">

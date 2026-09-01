@@ -79,6 +79,7 @@ async function renderDashboard(admin) {
     </div>
     <div class="tabs">
       <div class="tab active" id="tabPending">طلبات المدربين</div>
+      <div class="tab" id="tabProfileEdits">تعديلات البروفايل</div>
       <div class="tab" id="tabDocs">مستندات المدربين</div>
       <div class="tab" id="tabSupport">تذاكر الدعم</div>
       <div class="tab" id="tabReports">بلاغات المستخدمين</div>
@@ -93,7 +94,7 @@ async function renderDashboard(admin) {
   `);
 
   function activateTab(id) {
-    ['tabPending', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
+    ['tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabUsers', 'tabSettings'].forEach((t) => {
       document.getElementById(t).classList.toggle('active', t === id);
     });
   }
@@ -123,6 +124,64 @@ async function renderDashboard(admin) {
     document.querySelectorAll('[data-reject]').forEach((el) => {
       el.onclick = async () => { await api(`/coaches/admin/${el.dataset.reject}/reject`, { method: 'POST' }); showPending(); };
     });
+  }
+
+  const PROFILE_FIELD_LABELS = {
+    specialty: 'التخصص', bio: 'النبذة', certification: 'الشهادة',
+    price_1m: 'سعر الشهر', price_3m: 'سعر 3 شهور', price_6m: 'سعر 6 شهور',
+    gender: 'الجنس', location: 'الموقع',
+  };
+
+  // بيبني جدول مقارنة قبل/بعد لبس الحقول اللي اتغيّرت فعلًا، عشان الأدمن
+  // يشوف الفرق بسرعة بدل ما يقارن كل حقل يدوي.
+  function renderEditDiff(edit) {
+    const rows = Object.keys(PROFILE_FIELD_LABELS)
+      .filter((f) => String(edit['live_' + f] ?? '') !== String(edit[f] ?? ''))
+      .map((f) => `
+        <div class="coach-row" style="display:block; padding:8px 0;">
+          <b class="small">${PROFILE_FIELD_LABELS[f]}</b>
+          <p class="small" style="color:var(--text-dim); margin:2px 0;">قبل: ${escapeHtml(String(edit['live_' + f] ?? '-') || '-')}</p>
+          <p class="small" style="color:var(--red-soft); margin:2px 0;">بعد: ${escapeHtml(String(edit[f] ?? '-') || '-')}</p>
+        </div>
+      `).join('');
+    return rows || '<p class="small">مفيش فروقات ظاهرة.</p>';
+  }
+
+  async function showProfileEdits() {
+    activateTab('tabProfileEdits');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>تعديلات بروفايل مدربين معتمدين</h2>
+        <p class="small">البروفايل العام فاضل زي ما هو (النسخة القديمة) لحد ما توافق أو ترفض هنا.</p>
+        <div id="profileEditsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const { edits } = await api('/coaches/admin/pending-edits');
+      document.getElementById('profileEditsList').innerHTML = edits.length === 0
+        ? '<p class="small">مفيش تعديلات قيد المراجعة.</p>'
+        : edits.map((edit) => `
+          <div class="card" style="background:var(--surface-2);">
+            <b>${escapeHtml(edit.coach_name)}</b> <span class="small">(${escapeHtml(edit.coach_email)}) · ${escapeHtml(edit.created_at)}</span>
+            ${renderEditDiff(edit)}
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <button data-approve-edit="${edit.id}">✅ موافقة</button>
+              <button class="danger" data-reject-edit="${edit.id}">❌ رفض</button>
+            </div>
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-approve-edit]').forEach((el) => {
+        el.onclick = async () => { await api(`/coaches/admin/edits/${el.dataset.approveEdit}/approve`, { method: 'POST' }); load(); };
+      });
+      document.querySelectorAll('[data-reject-edit]').forEach((el) => {
+        el.onclick = async () => {
+          const note = prompt('سبب الرفض (اختياري):') || '';
+          await api(`/coaches/admin/edits/${el.dataset.rejectEdit}/reject`, { method: 'POST', body: JSON.stringify({ note }) });
+          load();
+        };
+      });
+    }
+    load();
   }
 
   const DOC_TYPE_LABELS = { id: 'بطاقة شخصية', certification: 'شهادة', other: 'مستند تاني' };
@@ -597,6 +656,7 @@ async function renderDashboard(admin) {
   document.getElementById('tabPending').onclick = showPending;
   document.getElementById('tabSupport').onclick = showSupport;
   document.getElementById('tabReports').onclick = showReports;
+  document.getElementById('tabProfileEdits').onclick = showProfileEdits;
   document.getElementById('tabDocs').onclick = showTrainerDocuments;
   document.getElementById('tabDeletions').onclick = showDeletionRequests;
   document.getElementById('tabFlagged').onclick = showFlagged;
