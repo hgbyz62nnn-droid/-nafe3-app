@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 // TRAINO_PRO_Icon_System — ported verbatim from public/icons-pro.js (path
 // data unchanged, shapes not redrawn). One extra icon (`ai-mascot`) is
 // added below for the AI Coach avatar since no generic icon in the
@@ -69,6 +71,7 @@ export const ICONS = {
   checkPlain: 'm5 12.5 4.3 4.3L19.5 7.3',
   sliders: '<path d="M6 4v6M6 14v6M12 4v3M12 11v9M18 4v11M18 19v1"/><circle cx="6" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="2" fill="currentColor" stroke="none"/><circle cx="18" cy="17" r="2" fill="currentColor" stroke="none"/>',
   dotsVertical: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor" stroke="none"/>',
+  share: '<path d="M12 14.5V4M8 7.5 12 4l4 3.5"/><path d="M5 12v6.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V12"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -88,6 +91,7 @@ export function Icon({
   className = '',
   strokeWidth = 1.8,
   filled = false,
+  style,
 }: {
   name: IconName;
   size?: number;
@@ -95,6 +99,8 @@ export function Icon({
   strokeWidth?: number;
   /** Fills closed shapes solid (used for active bottom-nav icons). */
   filled?: boolean;
+  /** Escape hatch for a per-instance dynamic color (e.g. `currentColor` via a data-driven hex). */
+  style?: CSSProperties;
 }) {
   return (
     <svg
@@ -108,6 +114,7 @@ export function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={`shrink-0 ${className}`}
+      style={style}
       dangerouslySetInnerHTML={{ __html: pathsFor(name) }}
     />
   );
