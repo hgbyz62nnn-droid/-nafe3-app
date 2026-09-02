@@ -1493,6 +1493,13 @@ function exerciseTagLine(ex) {
   return parts.join(' · ');
 }
 
+function secondaryMusclesText(raw) {
+  let list = [];
+  try { list = Array.isArray(raw) ? raw : JSON.parse(raw || '[]'); } catch (e) { list = []; }
+  if (!Array.isArray(list) || !list.length) return '-';
+  return list.map((k) => MUSCLE_GROUP_LABELS[k] ? t(MUSCLE_GROUP_LABELS[k]) : k).join('، ');
+}
+
 // شاشة تفاصيل التمرين (Exercise Detail) - بتتفتح من صف في المكتبة، وبتوفر
 // نفس زرار الاختيار اللي كان في الصف نفسه عشان المستخدم يقدر يضيف التمرين
 // من هنا كمان من غير ما يرجع للقايمة.
@@ -1515,6 +1522,7 @@ async function openExerciseDetail(exerciseId, onSelect) {
     <h2>${escapeHtml(ex.name)}</h2>
     ${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener">${svgIconPro('play', 16)} ${t('videoUrlPlaceholder')}</a>` : ''}
     <div class="coach-row"><div>${t('primaryMuscleLabel')}</div><div class="small">${ex.muscle_group ? t(MUSCLE_GROUP_LABELS[ex.muscle_group]) : '-'}</div></div>
+    <div class="coach-row"><div>${t('secondaryMusclesLabel')}</div><div class="small">${secondaryMusclesText(ex.secondary_muscles)}</div></div>
     <div class="coach-row"><div>${t('equipmentLabel')}</div><div class="small">${ex.equipment ? t(EQUIPMENT_LABELS[ex.equipment]) : '-'}</div></div>
     <div class="coach-row"><div>${t('difficultyLabel')}</div><div class="small">${ex.difficulty ? t(EXPERIENCE_LABELS[ex.difficulty]) : '-'}</div></div>
     <div class="coach-row"><div>${t('exerciseKindLabel')}</div><div class="small">${ex.exercise_type ? t(EXERCISE_KIND_LABELS[ex.exercise_type]) : '-'}</div></div>
@@ -1597,6 +1605,10 @@ function openExerciseLibrary(onSelect, swapOptions) {
           </select>
         </div>
         <textarea id="exLibNewInstructions" rows="2" placeholder="${t('instructionsPlaceholder')}"></textarea>
+        <div class="small" style="margin:6px 0 4px;">${t('secondaryMusclesLabel')}</div>
+        <div class="chip-row" id="exLibNewSecondary" style="margin-bottom:10px;">
+          ${Object.entries(MUSCLE_GROUP_LABELS).map(([k, l]) => `<span class="filter-chip" data-secondary-muscle="${k}">${t(l)}</span>`).join('')}
+        </div>
         <button id="exLibSaveCustom">${t('saveCustomExerciseBtn')}</button>
       </div>
       <div id="exLibList"><div class="skeleton block"></div></div>
@@ -1610,9 +1622,14 @@ function openExerciseLibrary(onSelect, swapOptions) {
   document.getElementById('exLibAddCustomToggle').onclick = () => {
     document.getElementById('exLibCustomForm').classList.toggle('hidden');
   };
+  document.querySelectorAll('#exLibNewSecondary [data-secondary-muscle]').forEach((chip) => {
+    chip.onclick = () => chip.classList.toggle('active');
+  });
   document.getElementById('exLibSaveCustom').onclick = async () => {
     const name = document.getElementById('exLibNewName').value.trim();
     if (!name) return;
+    const secondaryMuscles = Array.from(document.querySelectorAll('#exLibNewSecondary [data-secondary-muscle].active'))
+      .map((c) => c.dataset.secondaryMuscle);
     try {
       await api('/exercises', { method: 'POST', body: JSON.stringify({
         name,
@@ -1621,9 +1638,11 @@ function openExerciseLibrary(onSelect, swapOptions) {
         exerciseType: document.getElementById('exLibNewKind').value || null,
         movementPattern: document.getElementById('exLibNewPattern').value || null,
         instructions: document.getElementById('exLibNewInstructions').value || null,
+        secondaryMuscles,
       }) });
       document.getElementById('exLibNewName').value = '';
       document.getElementById('exLibNewInstructions').value = '';
+      document.querySelectorAll('#exLibNewSecondary [data-secondary-muscle]').forEach((c) => c.classList.remove('active'));
       document.getElementById('exLibCustomForm').classList.add('hidden');
       libState.scope = 'mine';
       document.querySelectorAll('#exLibTabs .filter-chip').forEach((c) => c.classList.toggle('active', c.dataset.scope === 'mine'));
@@ -2858,7 +2877,18 @@ const WORKOUT_PRESETS = {
 };
 
 function newExercise() {
-  return { name: '', exercise_id: null, sets: null, reps: '', weight: '', rest: '', tempo: '', rpe: null, rir: null, type: 'normal', video_url: '', notes: '' };
+  return { name: '', exercise_id: null, sets: null, reps: '', weight: '', rest: '', tempo: '', execution: '', rpe: null, rir: null, type: 'normal', video_url: '', notes: '' };
+}
+
+const EXECUTION_PREDEFINED = ['normal', 'controlled', 'explosive', 'pause'];
+const EXECUTION_LABEL_KEYS = {
+  normal: 'executionNormal', controlled: 'executionControlled', explosive: 'executionExplosive', pause: 'executionPause',
+};
+// true لو القيمة المخزنة فعلًا "مخصصة" (نص حر مش من الأربعة قيم الجاهزة)،
+// أو المدرب لسه فاتح خانة "مخصص" من غير ما يكتب فيها حاجة لسه (علم مؤقت
+// UI-only، مش بيتبعت للسيرفر - عشان نعرف نعرض خانة الكتابة حتى وهي فاضية).
+function isCustomExecution(ex) {
+  return (!!ex.execution && !EXECUTION_PREDEFINED.includes(ex.execution)) || !!ex._executionCustomMode;
 }
 
 function exerciseSummaryLine(ex) {
@@ -2868,6 +2898,7 @@ function exerciseSummaryLine(ex) {
   if (ex.weight) parts.push(escapeHtml(ex.weight));
   if (ex.rest) parts.push(t('restShortLabel', { rest: escapeHtml(ex.rest) }));
   if (ex.tempo) parts.push('Tempo ' + escapeHtml(ex.tempo));
+  if (ex.execution) parts.push(EXECUTION_LABEL_KEYS[ex.execution] ? t(EXECUTION_LABEL_KEYS[ex.execution]) : escapeHtml(ex.execution));
   if (ex.rpe) parts.push('RPE ' + ex.rpe);
   if (ex.rir != null) parts.push('RIR ' + ex.rir);
   return parts.join(' · ');
@@ -2932,6 +2963,15 @@ function renderWorkoutBody(subscriptionId, isCoach) {
             </div>
             <input data-ex="video_url:${di}:${ei}" value="${escapeHtml(ex.video_url)}" placeholder="${t('videoUrlPlaceholder')}">
             <input data-ex="notes:${di}:${ei}" value="${escapeHtml(ex.notes)}" placeholder="${t('exerciseNotesPlaceholder')}">
+            <button type="button" class="secondary" data-toggle-advanced="${di}:${ei}" style="width:auto; padding:6px 10px; margin:6px 0;">${t('advancedOptionsBtn')}</button>
+            <div class="${ex._advancedOpen || ex.execution ? '' : 'hidden'}" data-advanced-box="${di}:${ei}" style="margin-bottom:6px;">
+              <select data-exec-select="${di}:${ei}">
+                <option value="">${t('anyExecutionOption')}</option>
+                ${EXECUTION_PREDEFINED.map((k) => `<option value="${k}" ${ex.execution === k ? 'selected' : ''}>${t(EXECUTION_LABEL_KEYS[k])}</option>`).join('')}
+                <option value="custom" ${isCustomExecution(ex) ? 'selected' : ''}>${t('executionCustomOption')}</option>
+              </select>
+              ${isCustomExecution(ex) ? `<input data-ex="execution:${di}:${ei}" value="${escapeHtml(ex.execution)}" placeholder="${t('executionCustomPlaceholder')}" style="margin-top:6px;">` : ''}
+            </div>
             <div class="exercise-actions">
               <button class="secondary" data-move-ex="up:${di}:${ei}" ${ei === 0 ? 'disabled' : ''}>↑</button>
               <button class="secondary" data-move-ex="down:${di}:${ei}" ${ei === day.exercises.length - 1 ? 'disabled' : ''}>↓</button>
@@ -2963,6 +3003,28 @@ function renderWorkoutBody(subscriptionId, isCoach) {
     };
     el.oninput = handler;
     if (el.tagName === 'SELECT') el.onchange = handler;
+  });
+  document.querySelectorAll('[data-toggle-advanced]').forEach((btn) => {
+    btn.onclick = () => {
+      const [di, ei] = btn.dataset.toggleAdvanced.split(':').map(Number);
+      const ex = wp.days[di].exercises[ei];
+      ex._advancedOpen = !ex._advancedOpen;
+      renderWorkoutBody(subscriptionId, isCoach);
+    };
+  });
+  document.querySelectorAll('[data-exec-select]').forEach((sel) => {
+    sel.onchange = () => {
+      const [di, ei] = sel.dataset.execSelect.split(':').map(Number);
+      const ex = wp.days[di].exercises[ei];
+      if (sel.value === 'custom') {
+        ex._executionCustomMode = true;
+        ex._advancedOpen = true;
+      } else {
+        ex._executionCustomMode = false;
+        ex.execution = sel.value;
+      }
+      renderWorkoutBody(subscriptionId, isCoach);
+    };
   });
   document.querySelectorAll('[data-preset-ex]').forEach((box) => {
     box.querySelectorAll('[data-preset]').forEach((chip) => {

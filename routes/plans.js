@@ -32,6 +32,7 @@ function sanitizeDays(days) {
             weight: clampStr(e?.weight, 30),
             rest: clampStr(e?.rest, 30),
             tempo: clampStr(e?.tempo, 20),
+            execution: clampStr(e?.execution, 30),
             rpe: rpe === null ? null : Math.min(10, Math.max(1, rpe)),
             rir: rir === null ? null : Math.min(5, Math.max(0, rir)),
             type: EXERCISE_TYPES.includes(e?.type) ? e.type : 'normal',

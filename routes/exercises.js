@@ -102,9 +102,12 @@ router.post('/', requireAuth, requireRole('coach'), (req, res) => {
   const movementPattern = MOVEMENT_PATTERNS.includes(req.body.movementPattern) ? req.body.movementPattern : null;
   const videoUrl = clampStr(req.body.videoUrl, 300);
   const instructions = clampStr(req.body.instructions, 500);
+  const secondaryMuscles = Array.isArray(req.body.secondaryMuscles)
+    ? req.body.secondaryMuscles.filter((m) => MUSCLE_GROUPS.includes(m) && m !== muscleGroup).slice(0, 6)
+    : [];
   const info = db
-    .prepare('INSERT INTO exercises (coach_id, name, muscle_group, equipment, difficulty, exercise_type, movement_pattern, video_url, instructions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(req.user.id, name, muscleGroup, equipment, difficulty, exerciseType, movementPattern, videoUrl || null, instructions || null);
+    .prepare('INSERT INTO exercises (coach_id, name, muscle_group, equipment, difficulty, exercise_type, movement_pattern, video_url, instructions, secondary_muscles) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(req.user.id, name, muscleGroup, equipment, difficulty, exerciseType, movementPattern, videoUrl || null, instructions || null, JSON.stringify(secondaryMuscles));
   res.json({ ok: true, id: info.lastInsertRowid });
 });
 
