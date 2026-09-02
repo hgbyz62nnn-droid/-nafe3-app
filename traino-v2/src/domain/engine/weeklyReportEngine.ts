@@ -1,13 +1,15 @@
 import type { WeeklyReportData } from './types';
 
+export type ReportArea = 'speed' | 'strength' | 'stamina' | 'nutrition' | 'recovery' | 'none';
+
 export interface WeekLog {
   workoutsCompleted: number;
   workoutsPlanned: number;
   nutritionAdherencePct: number;
   recoveryAveragePct: number;
   weightDeltaKg: number;
-  weakestArea: 'lower_body' | 'upper_body' | 'conditioning' | 'nutrition' | 'recovery' | 'none';
-  strongestArea: 'lower_body' | 'upper_body' | 'conditioning' | 'nutrition' | 'recovery' | 'none';
+  weakestArea: ReportArea;
+  strongestArea: ReportArea;
 }
 
 const RECOVERY_LABEL_THRESHOLDS: [number, string][] = [
@@ -21,22 +23,22 @@ function labelForRecovery(pct: number): string {
   return RECOVERY_LABEL_THRESHOLDS.find(([min]) => pct >= min)?.[1] ?? 'Fair';
 }
 
-const AREA_FEEDBACK: Record<WeekLog['weakestArea'], string> = {
-  lower_body: 'upper body strength',
-  upper_body: 'lower body power',
-  conditioning: 'conditioning and recovery',
+const AREA_FEEDBACK: Record<ReportArea, string> = {
+  speed: 'speed and lower-body power',
+  strength: 'upper-body strength',
+  stamina: 'conditioning and stamina',
   nutrition: 'nutrition consistency',
   recovery: 'sleep and recovery habits',
   none: 'consistency across the board',
 };
 
-const AREA_PRAISE: Record<WeekLog['strongestArea'], string> = {
-  lower_body: 'lower-body performance improved',
-  upper_body: 'upper-body strength improved',
-  conditioning: 'conditioning improved',
-  nutrition: 'your nutrition consistency is great',
-  recovery: 'your recovery habits are paying off',
-  none: 'you stayed consistent',
+const AREA_PRAISE: Record<ReportArea, string> = {
+  speed: 'Your speed work is paying off',
+  strength: 'Your strength work improved',
+  stamina: 'Your conditioning improved',
+  nutrition: 'Your nutrition consistency is great',
+  recovery: 'Your recovery habits are paying off',
+  none: 'You stayed consistent',
 };
 
 /**

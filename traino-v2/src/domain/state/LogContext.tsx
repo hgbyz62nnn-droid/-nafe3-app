@@ -8,6 +8,8 @@ export interface DayLog {
   loggedMealSlots: MealSlot[];
   mealOverrides: Partial<Record<MealSlot, string>>;
   workoutCompleted: boolean;
+  /** The completed workout's name (e.g. "Speed + Lower Body") — lets Progress bucket real history by focus. */
+  workoutName?: string;
   weightKg?: number;
 }
 
@@ -36,7 +38,7 @@ interface LogContextValue {
   getDayLog: (date: string) => DayLog;
   toggleMealLogged: (date: string, slot: MealSlot) => void;
   setMealOverride: (date: string, slot: MealSlot, mealId: string) => void;
-  setWorkoutCompleted: (date: string, completed: boolean) => void;
+  setWorkoutCompleted: (date: string, completed: boolean, workoutName?: string) => void;
   logWeight: (date: string, weightKg: number) => void;
   /** Most recent `days` day-logs, oldest first, including empty days with no activity. */
   getRecentLogs: (days: number) => DayLog[];
@@ -80,8 +82,12 @@ export function LogProvider({ children }: { children: ReactNode }) {
     updateDay(date, (day) => ({ ...day, mealOverrides: { ...day.mealOverrides, [slot]: mealId } }));
   }
 
-  function setWorkoutCompleted(date: string, completed: boolean) {
-    updateDay(date, (day) => ({ ...day, workoutCompleted: completed }));
+  function setWorkoutCompleted(date: string, completed: boolean, workoutName?: string) {
+    updateDay(date, (day) => ({
+      ...day,
+      workoutCompleted: completed,
+      workoutName: completed ? (workoutName ?? day.workoutName) : day.workoutName,
+    }));
   }
 
   function logWeight(date: string, weightKg: number) {

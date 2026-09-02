@@ -94,13 +94,27 @@ export function generateWeekProgram(profile: UserProfile, weekNumber = 1): Resol
 }
 
 /**
- * Today's workout, cycling deterministically through the weekly program
- * by day-of-cycle rather than picking randomly.
+ * Which day of a weekly program cycle "today" is — a pure function of
+ * the real calendar (ISO weekday, Monday=0) modulo the program's length,
+ * so the plan actually rotates day to day instead of always showing the
+ * first template.
  */
-export function generateTodayWorkout(profile: UserProfile, dayIndex: number, weekNumber = 1): ResolvedWorkout {
+export function todayDayIndex(programLength: number, date: Date = new Date()): number {
+  const isoWeekday = (date.getDay() + 6) % 7; // Mon=0 .. Sun=6
+  return isoWeekday % programLength;
+}
+
+/**
+ * Today's workout, cycling deterministically through the weekly program
+ * by real day-of-week rather than picking randomly. Pass `dayIndex`
+ * explicitly to look at a specific day of the cycle (e.g. for the
+ * history behind Progress/Weekly Report); omit it to mean "today".
+ */
+export function generateTodayWorkout(profile: UserProfile, dayIndex?: number, weekNumber = 1): ResolvedWorkout {
   const sportModule = getSportModule(profile.answers.sport);
   const days = sportModule.program[profile.level];
-  const day = days[dayIndex % days.length];
+  const index = dayIndex ?? todayDayIndex(days.length);
+  const day = days[index % days.length];
   return resolveDay(day, baseContext(profile, weekNumber));
 }
 
@@ -112,13 +126,14 @@ export function generateTodayWorkout(profile: UserProfile, dayIndex: number, wee
  */
 export function applyCoachAdjustment(
   profile: UserProfile,
-  dayIndex: number,
+  dayIndex: number | undefined,
   adjustment: AiCoachAdjustment,
   weekNumber = 1
 ): ResolvedWorkout {
   const sportModule = getSportModule(profile.answers.sport);
   const days = sportModule.program[profile.level];
-  const day = days[dayIndex % days.length];
+  const index = dayIndex ?? todayDayIndex(days.length);
+  const day = days[index % days.length];
 
   const ctx: ResolveContext = {
     ...baseContext(profile, weekNumber),
@@ -139,11 +154,4 @@ export function applyCoachAdjustment(
         : { ...ex, sets: Math.max(1, Math.round(ex.sets * multiplier)) }
     ),
   };
-}
-
-/** Deterministic "which day of the cycle is today" from a fixed weekly start plus elapsed days. */
-export function currentDayIndex(cycleStart: Date, today: Date = new Date()): number {
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const diffDays = Math.floor((today.getTime() - cycleStart.getTime()) / msPerDay);
-  return Math.max(diffDays, 0);
 }

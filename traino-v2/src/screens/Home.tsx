@@ -42,7 +42,7 @@ function StatTile({ children, label }: { children: React.ReactNode; label: strin
 
 export default function Home() {
   const { profile } = useProfile();
-  const workout = generateTodayWorkout(profile, 0);
+  const workout = generateTodayWorkout(profile);
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
 
   return (
