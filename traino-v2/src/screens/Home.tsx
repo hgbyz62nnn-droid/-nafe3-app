@@ -2,6 +2,7 @@ import { Screen } from '../components/ui/Screen';
 import { BottomNav } from '../components/ui/BottomNav';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
+import { AssetSlot } from '../components/ui/AssetSlot';
 
 function ProgressRing({ percent, color }: { percent: number; color: string }) {
   const r = 15;
@@ -70,16 +71,27 @@ export default function Home() {
                   'radial-gradient(circle at 78% 30%, rgba(224,39,46,0.18), transparent 55%), linear-gradient(135deg, #17171b 0%, #0c0c0f 60%, #050506 100%)',
               }}
             />
-            {/* athlete photo placeholder — see report: needs a real licensed asset */}
-            <div className="absolute right-[-10px] bottom-0 top-6 w-[62%] opacity-90">
-              <svg viewBox="0 0 200 230" className="w-full h-full" preserveAspectRatio="xMidYMax meet">
-                <ellipse cx="100" cy="225" rx="70" ry="8" fill="black" opacity="0.35" />
-                <g fill="#2a2a2e">
-                  <circle cx="118" cy="46" r="17" />
-                  <path d="M85 92c6-20 20-30 36-30s28 9 33 27l8 55c2 10-4 19-14 20l-10 1-4 40-14 1-3-45-16 2-6 44-14-1 4-46c-9-3-14-12-11-22Z" />
-                </g>
-              </svg>
-            </div>
+            {/*
+              Replaceable slot: pass src={heroWorkoutPhotoUrl} once a real
+              licensed TRAINO athlete photo exists — position/crop/size
+              stay exactly as matched against the reference, nothing else
+              needs to change.
+            */}
+            <AssetSlot
+              className="absolute right-[-10px] bottom-0 top-6 w-[62%] opacity-90"
+              fit="contain"
+              position="bottom right"
+              label="Athlete photo"
+              placeholderIcon={
+                <svg viewBox="0 0 200 230" className="w-full h-full" preserveAspectRatio="xMidYMax meet">
+                  <ellipse cx="100" cy="225" rx="70" ry="8" fill="black" opacity="0.35" />
+                  <g fill="#2a2a2e">
+                    <circle cx="118" cy="46" r="17" />
+                    <path d="M85 92c6-20 20-30 36-30s28 9 33 27l8 55c2 10-4 19-14 20l-10 1-4 40-14 1-3-45-16 2-6 44-14-1 4-46c-9-3-14-12-11-22Z" />
+                  </g>
+                </svg>
+              }
+            />
             <div className="absolute inset-x-0 bottom-0 top-0 bg-gradient-to-t from-card via-transparent to-transparent" />
             <div className="absolute left-4 top-4 right-4">
               <p className="text-text-secondary text-[11px] font-bold tracking-wider uppercase">

@@ -39,6 +39,30 @@ export const ICONS = {
   chevronRight: 'm9 4 8 8-8 8',
   // extension, matching the 24x24 / 1.8 stroke language of the set above
   aiMascot: '<rect x="5.5" y="7" width="13" height="11" rx="4"/><path d="M12 7V4.2M9.5 3.6h5"/><circle cx="9.4" cy="12.3" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="12.3" r="1.1" fill="currentColor" stroke="none"/><path d="M9.5 15.3h5"/><path d="M3.8 10v3.5M20.2 10v3.5"/>',
+
+  // -- Extensions below: training-location + equipment pictograms. None
+  // of these concepts exist in the approved 44-icon set (it was built for
+  // the marketplace app's screens, not gym-equipment selection), so they
+  // are new glyphs drawn in the same 24x24 / 1.8px-stroke / round-cap
+  // language rather than pulled from a different icon library.
+  sportsClub: '<path d="M4 20V10l8-5 8 5v10"/><path d="M4 20h16M9 20v-6h6v6"/>',
+  outdoor: '<path d="M12 3v6M8 9h8l3 8H5l3-8Z"/><path d="M9.5 15.5h5M4.5 21h15"/>',
+  sportsField: '<rect x="3.5" y="6" width="17" height="12" rx="1.5"/><path d="M12 6v12M3.5 12h17M8 8.2v3.6M16 12.2v3.6"/>',
+  multiLocation: '<path d="M19 10.2c0 5-7 10-7 10s-7-5-7-10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10.2" r="2.3"/><path d="M4 4.5c-.9.5-1.5 1-1.5 1.6M20 4.5c.9.5 1.5 1 1.5 1.6"/>',
+  barbell: '<path d="M2.5 12h2.5M19 12h2.5M6 8.5v7M9 10v4M15 10v4M18 8.5v7M9 12h6"/>',
+  bench: '<rect x="4" y="10" width="16" height="3.4" rx="1"/><path d="M6 13.4V19M18 13.4V19M4 10l-1.5-2.2M20 10l1.5-2.2"/>',
+  squatRack: '<path d="M5 3.5v17M19 3.5v17M5 9h4M15 9h4M9 9h6"/>',
+  pullUpBar: '<path d="M4 6h16M8 6v4.5c0 1-.8 1.8-1.8 1.8M16 6v4.5c0 1 .8 1.8 1.8 1.8"/><circle cx="12" cy="17" r="3.4"/>',
+  cableMachine: '<path d="M5 3.5v17M19 3.5v7"/><circle cx="19" cy="12.7" r="2"/><path d="M19 14.7v2.3l-4.5 3"/>',
+  kettlebell: '<path d="M9.5 8.2a2.5 2.5 0 0 1 5 0"/><path d="M7 14.5c0-3.3 2.2-5.3 5-5.3s5 2 5 5.3-2.2 5.3-5 5.3-5-2-5-5.3Z"/>',
+  resistanceBand: '<path d="M4 12c2-4 5-6 8-6s6 2 8 6c-2 4-5 6-8 6s-6-2-8-6Z"/><circle cx="12" cy="12" r="2.2"/>',
+  trx: '<path d="M9 3.5h6M10.5 3.5v6.5c0 2-1.5 2.8-1.5 5v5.5M13.5 3.5v6.5c0 2 1.5 2.8 1.5 5v5.5"/>',
+  treadmill: '<path d="M3.5 17.5h13l3-2.5H8l2-8"/><circle cx="16" cy="8" r="1.6"/><path d="M13 13h6.5"/>',
+  bike: '<circle cx="6.5" cy="16.5" r="3.3"/><circle cx="17.5" cy="16.5" r="3.3"/><path d="M6.5 16.5 10 8h3l4.5 8.5M10 8l2.5 4.5h-6"/>',
+  rowingMachine: '<path d="M3 18h18M6 18l3-8h6l3 8"/><circle cx="9" cy="8" r="1.6"/><path d="M9 9.6v3.2h4"/>',
+  medicineBall: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
+  plyoBox: '<path d="M4 9.5 12 5l8 4.5v9L12 23l-8-4.5Z"/><path d="M4 9.5 12 14l8-4.5M12 14v9"/>',
+  otherEquipment: '<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;
