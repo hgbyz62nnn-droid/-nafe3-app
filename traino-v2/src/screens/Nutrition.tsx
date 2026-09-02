@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
@@ -5,23 +6,25 @@ import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { BottomNav } from '../components/ui/BottomNav';
 import { useProfile } from '../domain/state/ProfileContext';
+import { generateMealPlan, getMealAlternative } from '../domain/engine/nutritionPlanEngine';
+import { MEAL_LIBRARY } from '../domain/nutrition/meals';
+import type { MealSlot } from '../domain/engine/types';
 
-const MEALS = [
-  { name: 'Breakfast', desc: 'Oatmeal, Banana, Whey Protein', kcal: 620, logged: true },
-  { name: 'Lunch', desc: 'Chicken, Rice, Vegetables', kcal: 710, logged: true },
-  { name: 'Snack', desc: 'Greek Yogurt, Nuts', kcal: 300, logged: true },
-  { name: 'Dinner', desc: 'Salmon, Potatoes, Salad', kcal: 610, logged: false },
-];
+const SLOT_LABEL: Record<MealSlot, string> = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  snack: 'Snack',
+  dinner: 'Dinner',
+};
 
 function CalorieRing({ value, total }: { value: number; total: number }) {
   const size = 168;
   const stroke = 14;
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
-  const filled = value / total;
-  const redFrac = 0.075;
+  const filled = Math.min(value / total, 1);
+  const redFrac = filled > 0 ? 0.075 : 0;
   const greenFrac = filled - redFrac;
-  const grayFrac = 1 - filled;
 
   const seg = (frac: number) => `${Math.max(frac, 0) * circumference} ${circumference}`;
 
@@ -57,18 +60,43 @@ function CalorieRing({ value, total }: { value: number; total: number }) {
         </span>
         <span className="text-text-secondary text-[12px] mt-1">/ {total.toLocaleString()} kcal</span>
         <span className="text-text-secondary text-[11.5px] mt-2.5">Remaining</span>
-        <span className="text-white text-[13px] font-bold">{total - value} kcal</span>
+        <span className="text-white text-[13px] font-bold">{Math.max(total - value, 0)} kcal</span>
       </div>
     </div>
   );
 }
 
 export default function Nutrition() {
-  const { profile } = useProfile();
+  const { answers, profile } = useProfile();
   const targets = profile.nutrition;
 
-  const loggedKcal = MEALS.filter((m) => m.logged).reduce((sum, m) => sum + m.kcal, 0);
-  const consumedRatio = Math.min(loggedKcal / targets.calories, 1);
+  const [mealOverrides, setMealOverrides] = useState<Partial<Record<MealSlot, string>>>({});
+  const [loggedSlots, setLoggedSlots] = useState<Set<MealSlot>>(new Set());
+
+  const plan = generateMealPlan(answers, targets).map((entry) => {
+    const overrideId = mealOverrides[entry.slot];
+    const meal = overrideId ? (MEAL_LIBRARY.find((m) => m.id === overrideId) ?? entry.meal) : entry.meal;
+    return { slot: entry.slot, meal };
+  });
+
+  function toggleLogged(slot: MealSlot) {
+    setLoggedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(slot)) next.delete(slot);
+      else next.add(slot);
+      return next;
+    });
+  }
+
+  function swapMeal(slot: MealSlot, currentMealId: string) {
+    const next = getMealAlternative(slot, currentMealId, answers);
+    setMealOverrides((prev) => ({ ...prev, [slot]: next.id }));
+  }
+
+  const loggedKcal = plan
+    .filter((entry) => loggedSlots.has(entry.slot))
+    .reduce((sum, entry) => sum + entry.meal.kcal, 0);
+  const consumedRatio = targets.calories > 0 ? Math.min(loggedKcal / targets.calories, 1) : 0;
 
   const MACROS = [
     {
@@ -134,22 +162,40 @@ export default function Nutrition() {
       <p className="text-text-secondary text-[12px] font-bold tracking-wide px-4 mt-5">MEALS</p>
 
       <div className="px-4 mt-2 flex flex-col gap-2.5">
-        {MEALS.map((meal) => (
-          <div
-            key={meal.name}
-            className="flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-2.5 py-2"
-          >
-            <AssetSlot className="w-11 h-11 rounded-[12px] shrink-0" fit="cover" compact />
-            <div className="flex-1 min-w-0">
-              <p className="text-white text-[13.5px] font-bold">{meal.name}</p>
-              <p className="text-text-secondary text-[11.5px] mt-0.5 truncate">{meal.desc}</p>
+        {plan.map(({ slot, meal }) => {
+          const logged = loggedSlots.has(slot);
+          return (
+            <div
+              key={slot}
+              className="flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-2.5 py-2"
+            >
+              <AssetSlot className="w-11 h-11 rounded-[12px] shrink-0" fit="cover" compact />
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-[13.5px] font-bold">{SLOT_LABEL[slot]}</p>
+                <p className="text-text-secondary text-[11.5px] mt-0.5 truncate">{meal.description}</p>
+              </div>
+              <button
+                onClick={() => swapMeal(slot, meal.id)}
+                aria-label="Swap meal"
+                className="w-7 h-7 min-w-[28px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
+              >
+                <Icon name="swap" size={12} className="text-text-secondary" strokeWidth={2} />
+              </button>
+              <button
+                onClick={() => toggleLogged(slot)}
+                className="flex items-center gap-1.5 shrink-0"
+                aria-label={logged ? 'Mark meal not eaten' : 'Mark meal eaten'}
+              >
+                {logged ? (
+                  <Icon name="checkPlain" size={12} className="text-success" strokeWidth={2.8} />
+                ) : (
+                  <span className="w-3 h-3 rounded-full border border-border-soft" />
+                )}
+                <span className="text-white text-[12.5px] font-bold">{meal.kcal} kcal</span>
+              </button>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {meal.logged && <Icon name="checkPlain" size={12} className="text-success" strokeWidth={2.8} />}
-              <span className="text-white text-[12.5px] font-bold">{meal.kcal} kcal</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="px-4 mt-4">

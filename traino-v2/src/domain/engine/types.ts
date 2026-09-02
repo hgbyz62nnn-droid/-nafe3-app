@@ -133,6 +133,29 @@ export interface PerformanceStat {
   trend: number[];
 }
 
+export type MealSlot = 'breakfast' | 'lunch' | 'snack' | 'dinner';
+
+export interface MealTemplate {
+  id: string;
+  name: string;
+  description: string;
+  slot: MealSlot;
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  /** Preferences this meal satisfies; 'no_restriction' meals are always eligible. */
+  dietaryTags: DietaryPreference[];
+  /** Allergy ids this meal contains; excluded for any athlete who reported that allergy. */
+  allergens: string[];
+  budgetTier: BudgetTier;
+}
+
+export interface MealPlanEntry {
+  slot: MealSlot;
+  meal: MealTemplate;
+}
+
 export interface WeeklyReportData {
   headline: string;
   subtext: string;
