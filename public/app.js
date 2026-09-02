@@ -280,10 +280,10 @@ async function renderTraineeHome() {
   const activeSubs = subscriptions.filter(s => s.status === 'active');
   const topTrainers = [...coaches].sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0)).slice(0, 8);
   const CATEGORIES = [
-    ['💪', t('catStrength'), 'قوة'],
-    ['🔥', t('catWeightLoss'), 'خسارة وزن'],
-    ['🏋️', t('catBodybuilding'), 'بناء أجسام'],
-    ['🤸', t('catMobility'), 'ليونة'],
+    [svgIconPro('strength', 22), t('catStrength'), 'قوة'],
+    [svgIconPro('fat-loss', 22), t('catWeightLoss'), 'خسارة وزن'],
+    [svgIconPro('muscle-building', 22), t('catBodybuilding'), 'بناء أجسام'],
+    [svgIconPro('fitness', 22), t('catMobility'), 'ليونة'],
   ];
 
   render(`
@@ -312,7 +312,7 @@ async function renderTraineeHome() {
             ${avatarCircle(c.name, c.avatar_path, 56)}
             <div class="tmc-name">${escapeHtml(c.name)}</div>
             <div class="tmc-spec">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
-            ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span>` : `<span class="small">${t('noReviewsYet')}</span>`}
+            ${c.avg_rating ? ratingBadge(c.avg_rating) : `<span class="small">${t('noReviewsYet')}</span>`}
           </div>
         `).join('')}
       </div>
@@ -376,9 +376,9 @@ async function renderCoachProfile(coachId) {
       ${canModerate ? moderationMenuHtml() : ''}
     </div>
     <div class="card">
-      <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
+      <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${svgIconPro('verified', 13)} ${t('verifiedLabel')}</span>` : ''}</h2>
       <p class="small">${escapeHtml(coach.specialty) || t('coachSpecialtyFallback')}</p>
-      <p class="small" style="margin-top:4px;">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
+      <p class="small" style="margin-top:4px;">${coach.avg_rating ? `${ratingBadge(coach.avg_rating)} ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
       ${coach.profile_bio ? `<p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.profile_bio)}</p>` : ''}
     </div>
     <div class="stat-grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:14px;">
@@ -398,7 +398,7 @@ async function renderCoachProfile(coachId) {
     <div class="card">
       <h2>${t('aboutMeTitle')}</h2>
       <p style="font-size:13px; line-height:1.8;">${escapeHtml(coach.bio) || t('noBioYet')}</p>
-      ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default;">🎓 ${escapeHtml(coach.certification)}</span></div>` : ''}
+      ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default; display:inline-flex; align-items:center; gap:5px;">${svgIconPro('verified', 13)}${escapeHtml(coach.certification)}</span></div>` : ''}
     </div>
     <div class="card">
       <h2>${t('transformationsTitle')}</h2>
@@ -428,7 +428,7 @@ async function renderCoachProfile(coachId) {
         <div class="coach-row" style="display:block;">
           <div style="display:flex; justify-content:space-between;">
             <b style="font-size:12.5px;">${escapeHtml(r.trainee_name)}</b>
-            <span class="rating">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+            <span class="rating">${starRating(r.rating)}</span>
           </div>
           ${r.comment ? `<p class="small" style="margin-top:4px;">${escapeHtml(r.comment)}</p>` : ''}
           ${r.coach_response ? `<p class="small" style="margin-top:6px; background:var(--surface-2); padding:8px 10px; border-radius:8px;"><b>${t('coachResponseLabel')}</b> ${escapeHtml(r.coach_response)}</p>` : ''}

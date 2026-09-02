@@ -109,7 +109,7 @@ async function renderMyBookings() {
   render(`
     <div class="topbar"><h2 style="margin:0;">${t('myBookingsTitle')}</h2></div>
     <div class="card">
-      ${upcoming.length === 0 && past.length === 0 ? renderEmptyState('📅', t('emptyBookingsTitle'), t('emptyBookingsHint')) : `
+      ${upcoming.length === 0 && past.length === 0 ? renderEmptyState(svgIconPro('calendar', 30), t('emptyBookingsTitle'), t('emptyBookingsHint')) : `
         ${upcoming.length ? `<h2>${t('upcomingSessionsTitle')}</h2>${upcoming.map((s) => `
           <div class="coach-row" data-open-sub="${s.subscriptionId}">
             <div>${escapeHtml(s.partnerName)}<div class="small">${fmt(s.scheduled_at)}</div></div>
@@ -158,7 +158,7 @@ async function renderMyMessages() {
     const q = (filterQ || '').trim().toLowerCase();
     const list = q ? activeSubs.filter((s) => s.other_party_name.toLowerCase().includes(q)) : activeSubs;
     document.getElementById('conversationsList').innerHTML = list.length === 0
-      ? renderEmptyState('💬', t('emptyMessagesTitle'), t('emptyMessagesHint'))
+      ? renderEmptyState(svgIconPro('message', 30), t('emptyMessagesTitle'), t('emptyMessagesHint'))
       : `<div class="card">${list.map((s) => `
           <div class="coach-row" data-open-chat="${s.id}" style="gap:10px;">
             ${avatarCircle(s.other_party_name, s.other_party_avatar, 44)}
@@ -189,7 +189,7 @@ function avatarUploadWidget() {
   return `
     <div class="avatar-upload-wrap">
       ${avatarCircle(state.user.name, state.user.avatarPath, 88)}
-      <label class="avatar-edit-badge" for="avatarFileInput">📷</label>
+      <label class="avatar-edit-badge" for="avatarFileInput">${svgIconPro('edit', 13)}</label>
       <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/webp" style="display:none;">
     </div>
   `;
@@ -936,7 +936,7 @@ async function renderCoachAvailability() {
         ${blockedDates.length === 0 ? `<p class="small">${t('noBlockedDatesYet')}</p>` : blockedDates.map((b) => `
           <div class="coach-row">
             <div>${escapeHtml(b.blocked_date)}${b.reason ? ` - ${escapeHtml(b.reason)}` : ''}</div>
-            <button class="secondary" data-remove-blocked="${b.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
+            <button class="secondary" data-remove-blocked="${b.id}" style="width:auto; padding:6px 10px;">${svgIconPro('close', 14)}</button>
           </div>
         `).join('')}
       </div>
@@ -955,7 +955,7 @@ async function renderCoachAvailability() {
       : availabilityEditState.windows.map((w, i) => `
         <div class="coach-row">
           <div>${t('dayLabel' + w.day_of_week)} · ${escapeHtml(w.start_time)} - ${escapeHtml(w.end_time)}</div>
-          <button class="secondary" data-remove-window="${i}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
+          <button class="secondary" data-remove-window="${i}" style="width:auto; padding:6px 10px;">${svgIconPro('close', 14)}</button>
         </div>
       `).join('');
     box.querySelectorAll('[data-remove-window]').forEach((el) => {
@@ -1025,10 +1025,10 @@ function renderTrainerNetworkCard(c) {
     <div class="card" data-open-trainer="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
       ${avatarCircle(c.name, c.avatar_path)}
       <div style="flex:1; min-width:0;">
-        <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
+        <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${svgIconPro('verified', 13)} ${t('verifiedLabel')}</span>` : ''}</div>
         <div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
         <div class="small">
-          ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span> ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
+          ${c.avg_rating ? `${ratingBadge(c.avg_rating)} ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
           ${c.location ? ' · ' + escapeHtml(c.location) : ''}
         </div>
       </div>
@@ -1108,12 +1108,12 @@ async function renderTrainerNetworkProfile(coachId) {
       <div class="cover-avatar-wrap">${avatarCircle(coach.name, coach.avatar_path, 78)}</div>
     </div>
     <div class="card">
-      <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</h2>
+      <h2 style="margin-bottom:2px;">${escapeHtml(coach.name)} ${coach.verified ? `<span class="verified-badge">${svgIconPro('verified', 13)} ${t('verifiedLabel')}</span>` : ''}</h2>
       <p class="small">${escapeHtml(coach.specialty) || t('coachSpecialtyFallback')}</p>
-      <p class="small" style="margin-top:4px;">${coach.avg_rating ? `<span class="rating">★ ${coach.avg_rating}</span> ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
-      ${coach.location ? `<p class="small" style="margin-top:4px;">📍 ${escapeHtml(coach.location)}</p>` : ''}
+      <p class="small" style="margin-top:4px;">${coach.avg_rating ? `${ratingBadge(coach.avg_rating)} ${t('reviewsCountLabel', { count: coach.review_count })}` : t('noReviewsYet')}</p>
+      ${coach.location ? `<p class="small" style="margin-top:4px; display:flex; align-items:center; gap:5px;">${svgIconPro('location', 13)}${escapeHtml(coach.location)}</p>` : ''}
       ${coach.bio ? `<p style="font-size:13px; line-height:1.8; margin-top:10px;">${escapeHtml(coach.bio)}</p>` : ''}
-      ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default;">🎓 ${escapeHtml(coach.certification)}</span></div>` : ''}
+      ${coach.certification ? `<div style="margin-top:10px;"><span class="filter-chip active" style="cursor:default; display:inline-flex; align-items:center; gap:5px;">${svgIconPro('verified', 13)}${escapeHtml(coach.certification)}</span></div>` : ''}
     </div>
     <div class="card">
       <button id="followToggleBtn" data-following="${coach.isFollowing ? '1' : '0'}">${coach.isFollowing ? t('unfollowBtn') : t('followBtn')}</button>
@@ -1165,7 +1165,7 @@ function renderPostCard(p) {
       <div class="coach-row" data-open-author="${p.coach_id}" style="cursor:pointer; gap:10px;">
         ${avatarCircle(p.coach_name, p.coach_avatar, 40)}
         <div style="flex:1; min-width:0;">
-          <div style="font-weight:700; font-size:13px;">${escapeHtml(p.coach_name)} ${p.coach_verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
+          <div style="font-weight:700; font-size:13px;">${escapeHtml(p.coach_name)} ${p.coach_verified ? `<span class="verified-badge">${svgIconPro('verified', 13)} ${t('verifiedLabel')}</span>` : ''}</div>
           <div class="small">${escapeHtml(p.coach_specialty) || t('coachSpecialtyFallback')}</div>
         </div>
         <span class="pill">${t(POST_CATEGORY_LABELS[p.category] || 'catTip')}</span>
@@ -1173,8 +1173,8 @@ function renderPostCard(p) {
       ${p.photo_path ? `<img src="/uploads/${encodeURIComponent(p.photo_path)}" style="width:100%; border-radius:10px; margin:10px 0; display:block;" alt="">` : ''}
       <p style="font-size:13.5px; line-height:1.8; margin:10px 0;">${escapeHtml(p.content)}</p>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <button class="secondary" data-like="${p.id}" data-liked="${p.is_liked ? '1' : '0'}" style="width:auto; padding:6px 12px;">${p.is_liked ? '❤️' : '🤍'} ${p.like_count}</button>
-        <button class="secondary" data-save="${p.id}" data-saved="${p.is_saved ? '1' : '0'}" style="width:auto; padding:6px 12px;">${p.is_saved ? '🔖' : '📑'} ${p.save_count}</button>
+        <button class="secondary" data-like="${p.id}" data-liked="${p.is_liked ? '1' : '0'}" style="width:auto; padding:6px 12px; display:inline-flex; align-items:center; gap:5px;">${favoriteHeartIcon(!!p.is_liked)} ${p.like_count}</button>
+        <button class="secondary" data-save="${p.id}" data-saved="${p.is_saved ? '1' : '0'}" style="width:auto; padding:6px 12px; display:inline-flex; align-items:center; gap:5px;">${bookmarkIcon(!!p.is_saved)} ${p.save_count}</button>
         <button class="secondary" data-share="${p.id}" style="width:auto; padding:6px 12px;">${t('shareBtn')}</button>
       </div>
       <div class="small" style="margin-top:6px;">${new Date(p.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</div>
@@ -1321,7 +1321,7 @@ async function renderMyPosts() {
         </div>
         ${p.photo_path ? `<img src="/uploads/${encodeURIComponent(p.photo_path)}" style="width:100%; border-radius:10px; margin:10px 0;" alt="">` : ''}
         <p style="font-size:13.5px; line-height:1.8; margin:8px 0;">${escapeHtml(p.content)}</p>
-        <div class="small">❤️ ${p.like_count} · 🔖 ${p.save_count}</div>
+        <div class="small" style="display:flex; align-items:center; gap:10px;"><span style="display:inline-flex; align-items:center; gap:4px;">${favoriteHeartIcon(true)} ${p.like_count}</span><span style="display:inline-flex; align-items:center; gap:4px;">${bookmarkIcon(true)} ${p.save_count}</span></div>
         <button class="danger" data-delete-post="${p.id}" style="margin-top:8px;">${t('deleteBtn')}</button>
       </div>
     `).join('');
@@ -1347,7 +1347,7 @@ async function renderCoachTransformations() {
   const { transformations } = await api('/transformations');
   const box = document.getElementById('allTransformBox');
   box.innerHTML = transformations.length === 0
-    ? renderEmptyState('📸', t('noTransformationsYet'), '')
+    ? renderEmptyState(svgIconPro('fitness', 30), t('noTransformationsYet'), '')
     : `<div class="transform-grid">${transformations.map((tr) => renderTransformCard(tr, true)).join('')}</div>`;
   box.querySelectorAll('[data-open-transform]').forEach((el) => {
     el.onclick = () => {
@@ -1498,6 +1498,31 @@ function exerciseTagLine(ex) {
 function favoriteHeartIcon(isFav) {
   const raw = svgIconPro('heart', 16, isFav ? 'color:var(--red-soft);' : '');
   return isFav ? raw.replace('fill="none"', 'fill="currentColor"') : raw;
+}
+
+// نفس فكرة favoriteHeartIcon - بديل موحّد لأيقونة الحفظ 🔖/📑 اللي كانت
+// إيموجي، ببكماركة من نظام TRAINO_PRO_Icon_System متملية وقت الحفظ.
+function bookmarkIcon(isSaved) {
+  const raw = svgIconPro('bookmark', 16, isSaved ? 'color:var(--red-soft);' : '');
+  return isSaved ? raw.replace('fill="none"', 'fill="currentColor"') : raw;
+}
+
+// بديل موحّد لنجوم التقييم ★/☆ اللي كانت نص عادي مكرر - نفس فكرة القلب:
+// نجمة SVG واحدة من نظام TRAINO_PRO، متملية للنجوم المكتسبة وشفافة للباقي.
+function starRating(rating, size) {
+  const r = Math.round(Number(rating) || 0);
+  const s = size || 13;
+  const filled = svgIconPro('star', s, 'color:#FFC94D;').replace('fill="none"', 'fill="currentColor"');
+  const empty = svgIconPro('star', s, 'color:#FFC94D; opacity:.35;');
+  let html = '';
+  for (let i = 0; i < 5; i++) html += i < r ? filled : empty;
+  return `<span style="display:inline-flex; align-items:center; gap:1px;">${html}</span>`;
+}
+
+// شارة مضغوطة (نجمة واحدة + الرقم) للاستخدام جوه سطر نصي زي كارت المدرب.
+function ratingBadge(value) {
+  const star = svgIconPro('star', 12, 'color:#FFC94D;').replace('fill="none"', 'fill="currentColor"');
+  return `<span class="rating" style="display:inline-flex; align-items:center; gap:3px;">${star}${escapeHtml(String(value))}</span>`;
 }
 
 function secondaryMusclesText(raw) {
@@ -1700,7 +1725,7 @@ function openExerciseLibrary(onSelect, swapOptions) {
         </div>
         <button class="secondary" data-detail-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('viewDetailBtn')}</button>
         <button class="secondary" data-fav-ex="${ex.id}" data-fav-state="${ex.is_favorite}" style="width:auto; padding:6px 10px;">${favoriteHeartIcon(!!ex.is_favorite)}</button>
-        ${ex.coach_id ? `<button class="secondary" data-del-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
+        ${ex.coach_id ? `<button class="secondary" data-del-ex="${ex.id}" style="width:auto; padding:6px 10px;">${svgIconPro('close', 14)}</button>` : ''}
         <button data-select-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('selectExerciseBtn')}</button>
       </div>
     `).join('');
@@ -1747,10 +1772,10 @@ function renderCoachCard(c) {
     <div class="card" data-open-coach="${c.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
       ${avatarCircle(c.name, c.avatar_path)}
       <div style="flex:1; min-width:0;">
-        <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${t('verifiedLabel')}</span>` : ''}</div>
+        <div style="font-weight:800; font-size:13.5px;">${escapeHtml(c.name)} ${c.verified ? `<span class="verified-badge">${svgIconPro('verified', 13)} ${t('verifiedLabel')}</span>` : ''}</div>
         <div class="small">${escapeHtml(c.specialty) || t('coachSpecialtyFallback')}</div>
         <div class="small">
-          ${c.avg_rating ? `<span class="rating">★ ${c.avg_rating}</span> ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
+          ${c.avg_rating ? `${ratingBadge(c.avg_rating)} ${t('reviewsCountLabel', { count: c.review_count })}` : t('noReviewsYet')}
           ${c.client_count ? ' · ' + t('clientsCountLabel', { count: c.client_count }) : ''}
         </div>
         ${c.compatibilityPct != null ? `<div class="small" style="color:var(--success); font-weight:700; margin-top:2px;">${t('compatibilityLabel')}: ${c.compatibilityPct}%</div>` : ''}
@@ -1786,8 +1811,8 @@ async function renderDiscover() {
         <span class="search-icon">${svgIcon('search', 16)}</span>
         <input id="discoverSearch" placeholder="${t('searchTrainersPlaceholder')}" value="${escapeHtml(discoverState.q)}">
       </div>
-      <button class="secondary" id="openFilterScreen" style="width:auto; padding:11px 14px; position:relative;">
-        ⚙️${filterCount ? `<span class="badge-dot" style="position:static; display:inline-flex; margin-inline-start:4px; border:none;">${filterCount}</span>` : ''}
+      <button class="secondary" id="openFilterScreen" style="width:auto; padding:11px 14px; position:relative; display:inline-flex; align-items:center;">
+        ${svgIconPro('filter', 18)}${filterCount ? `<span class="badge-dot" style="position:static; display:inline-flex; margin-inline-start:4px; border:none;">${filterCount}</span>` : ''}
       </button>
     </div>
     <select id="sortSelect" style="margin-bottom:16px;">
@@ -1812,7 +1837,7 @@ async function renderDiscover() {
     const box = document.getElementById('discoverResults');
     if (!box) return;
     box.innerHTML = coaches.length === 0
-      ? renderEmptyState('🔍', t('emptyDiscoverTitle'), t('emptyDiscoverHint'))
+      ? renderEmptyState(svgIconPro('search', 30), t('emptyDiscoverTitle'), t('emptyDiscoverHint'))
       : coaches.map(renderCoachCard).join('');
     box.querySelectorAll('[data-open-coach]').forEach((el) => {
       el.onclick = () => renderCoachProfile(el.dataset.openCoach);
@@ -1905,7 +1930,7 @@ function renderMatchResults(matches) {
       <h2>${t('matchResultsTitle')}</h2>
       <button class="secondary" id="changeAnswers" style="width:auto; padding:6px 10px; margin-top:6px;">${t('changeAnswersBtn')}</button>
     </div>
-    ${matches.length === 0 ? renderEmptyState('🎯', t('noMatchesFound'), '') : matches.map(renderCoachCard).join('')}
+    ${matches.length === 0 ? renderEmptyState(svgIconPro('target', 30), t('noMatchesFound'), '') : matches.map(renderCoachCard).join('')}
   `);
   document.getElementById('back').onclick = renderDiscover;
   on('changeAnswers', 'click', renderFindMyTrainer);
@@ -1957,9 +1982,9 @@ async function renderFilterScreen() {
     <div class="filter-section-label">${t('ratingFilterLabel')}</div>
     <div class="chip-row" id="ratingChips">
       <span class="filter-chip ${!draft.minRating ? 'active' : ''}" data-rating="">${t('allOption')}</span>
-      <span class="filter-chip ${draft.minRating === '4' ? 'active' : ''}" data-rating="4">★ 4+</span>
-      <span class="filter-chip ${draft.minRating === '4.5' ? 'active' : ''}" data-rating="4.5">★ 4.5+</span>
-      <span class="filter-chip ${draft.minRating === '5' ? 'active' : ''}" data-rating="5">★ 5</span>
+      <span class="filter-chip ${draft.minRating === '4' ? 'active' : ''}" data-rating="4" style="display:inline-flex; align-items:center; gap:4px;">${svgIconPro('star', 11)}4+</span>
+      <span class="filter-chip ${draft.minRating === '4.5' ? 'active' : ''}" data-rating="4.5" style="display:inline-flex; align-items:center; gap:4px;">${svgIconPro('star', 11)}4.5+</span>
+      <span class="filter-chip ${draft.minRating === '5' ? 'active' : ''}" data-rating="5" style="display:inline-flex; align-items:center; gap:4px;">${svgIconPro('star', 11)}5</span>
     </div>
 
     <button id="applyFiltersBtn2">${t('applyFiltersBtn2')}</button>
@@ -2045,7 +2070,7 @@ async function renderMyClients() {
     const list = groups[clientsTab];
     const emptyMsg = { active: t('noActiveClients'), pending: t('noPendingClients'), past: t('noPastClients') }[clientsTab];
     document.getElementById('clientsList').innerHTML = list.length === 0
-      ? renderEmptyState('👥', emptyMsg, '')
+      ? renderEmptyState(svgIconPro('client', 30), emptyMsg, '')
       : list.map((s) => `
         <div class="card" data-open-client="${s.id}" style="cursor:pointer; display:flex; gap:12px; align-items:center;">
           ${avatarCircle(s.other_party_name, s.other_party_avatar)}
@@ -2177,7 +2202,7 @@ function renderBadgeShelf(badges) {
             const label = getLang() === 'ar' ? b.label_ar : b.label_en;
             return `
               <div class="badge-item" title="${escapeHtml(label)}">
-                <div class="badge-icon">${b.icon}</div>
+                <div class="badge-icon">${svgIconPro(b.icon, 24)}</div>
                 <div class="badge-label">${escapeHtml(label)}</div>
               </div>
             `;
@@ -2284,7 +2309,7 @@ function openQuestionEditor(defaultSection, onSave) {
   document.getElementById('closeModal').onclick = closeModal;
 
   function renderOptionsChips() {
-    document.getElementById('qOptionsChips').innerHTML = optionsState.map((o, i) => `<span class="filter-chip active" data-remove-opt="${i}">${escapeHtml(o)} ✕</span>`).join('');
+    document.getElementById('qOptionsChips').innerHTML = optionsState.map((o, i) => `<span class="filter-chip active" data-remove-opt="${i}" style="display:inline-flex; align-items:center; gap:5px;">${escapeHtml(o)} ${svgIconPro('close', 11)}</span>`).join('');
     document.querySelectorAll('[data-remove-opt]').forEach((chip) => {
       chip.onclick = () => { optionsState.splice(Number(chip.dataset.removeOpt), 1); renderOptionsChips(); };
     });
@@ -2361,7 +2386,7 @@ async function renderAssessmentTemplateBuilder() {
                 </div>
                 <button class="secondary" data-move-q="up:${q.i}" ${pos === 0 ? 'disabled' : ''} style="width:auto; padding:6px 10px;">↑</button>
                 <button class="secondary" data-move-q="down:${q.i}" ${pos === qs.length - 1 ? 'disabled' : ''} style="width:auto; padding:6px 10px;">↓</button>
-                <button class="secondary" data-remove-q="${q.i}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
+                <button class="secondary" data-remove-q="${q.i}" style="width:auto; padding:6px 10px;">${svgIconPro('close', 14)}</button>
               </div>
             `).join('')}
           </div>
@@ -2928,7 +2953,7 @@ function workoutReadOnlyHtml(wp) {
               <div class="small">${exerciseSummaryLine(ex)}</div>
               ${ex.notes ? `<div class="small">${escapeHtml(ex.notes)}</div>` : ''}
             </div>
-            ${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener">▶</a>` : ''}
+            ${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener" style="display:inline-flex;">${svgIconPro('play', 16)}</a>` : ''}
           </div>
         `).join('')}
       </div>
@@ -2950,7 +2975,7 @@ function renderWorkoutBody(subscriptionId, isCoach) {
         <div style="display:flex; gap:8px; align-items:center;">
           <input data-day="${di}" value="${escapeHtml(day.label)}" placeholder="${t('dayLabelPlaceholder')}" style="margin-bottom:8px;">
           <button class="secondary" data-duplicate-day="${di}" title="${t('duplicateDayBtn')}" style="width:auto; padding:8px 12px; margin-bottom:8px;">⧉</button>
-          <button class="secondary" data-remove-day="${di}" style="width:auto; padding:8px 12px; margin-bottom:8px;">${t('removeBtn')}</button>
+          <button class="secondary" data-remove-day="${di}" style="width:auto; padding:8px 12px; margin-bottom:8px;">${svgIconPro('close', 14)}</button>
         </div>
         ${day.exercises.map((ex, ei) => `
           <div class="exercise-card">
@@ -2989,7 +3014,7 @@ function renderWorkoutBody(subscriptionId, isCoach) {
               <button class="secondary" data-move-ex="up:${di}:${ei}" ${ei === 0 ? 'disabled' : ''}>↑</button>
               <button class="secondary" data-move-ex="down:${di}:${ei}" ${ei === day.exercises.length - 1 ? 'disabled' : ''}>↓</button>
               <button class="secondary" data-duplicate-ex="${di}:${ei}" title="${t('duplicateExerciseBtn')}">⧉</button>
-              <button class="secondary" data-remove-ex="${di}:${ei}">${t('removeBtn')}</button>
+              <button class="secondary" data-remove-ex="${di}:${ei}">${svgIconPro('close', 14)}</button>
             </div>
           </div>
         `).join('')}
@@ -3358,7 +3383,7 @@ function openFoodLibrary(onSelect) {
           <div class="small">${escapeHtml(foodTagLine(f))}</div>
         </div>
         <button class="secondary" data-fav-food="${f.id}" data-fav-state="${f.is_favorite}" style="width:auto; padding:6px 10px;">${favoriteHeartIcon(!!f.is_favorite)}</button>
-        ${f.coach_id ? `<button class="secondary" data-del-food="${f.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
+        ${f.coach_id ? `<button class="secondary" data-del-food="${f.id}" style="width:auto; padding:6px 10px;">${svgIconPro('close', 14)}</button>` : ''}
         <button data-select-food="${f.id}" style="width:auto; padding:6px 10px;">${t('selectFoodBtn')}</button>
       </div>
     `).join('');
@@ -3505,13 +3530,13 @@ function renderNutritionBody(subscriptionId, isCoach) {
               <input data-food="fat:${mi}:${fi}" type="number" min="0" value="${f.fat ?? ''}" placeholder="${t('foodFatPlaceholder')}">
             </div>
             <input data-food="alternative:${mi}:${fi}" value="${escapeHtml(f.alternative)}" placeholder="${t('foodAlternativePlaceholder')}">
-            <button class="secondary" data-remove-food="${mi}:${fi}">${t('removeBtn')}</button>
+            <button class="secondary" data-remove-food="${mi}:${fi}">${svgIconPro('close', 14)}</button>
           </div>
         `).join('')}
         <button class="secondary" data-add-food="${mi}" style="margin-bottom:6px;">${t('addFoodBtn')}</button>
         <div style="display:flex; gap:6px;">
           <button class="secondary" data-dup-meal="${mi}" style="width:auto; padding:8px 12px; display:flex; align-items:center; gap:6px;">${svgIconPro('copy', 16)}${t('duplicateMealBtn')}</button>
-          <button class="danger" data-remove-meal="${mi}" style="width:auto; padding:8px 12px;">${t('removeBtn')}</button>
+          <button class="danger" data-remove-meal="${mi}" style="width:auto; padding:8px 12px;">${svgIconPro('close', 14)}</button>
         </div>
       </div>
     `).join('')}
@@ -3678,7 +3703,7 @@ async function renderProgressTab(subscriptionId) {
         <div class="progress-entry">
           ${e.photo_path ? `<img src="/uploads/${encodeURIComponent(e.photo_path)}" class="progress-photo" alt="">` : ''}
           <div>
-            ${e.weight_kg != null ? `<div>⚖️ ${e.weight_kg} ${t('kgUnit')}</div>` : ''}
+            ${e.weight_kg != null ? `<div style="display:flex; align-items:center; gap:5px;">${svgIconPro('chart', 13)}${e.weight_kg} ${t('kgUnit')}</div>` : ''}
             ${e.note ? `<div class="small">${escapeHtml(e.note)}</div>` : ''}
             <div class="small">${new Date(e.created_at + 'Z').toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-US')}</div>
           </div>
@@ -3748,7 +3773,7 @@ function renderCheckinCard(c, isCoach) {
       ${c.photo_path ? `<img src="/uploads/${encodeURIComponent(c.photo_path)}" class="progress-photo" alt="">` : ''}
       <div style="flex:1;">
         <div class="small">${date} ${checkinStatusBadge(c)}</div>
-        ${c.weight_kg != null ? `<div>⚖️ ${c.weight_kg} ${t('kgUnit')}</div>` : ''}
+        ${c.weight_kg != null ? `<div style="display:flex; align-items:center; gap:5px;">${svgIconPro('chart', 13)}${c.weight_kg} ${t('kgUnit')}</div>` : ''}
         ${c.body_fat_pct != null ? `<div class="small">${t('checkinBodyFatPlaceholder')}: ${c.body_fat_pct}%</div>` : ''}
         ${measurementLine ? `<div class="small">${measurementLine}</div>` : ''}
         ${c.energy_level != null ? `<div class="small">${t('checkinEnergyLabel')}: ${t('energyLevel' + c.energy_level)}</div>` : ''}
@@ -3872,7 +3897,7 @@ async function renderHabitsTab(subscriptionId) {
             <span>${escapeHtml(h.label)}</span>
           </label>
           <div class="small">${countByHabit[h.id] || 0}/30 · ${t('streakLabel')}</div>
-          ${isCoach ? `<button class="secondary" data-remove-habit="${h.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
+          ${isCoach ? `<button class="secondary" data-remove-habit="${h.id}" style="width:auto; padding:6px 10px;">${svgIconPro('close', 14)}</button>` : ''}
         </div>
       `).join('')}
     </div>
@@ -3920,7 +3945,7 @@ async function renderReviewCard(subscriptionId, isCoach, hasCompletedSession) {
     return `
       <div class="card">
         <h2>${t('yourReviewLabel')}</h2>
-        <span class="rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
+        <span class="rating">${starRating(review.rating)}</span>
         ${review.comment ? `<p class="small" style="margin-top:6px;">${escapeHtml(review.comment)}</p>` : ''}
         <textarea id="coachResponse" rows="2" placeholder="${t('coachResponsePlaceholder')}" style="margin-top:10px;">${escapeHtml(review.coach_response)}</textarea>
         <button id="submitResponse">${t('submitResponseBtn')}</button>
@@ -4022,7 +4047,7 @@ async function renderSessionsTab(subscriptionId) {
 
   function renderList() {
     const list = groups[sessionsSubTab];
-    if (list.length === 0) return renderEmptyState('📅', t('noSessionsYet'), '');
+    if (list.length === 0) return renderEmptyState(svgIconPro('calendar', 30), t('noSessionsYet'), '');
     if (sessionsSubTab !== 'upcoming') return `<div class="card">${list.map((s) => renderSessionRow(s, isCoach, false)).join('')}</div>`;
 
     let html = '';

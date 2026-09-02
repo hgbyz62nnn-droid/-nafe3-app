@@ -27,6 +27,17 @@ function escapeHtml(str) {
   }[c]));
 }
 
+// بديل موحّد لنجوم ★/☆ النصية - نفس الفكرة المستخدمة في features.js.
+function starRating(rating, size) {
+  const r = Math.round(Number(rating) || 0);
+  const s = size || 13;
+  const filled = svgIconPro('star', s, 'color:#FFC94D;').replace('fill="none"', 'fill="currentColor"');
+  const empty = svgIconPro('star', s, 'color:#FFC94D; opacity:.35;');
+  let html = '';
+  for (let i = 0; i < 5; i++) html += i < r ? filled : empty;
+  return `<span style="display:inline-flex; align-items:center; gap:1px;">${html}</span>`;
+}
+
 async function boot() {
   const { admin } = await api('/admin/me');
   if (!admin) return renderLogin();
@@ -113,8 +124,8 @@ async function renderDashboard(admin) {
             <p class="small">${escapeHtml(p.specialty) || '-'} — ${escapeHtml(p.certification) || '-'}</p>
             <p style="font-size:12.5px;">${escapeHtml(p.bio)}</p>
             <div style="display:flex; gap:8px;">
-              <button data-approve="${p.id}">✅ موافقة</button>
-              <button class="danger" data-reject="${p.id}">❌ رفض</button>
+              <button data-approve="${p.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('check', 15)}موافقة</button>
+              <button class="danger" data-reject="${p.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('close', 15)}رفض</button>
             </div>
           </div>
         `).join('')}
@@ -167,8 +178,8 @@ async function renderDashboard(admin) {
             <b>${escapeHtml(edit.coach_name)}</b> <span class="small">(${escapeHtml(edit.coach_email)}) · ${escapeHtml(edit.created_at)}</span>
             ${renderEditDiff(edit)}
             <div style="display:flex; gap:8px; margin-top:6px;">
-              <button data-approve-edit="${edit.id}">✅ موافقة</button>
-              <button class="danger" data-reject-edit="${edit.id}">❌ رفض</button>
+              <button data-approve-edit="${edit.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('check', 15)}موافقة</button>
+              <button class="danger" data-reject-edit="${edit.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('close', 15)}رفض</button>
             </div>
           </div>
         `).join('');
@@ -222,10 +233,10 @@ async function renderDashboard(admin) {
             <p class="small">${escapeHtml(d.coach_email)} · ${DOC_TYPE_LABELS[d.doc_type]} · ${escapeHtml(d.name)} · ${escapeHtml(d.created_at)}</p>
             ${d.review_note ? `<p class="small">ملاحظة: ${escapeHtml(d.review_note)}</p>` : ''}
             <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-              <a class="secondary" href="/api/trainer-documents/${d.id}/file" target="_blank" rel="noopener" style="width:auto; padding:8px 14px; border-radius:8px; text-decoration:none; font-size:12.5px; font-weight:700; display:inline-block;">👁️ عرض</a>
+              <a class="secondary" href="/api/trainer-documents/${d.id}/file" target="_blank" rel="noopener" style="width:auto; padding:8px 14px; border-radius:8px; text-decoration:none; font-size:12.5px; font-weight:700; display:inline-block;">${svgIconPro('document', 14)} عرض</a>
               ${d.status === 'pending' ? `
-                <button data-approve-doc="${d.id}">✅ موافقة</button>
-                <button class="danger" data-reject-doc="${d.id}">❌ رفض</button>
+                <button data-approve-doc="${d.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('check', 15)}موافقة</button>
+                <button class="danger" data-reject-doc="${d.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('close', 15)}رفض</button>
               ` : ''}
             </div>
           </div>
@@ -286,9 +297,9 @@ async function renderDashboard(admin) {
             ${r.admin_action ? `<p class="small">آخر إجراء: ${r.admin_action === 'ban' ? 'حظر الحساب' : r.admin_action === 'warn' ? 'إيميل تحذير' : 'تجاهل'}</p>` : ''}
             ${r.status === 'open' ? `
               <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-                <button data-dismiss="${r.id}">🙈 تجاهل</button>
-                <button data-warn="${r.id}">✉️ تحذير بالإيميل</button>
-                <button class="danger" data-ban="${r.id}">🚫 حظر الحساب</button>
+                <button data-dismiss="${r.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('close', 15)}تجاهل</button>
+                <button data-warn="${r.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('message', 15)}تحذير بالإيميل</button>
+                <button class="danger" data-ban="${r.id}">حظر الحساب</button>
               </div>
             ` : ''}
           </div>
@@ -350,8 +361,8 @@ async function renderDashboard(admin) {
             ${r.reason ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.reason)}</p>` : ''}
             ${r.status === 'pending' ? `
               <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
-                <button class="danger" data-approve="${r.id}" ${!r.matchingUser ? 'disabled' : ''}>🗑️ موافقة وحذف الحساب</button>
-                <button class="secondary" data-reject="${r.id}">❌ رفض</button>
+                <button class="danger" data-approve="${r.id}" ${!r.matchingUser ? 'disabled' : ''} style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('trash', 15)}موافقة وحذف الحساب</button>
+                <button class="secondary" data-reject="${r.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('close', 15)}رفض</button>
               </div>
             ` : ''}
           </div>
@@ -538,12 +549,12 @@ async function renderDashboard(admin) {
               <b>بلاغ من ${escapeHtml(r.reporter_name)}</b>
               <span class="badge blocked">مفتوح</span>
             </div>
-            <p class="small">على تقييم ${escapeHtml(r.trainee_name)}: ${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)} ${r.review_hidden ? '· <span style="color:var(--danger)">التقييم مخفي بالفعل</span>' : ''}</p>
+            <p class="small">على تقييم ${escapeHtml(r.trainee_name)}: ${starRating(r.rating)} ${r.review_hidden ? '· <span style="color:var(--danger)">التقييم مخفي بالفعل</span>' : ''}</p>
             ${r.comment ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.comment)}</p>` : ''}
             ${r.reason ? `<p class="small">سبب البلاغ: ${escapeHtml(r.reason)}</p>` : ''}
             <div style="display:flex; gap:8px; margin-top:6px;">
-              <button data-dismiss-report="${r.id}">🙈 تجاهل البلاغ</button>
-              ${!r.review_hidden ? `<button class="danger" data-hide-report="${r.id}">🚫 إخفاء التقييم</button>` : ''}
+              <button data-dismiss-report="${r.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('close', 15)}تجاهل البلاغ</button>
+              ${!r.review_hidden ? `<button class="danger" data-hide-report="${r.id}">إخفاء التقييم</button>` : ''}
             </div>
           </div>
         `).join('')}
@@ -554,14 +565,14 @@ async function renderDashboard(admin) {
           <div class="card" style="background:var(--surface-2);">
             <div style="display:flex; justify-content:space-between;">
               <b>${escapeHtml(r.trainee_name)} ← ${escapeHtml(r.coach_name)}</b>
-              <span style="color:#FFC94D;">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
+              <span>${starRating(r.rating)}</span>
             </div>
             ${r.comment ? `<p style="font-size:12.5px; margin:6px 0;">${escapeHtml(r.comment)}</p>` : ''}
             ${r.hidden ? '<span class="badge blocked">مخفي</span>' : ''}
             <div style="display:flex; gap:8px; margin-top:6px;">
               ${r.hidden
-                ? `<button data-restore="${r.id}">↩️ إظهار</button>`
-                : `<button class="danger" data-hide="${r.id}">🚫 إخفاء</button>`}
+                ? `<button data-restore="${r.id}">إظهار</button>`
+                : `<button class="danger" data-hide="${r.id}">إخفاء</button>`}
             </div>
           </div>
         `).join('')}
@@ -581,7 +592,7 @@ async function renderDashboard(admin) {
     });
   }
 
-  const BOOKING_STATUS_LABELS = { scheduled: 'محجوزة', completed: 'اتعملت ✓', cancelled: 'ملغية', no_show: 'متغيّب عنها' };
+  const BOOKING_STATUS_LABELS = { scheduled: 'محجوزة', completed: 'اتعملت', cancelled: 'ملغية', no_show: 'متغيّب عنها' };
 
   async function showBookings() {
     activateTab('tabBookings');
@@ -660,8 +671,8 @@ async function renderDashboard(admin) {
             ${p.hidden ? '<span class="badge blocked">مخفي</span>' : ''}
             <div style="display:flex; gap:8px; margin-top:6px;">
               ${p.hidden
-                ? `<button data-restore-post="${p.id}">↩️ إظهار</button>`
-                : `<button class="danger" data-hide-post="${p.id}">🚫 إخفاء</button>`}
+                ? `<button data-restore-post="${p.id}">إظهار</button>`
+                : `<button class="danger" data-hide-post="${p.id}">إخفاء</button>`}
             </div>
           </div>
         `).join('');
@@ -698,11 +709,11 @@ async function renderDashboard(admin) {
             <b>${escapeHtml(u.name)}</b> <span class="small">(${escapeHtml(u.email)})</span>
             <p class="small">${u.role === 'coach' ? 'مدرب' : 'متدرب'} ${u.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''} ${!u.verified ? '· <span style="color:var(--text-dim)">إيميل مش متأكد</span>' : ''}</p>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              ${!u.verified ? `<button data-verify="${u.id}">📧 تأكيد يدوي</button>` : ''}
+              ${!u.verified ? `<button data-verify="${u.id}">تأكيد يدوي</button>` : ''}
               ${u.banned
-                ? `<button data-unban="${u.id}">✅ إلغاء الحظر</button>`
-                : `<button class="danger" data-ban="${u.id}">🚫 حظر</button>`}
-              <button class="danger" data-delete="${u.id}">🗑️ حذف نهائي</button>
+                ? `<button data-unban="${u.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('check', 15)}إلغاء الحظر</button>`
+                : `<button class="danger" data-ban="${u.id}">حظر</button>`}
+              <button class="danger" data-delete="${u.id}" style="display:inline-flex; align-items:center; justify-content:center; gap:5px;">${svgIconPro('trash', 15)}حذف نهائي</button>
             </div>
           </div>
         `).join('');
@@ -734,7 +745,7 @@ async function renderDashboard(admin) {
         <h2>تغيير الباسورد</h2>
         <p class="small">مسجل دخول بحساب: <b>${escapeHtml(admin.username)}</b></p>
         <div class="error hidden" id="pwErr"></div>
-        <div class="small hidden" id="pwOk" style="color:var(--success); margin-bottom:10px;">✅ اتغيّر الباسورد</div>
+        <div class="small hidden" id="pwOk" style="color:var(--success); margin-bottom:10px; display:flex; align-items:center; gap:5px;">${svgIconPro('check', 13)}اتغيّر الباسورد</div>
         <input id="currentPassword" type="password" placeholder="الباسورد الحالي">
         <input id="newPassword" type="password" placeholder="الباسورد الجديد (10 حروف على الأقل)">
         <button id="changePw">حفظ</button>
