@@ -1,10 +1,18 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 
+/**
+ * Only the AI Coach is a real, working system in this app — there's no
+ * human-coach messaging/booking backend to connect to. Every action on
+ * this screen routes to the AI Coach chat rather than pretending a
+ * human-coach request was sent somewhere.
+ */
 export default function HumanCoach() {
+  const navigate = useNavigate();
+
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
@@ -27,7 +35,10 @@ export default function HumanCoach() {
       </div>
 
       <div className="px-4 mt-4">
-        <div className="relative overflow-hidden bg-card border border-border-soft rounded-card h-[150px] flex items-center">
+        <button
+          onClick={() => navigate('/ai-coach')}
+          className="relative overflow-hidden bg-card border border-border-soft rounded-card h-[150px] flex items-center w-full text-left"
+        >
           <div className="pl-4 pr-[104px] flex flex-col gap-2.5">
             <p className="text-white text-[17px] font-extrabold">AI Coach</p>
             <p className="text-text-secondary text-[13px]">Available 24/7</p>
@@ -44,11 +55,14 @@ export default function HumanCoach() {
               style={{ filter: 'drop-shadow(0 0 16px rgba(224,39,46,0.75))' }}
             />
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="px-4 mt-3">
-        <div className="relative overflow-hidden bg-card border border-border-soft rounded-card h-[150px] flex items-center">
+        <button
+          onClick={() => navigate('/ai-coach')}
+          className="relative overflow-hidden bg-card border border-border-soft rounded-card h-[150px] flex items-center w-full text-left"
+        >
           <div className="pl-4 pr-[130px] flex flex-col gap-2.5 z-10">
             <p className="text-white text-[17px] font-extrabold">Human Coach</p>
             <p className="text-text-secondary text-[13px]">Get advice from a certified coach</p>
@@ -62,11 +76,14 @@ export default function HumanCoach() {
             position="top"
             label="Coach photo"
           />
-        </div>
+        </button>
       </div>
 
       <div className="px-4 mt-5">
-        <button className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button">
+        <button
+          onClick={() => navigate('/ai-coach')}
+          className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button"
+        >
           ASK A COACH
         </button>
       </div>

@@ -1,6 +1,18 @@
 import type { AiCoachIntent, AiCoachReply } from './types';
 
 /**
+ * Fixed fallback for free-text input the composer doesn't map to one of
+ * the known intents — this app has no live NLP/LLM, so free text can't
+ * be understood; the honest response points back at what it can do.
+ */
+export function getFallbackReply(): AiCoachReply {
+  return {
+    message:
+      "I can help most with the options above — tap a suggestion, or ask me to adjust today's workout, log pain, or check your nutrition.",
+  };
+}
+
+/**
  * Deterministic AI Coach response table. The screen only ever offers a
  * fixed, closed set of quick-reply intents (see AiCoachIntent) — each
  * maps to a pre-written reply and a pre-defined plan adjustment. There is

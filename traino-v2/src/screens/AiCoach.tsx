@@ -4,7 +4,7 @@ import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { BottomNav } from '../components/ui/BottomNav';
-import { getAiCoachReply } from '../domain/engine/aiCoachEngine';
+import { getAiCoachReply, getFallbackReply } from '../domain/engine/aiCoachEngine';
 import type { AiCoachIntent, AiCoachReply } from '../domain/engine/types';
 import { useProfile } from '../domain/state/ProfileContext';
 
@@ -28,18 +28,26 @@ export default function AiCoach() {
   const navigate = useNavigate();
   const { setActiveAdjustment } = useProfile();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [draft, setDraft] = useState('');
 
   function handleSuggestion(label: string, intent: AiCoachIntent) {
     const reply = getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
   }
 
+  function handleSend() {
+    const text = draft.trim();
+    if (!text) return;
+    setMessages((prev) => [...prev, { role: 'user', text }, { role: 'ai', ...getFallbackReply() }]);
+    setDraft('');
+  }
+
   function handleCta(msg: Message & { role: 'ai' }) {
     if (msg.adjustment) {
       setActiveAdjustment(msg.adjustment);
       navigate('/todays-workout');
-    } else if (msg.ctaLabel === 'OPEN NUTRITION') {
-      navigate('/nutrition');
+    } else if (msg.ctaLabel === 'OPEN NUTRITION' || msg.ctaLabel === 'CHOOSE EXERCISE') {
+      navigate(msg.ctaLabel === 'OPEN NUTRITION' ? '/nutrition' : '/todays-workout');
     }
   }
 
@@ -131,10 +139,17 @@ export default function AiCoach() {
       </div>
 
       <div className="px-4 mt-4 flex items-center gap-2.5">
-        <div className="flex-1 bg-card border border-border-soft rounded-chip px-4 py-3">
-          <span className="text-text-muted text-[13px]">Ask anything...</span>
-        </div>
-        <button className="w-11 h-11 min-w-[44px] rounded-full bg-red flex items-center justify-center shadow-button">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="Ask anything..."
+          className="flex-1 bg-card border border-border-soft rounded-chip px-4 py-3 text-white text-[13px] placeholder:text-text-muted outline-none focus:border-red"
+        />
+        <button
+          onClick={handleSend}
+          className="w-11 h-11 min-w-[44px] rounded-full bg-red flex items-center justify-center shadow-button"
+        >
           <Icon name="send" size={16} className="text-white" />
         </button>
       </div>
