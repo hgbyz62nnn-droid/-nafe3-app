@@ -692,4 +692,47 @@ if (foodCount === 0) {
   insertManyFoods(seedFoods);
 }
 
+// نظام التقييم (Assessment) - كل مرة الكوتش يحفظ فيها القالب الافتراضي
+// بتاعه بيتعمل صف جديد بـ version أعلى (is_current=1) بدل ما نعدّل الصف
+// القديم - عشان تقييمات المتدربين اللي خدت نسخة قديمة تفضل زي ما هي
+// للأبد (assessment_questions مرتبطة بـ template_id ثابت، مش بآخر نسخة).
+// أسئلة إضافية خاصة بمتدرب معيّن بتتخزن في client_assessments نفسها
+// (extra_questions_json) عشان محدش يلمس القالب الافتراضي بتاع باقي المتدربين.
+db.exec(`
+CREATE TABLE IF NOT EXISTS assessment_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES users(id),
+  version INTEGER NOT NULL,
+  is_current INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(coach_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_assessment_templates_coach ON assessment_templates(coach_id);
+
+CREATE TABLE IF NOT EXISTS assessment_questions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL REFERENCES assessment_templates(id),
+  section TEXT NOT NULL,
+  type TEXT NOT NULL,
+  label TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '[]',
+  required INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_assessment_questions_template ON assessment_questions(template_id);
+
+CREATE TABLE IF NOT EXISTS client_assessments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL UNIQUE REFERENCES subscriptions(id),
+  template_id INTEGER NOT NULL REFERENCES assessment_templates(id),
+  answers_json TEXT NOT NULL DEFAULT '{}',
+  extra_questions_json TEXT NOT NULL DEFAULT '[]',
+  extra_answers_json TEXT NOT NULL DEFAULT '{}',
+  submitted_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_client_assessments_template ON client_assessments(template_id);
+`);
+
 module.exports = db;

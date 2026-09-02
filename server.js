@@ -34,6 +34,7 @@ const trainerNetworkRoutes = require('./routes/trainerNetwork');
 const contentRoutes = require('./routes/content');
 const exerciseRoutes = require('./routes/exercises');
 const foodRoutes = require('./routes/foods');
+const assessmentRoutes = require('./routes/assessments');
 
 const app = express();
 
@@ -124,6 +125,7 @@ app.use('/api/trainer-network', trainerNetworkRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/exercises', exerciseRoutes);
 app.use('/api/foods', foodRoutes);
+app.use('/api/assessments', assessmentRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));

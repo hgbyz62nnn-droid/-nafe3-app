@@ -298,6 +298,7 @@ async function renderMore() {
       ${menuRow({ icon: svgIcon('image', 18), label: t('transformationsTitle'), id: 'menuTransformations' })}
       ${menuRow({ icon: svgIcon('chart', 18), label: t('viewStatsBtn'), id: 'menuStats' })}
       ${menuRow({ icon: svgIcon('upload', 18), label: t('trainerDocumentsMenuItem'), id: 'menuTrainerDocuments' })}
+      ${menuRow({ icon: svgIconPro('document', 18), label: t('assessmentMenuItem'), id: 'menuAssessmentTemplate' })}
       ${menuRow({ icon: svgIcon('message', 18), label: t('supportMenuItem'), id: 'menuSupport' })}
       ${menuRow({ icon: svgIcon('close', 18), label: t('blockedUsersMenuItem'), id: 'menuBlockedUsers' })}
       ${menuRow({ icon: svgIcon('document', 18), label: t('privacyPolicyMenuItem'), id: 'menuPrivacyPolicy' })}
@@ -323,6 +324,7 @@ async function renderMore() {
   on('menuTransformations', 'click', renderCoachTransformations);
   on('menuStats', 'click', renderCoachStats);
   on('menuTrainerDocuments', 'click', renderTrainerDocuments);
+  on('menuAssessmentTemplate', 'click', renderAssessmentTemplateBuilder);
   on('menuSupport', 'click', renderSupportHome);
   on('menuBlockedUsers', 'click', renderBlockedUsers);
   on('menuPrivacyPolicy', 'click', () => window.open('/privacy-policy', '_blank'));
@@ -2006,6 +2008,7 @@ async function renderEarnings() {
 
 const HUB_TABS = [
   ['chat', 'navChat'],
+  ['assessment', 'navAssessment'],
   ['plan', 'navPlan'],
   ['progress', 'navProgress'],
   ['checkins', 'navCheckins'],
@@ -2036,6 +2039,7 @@ function wireHubNav(subscriptionId, active) {
       if (key === active) return;
       clearInterval(state.chatTimer);
       if (key === 'chat') renderChat(subscriptionId);
+      else if (key === 'assessment') renderAssessmentTab(subscriptionId);
       else if (key === 'plan') renderPlanTab(subscriptionId);
       else if (key === 'progress') renderProgressTab(subscriptionId);
       else if (key === 'checkins') renderCheckinsTab(subscriptionId);
@@ -2064,6 +2068,453 @@ function renderBadgeShelf(badges) {
       `}
     </div>
   `;
+}
+
+// -------------------- نظام التقييم (Assessment) --------------------
+
+const ASSESSMENT_SECTIONS = ['general_info', 'training_background', 'health_medical', 'lifestyle', 'goals', 'measurements', 'notes'];
+const SECTION_LABEL_KEYS = {
+  general_info: 'sectionGeneralInfo', training_background: 'sectionTrainingBackground', health_medical: 'sectionHealthMedical',
+  lifestyle: 'sectionLifestyle', goals: 'sectionGoals', measurements: 'sectionMeasurements', notes: 'sectionNotes',
+};
+const QUESTION_TYPES = ['single_choice', 'multiple_choice', 'yes_no', 'number', 'short_text', 'long_text', 'date', 'measurement', 'image_upload'];
+const TYPE_LABEL_KEYS = {
+  single_choice: 'qTypeSingleChoice', multiple_choice: 'qTypeMultipleChoice', yes_no: 'qTypeYesNo', number: 'qTypeNumber',
+  short_text: 'qTypeShortText', long_text: 'qTypeLongText', date: 'qTypeDate', measurement: 'qTypeMeasurement', image_upload: 'qTypeImageUpload',
+};
+
+// أسئلة الإضافة السريعة منقولة حرفيًا من قسم "ASSESSMENT QUICK-CHOICE
+// DESIGN" في المواصفة - مش اختراع خيارات جديدة، لو الكوتش ضغط عليها
+// بتتضاف بالظبط زي ما هي (بالعربي أو الإنجليزي حسب لغة الواجهة الحالية).
+const PRESET_QUESTIONS = [
+  { key: 'presetPrimaryGoal', section: 'goals', type: 'single_choice',
+    ar: { label: 'الهدف الأساسي', options: ['خسارة دهون', 'بناء عضلات', 'إعادة تكوين الجسم', 'زيادة القوة', 'التحمل', 'لياقة عامة', 'أداء رياضي'] },
+    en: { label: 'Primary Goal', options: ['Fat Loss', 'Muscle Gain', 'Body Recomposition', 'Strength', 'Endurance', 'General Fitness', 'Sports Performance'] } },
+  { key: 'presetExperience', section: 'training_background', type: 'single_choice',
+    ar: { label: 'مستوى الخبرة', options: ['مبتدئ', 'مبتدئ متقدم', 'متوسط', 'متقدم'] },
+    en: { label: 'Experience', options: ['Beginner', 'Novice', 'Intermediate', 'Advanced'] } },
+  { key: 'presetTrainingDays', section: 'training_background', type: 'single_choice',
+    ar: { label: 'أيام التدريب أسبوعيًا', options: ['1', '2', '3', '4', '5', '6', '7'] },
+    en: { label: 'Training Days', options: ['1', '2', '3', '4', '5', '6', '7'] } },
+  { key: 'presetSessionDuration', section: 'training_background', type: 'single_choice',
+    ar: { label: 'مدة الجلسة', options: ['30 دقيقة', '45 دقيقة', '60 دقيقة', '75 دقيقة', '90+ دقيقة'] },
+    en: { label: 'Session Duration', options: ['30 min', '45 min', '60 min', '75 min', '90+ min'] } },
+  { key: 'presetTrainingLocation', section: 'training_background', type: 'single_choice',
+    ar: { label: 'مكان التدريب', options: ['الجيم', 'المنزل', 'خارجي', 'مختلط'] },
+    en: { label: 'Training Location', options: ['Gym', 'Home', 'Outdoor', 'Mixed'] } },
+  { key: 'presetActivityLevel', section: 'lifestyle', type: 'single_choice',
+    ar: { label: 'مستوى النشاط', options: ['قليل الحركة', 'خفيف', 'متوسط', 'عالي', 'عالي جدًا'] },
+    en: { label: 'Activity Level', options: ['Sedentary', 'Light', 'Moderate', 'High', 'Very High'] } },
+  { key: 'presetSleep', section: 'lifestyle', type: 'single_choice',
+    ar: { label: 'ساعات النوم', options: ['أقل من 5 ساعات', '5-6 ساعات', '6-7 ساعات', '7-8 ساعات', '8 ساعات+'] },
+    en: { label: 'Sleep', options: ['<5h', '5-6h', '6-7h', '7-8h', '8h+'] } },
+  { key: 'presetStress', section: 'lifestyle', type: 'single_choice',
+    ar: { label: 'مستوى التوتر', options: ['منخفض', 'متوسط', 'عالي', 'عالي جدًا'] },
+    en: { label: 'Stress', options: ['Low', 'Moderate', 'High', 'Very High'] } },
+  { key: 'presetCardio', section: 'lifestyle', type: 'single_choice',
+    ar: { label: 'الكارديو', options: ['لا يوجد', '1-2 جلسة', '3-4 جلسات', '5+ جلسات'] },
+    en: { label: 'Cardio', options: ['None', '1-2 sessions', '3-4 sessions', '5+ sessions'] } },
+  { key: 'presetInjuries', section: 'health_medical', type: 'multiple_choice',
+    ar: { label: 'إصابات / محدوديات', options: ['لا يوجد', 'الكتف', 'الكوع', 'المعصم', 'الظهر', 'الحوض', 'الركبة', 'الكاحل', 'أخرى'] },
+    en: { label: 'Injuries / Limitations', options: ['None', 'Shoulder', 'Elbow', 'Wrist', 'Back', 'Hip', 'Knee', 'Ankle', 'Other'] } },
+  { key: 'presetTrainingPreference', section: 'training_background', type: 'single_choice',
+    ar: { label: 'تفضيل التدريب', options: ['أجهزة', 'أوزان حرة', 'وزن الجسم', 'مختلط'] },
+    en: { label: 'Training Preference', options: ['Machines', 'Free Weights', 'Bodyweight', 'Mixed'] } },
+  { key: 'presetWeakPoints', section: 'goals', type: 'multiple_choice',
+    ar: { label: 'نقاط ضعف', options: ['صدر', 'ظهر', 'أكتاف', 'باي', 'تراي', 'كوادز', 'هامسترينج', 'مؤخرة', 'سمانة', 'بطن'] },
+    en: { label: 'Weak Points', options: ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Core'] } },
+];
+
+// مودال مشترك لإضافة سؤال - يستخدم في بناء القالب الافتراضي وفي إضافة
+// سؤال خاص بمتدرب معيّن، عشان نفس المنطق ما يتكررش مرتين.
+function openQuestionEditor(defaultSection, onSave) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  const optionsState = [];
+
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('addQuestionBtn')}</h2>
+      <input id="qLabel" placeholder="${t('questionLabelPlaceholder')}">
+      <label class="small" style="display:block; margin:8px 0 4px;">${t('questionSectionLabel')}</label>
+      <select id="qSection">
+        ${ASSESSMENT_SECTIONS.map((s) => `<option value="${s}" ${s === defaultSection ? 'selected' : ''}>${t(SECTION_LABEL_KEYS[s])}</option>`).join('')}
+      </select>
+      <label class="small" style="display:block; margin:10px 0 4px;">${t('questionTypeLabel')}</label>
+      <select id="qType">
+        ${QUESTION_TYPES.map((ty) => `<option value="${ty}">${t(TYPE_LABEL_KEYS[ty])}</option>`).join('')}
+      </select>
+      <label class="small" style="display:flex; align-items:center; gap:6px; margin:10px 0;">
+        <input type="checkbox" id="qRequired" style="width:auto; margin:0;"> ${t('questionRequiredLabel')}
+      </label>
+      <div id="qOptionsBox" class="hidden">
+        <label class="small" style="display:block; margin-bottom:4px;">${t('questionOptionsLabel')}</label>
+        <div class="chip-row" id="qOptionsChips"></div>
+        <div style="display:flex; gap:6px;">
+          <input id="qNewOption" placeholder="${t('addOptionPlaceholder')}" style="flex:1;">
+          <button type="button" class="secondary" id="qAddOption" style="width:auto; padding:9px 12px;">${t('addOptionBtn')}</button>
+        </div>
+      </div>
+      <button id="qSaveBtn" style="margin-top:12px;">${t('saveTemplateBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+
+  function renderOptionsChips() {
+    document.getElementById('qOptionsChips').innerHTML = optionsState.map((o, i) => `<span class="filter-chip active" data-remove-opt="${i}">${escapeHtml(o)} ✕</span>`).join('');
+    document.querySelectorAll('[data-remove-opt]').forEach((chip) => {
+      chip.onclick = () => { optionsState.splice(Number(chip.dataset.removeOpt), 1); renderOptionsChips(); };
+    });
+  }
+  function toggleOptionsVisibility() {
+    const type = document.getElementById('qType').value;
+    document.getElementById('qOptionsBox').classList.toggle('hidden', !['single_choice', 'multiple_choice'].includes(type));
+  }
+  document.getElementById('qType').onchange = toggleOptionsVisibility;
+  toggleOptionsVisibility();
+  renderOptionsChips();
+
+  document.getElementById('qAddOption').onclick = () => {
+    const val = document.getElementById('qNewOption').value.trim();
+    if (!val) return;
+    optionsState.push(val);
+    document.getElementById('qNewOption').value = '';
+    renderOptionsChips();
+  };
+
+  document.getElementById('qSaveBtn').onclick = () => {
+    const label = document.getElementById('qLabel').value.trim();
+    if (!label) return;
+    const type = document.getElementById('qType').value;
+    if (['single_choice', 'multiple_choice'].includes(type) && optionsState.length < 2) return;
+    const question = {
+      section: document.getElementById('qSection').value,
+      type,
+      label,
+      options: [...optionsState],
+      required: document.getElementById('qRequired').checked,
+    };
+    closeModal();
+    onSave(question);
+  };
+}
+
+let assessmentTemplateEditState = [];
+
+async function renderAssessmentTemplateBuilder() {
+  let template;
+  try {
+    ({ template } = await api('/assessments/template'));
+  } catch (e) { return; }
+  assessmentTemplateEditState = template ? template.questions.map((q) => ({ section: q.section, type: q.type, label: q.label, options: q.options, required: !!q.required })) : [];
+
+  function renderBody() {
+    render(`
+      <button class="secondary" id="back" style="margin-bottom:14px;">${t('back')}</button>
+      <div class="card">
+        <h2>${t('assessmentTemplateBuilderTitle')}</h2>
+        ${template ? `<p class="small">${t('templateVersionLabel', { version: template.version })}</p>` : ''}
+        <p class="small">${t('assessmentTemplateBuilderHint')}</p>
+      </div>
+      <div class="card">
+        <h2>${t('quickAddQuestionsTitle')}</h2>
+        <div class="chip-row">
+          ${PRESET_QUESTIONS.map((p, i) => `<span class="filter-chip" data-add-preset="${i}">${t(p.key)}</span>`).join('')}
+        </div>
+      </div>
+      ${ASSESSMENT_SECTIONS.map((section) => {
+        const qs = assessmentTemplateEditState.map((q, i) => ({ ...q, i })).filter((q) => q.section === section);
+        return `
+          <div class="card">
+            <div class="section-header">
+              <h2>${t(SECTION_LABEL_KEYS[section])}</h2>
+              <button class="secondary" data-add-q="${section}" style="width:auto; padding:6px 12px;">${t('addQuestionBtn')}</button>
+            </div>
+            ${qs.length === 0 ? `<p class="small">${t('noQuestionsYetInSection')}</p>` : qs.map((q) => `
+              <div class="coach-row" style="gap:8px;">
+                <div style="flex:1; min-width:0;">
+                  <div>${escapeHtml(q.label)} ${q.required ? `<span class="pill">${t('requiredLabel')}</span>` : ''}</div>
+                  <div class="small">${t(TYPE_LABEL_KEYS[q.type])}${q.options.length ? ' · ' + q.options.map(escapeHtml).join('، ') : ''}</div>
+                </div>
+                <button class="secondary" data-remove-q="${q.i}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }).join('')}
+      <button id="saveTemplate">${t('saveTemplateBtn')}</button>
+    `);
+
+    document.getElementById('back').onclick = renderMore;
+    document.querySelectorAll('[data-add-preset]').forEach((chip) => {
+      chip.onclick = () => {
+        const p = PRESET_QUESTIONS[Number(chip.dataset.addPreset)];
+        const content = getLang() === 'ar' ? p.ar : p.en;
+        assessmentTemplateEditState.push({ section: p.section, type: p.type, label: content.label, options: [...content.options], required: false });
+        renderBody();
+      };
+    });
+    document.querySelectorAll('[data-add-q]').forEach((btn) => {
+      btn.onclick = () => {
+        openQuestionEditor(btn.dataset.addQ, (q) => { assessmentTemplateEditState.push(q); renderBody(); });
+      };
+    });
+    document.querySelectorAll('[data-remove-q]').forEach((btn) => {
+      btn.onclick = () => { assessmentTemplateEditState.splice(Number(btn.dataset.removeQ), 1); renderBody(); };
+    });
+    on('saveTemplate', 'click', async () => {
+      if (!assessmentTemplateEditState.length) { alert(t('noQuestionsYetInSection')); return; }
+      try {
+        await api('/assessments/template', { method: 'PUT', body: JSON.stringify({ questions: assessmentTemplateEditState }) });
+        alert(t('templateSavedAlert'));
+        renderAssessmentTemplateBuilder();
+      } catch (e) { alert(e.message); }
+    });
+  }
+
+  renderBody();
+}
+
+function assessmentAnswerSummary(q, value) {
+  if (value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) return '-';
+  if (q.type === 'yes_no') return value === true ? t('yesLabel') : value === false ? t('noLabel') : '-';
+  if (q.type === 'multiple_choice') return Array.isArray(value) ? value.map(escapeHtml).join('، ') : '-';
+  return escapeHtml(String(value));
+}
+
+function renderReadOnlyQuestion(q, value) {
+  if (q.type === 'image_upload') {
+    return `
+      <div style="margin-bottom:10px;">
+        <div class="small" style="margin-bottom:6px;">${escapeHtml(q.label)}</div>
+        ${value ? `<img src="/uploads/${encodeURIComponent(value)}" style="max-width:160px; border-radius:10px; display:block;">` : `<div class="small">-</div>`}
+      </div>
+    `;
+  }
+  return `
+    <div class="coach-row">
+      <div>${escapeHtml(q.label)}</div>
+      <div class="small">${assessmentAnswerSummary(q, value)}</div>
+    </div>
+  `;
+}
+
+function renderFillQuestion(q, val) {
+  switch (q.type) {
+    case 'single_choice':
+      return `
+        <div style="margin-bottom:14px;">
+          <div class="small" style="margin-bottom:6px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <div class="chip-row" data-fill-choice="${q.key}">
+            ${q.options.map((o) => `<span class="filter-chip ${val === o ? 'active' : ''}" data-opt="${escapeHtml(o)}">${escapeHtml(o)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    case 'multiple_choice':
+      return `
+        <div style="margin-bottom:14px;">
+          <div class="small" style="margin-bottom:6px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <div class="chip-row" data-fill-multi="${q.key}">
+            ${q.options.map((o) => `<span class="filter-chip ${Array.isArray(val) && val.includes(o) ? 'active' : ''}" data-opt="${escapeHtml(o)}">${escapeHtml(o)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    case 'yes_no':
+      return `
+        <div style="margin-bottom:14px;">
+          <div class="small" style="margin-bottom:6px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <div class="chip-row" data-fill-yesno="${q.key}">
+            <span class="filter-chip ${val === true ? 'active' : ''}" data-opt="yes">${t('yesLabel')}</span>
+            <span class="filter-chip ${val === false ? 'active' : ''}" data-opt="no">${t('noLabel')}</span>
+          </div>
+        </div>
+      `;
+    case 'number':
+    case 'measurement':
+      return `
+        <div style="margin-bottom:10px;">
+          <div class="small" style="margin-bottom:4px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <input data-fill-number="${q.key}" type="number" value="${val ?? ''}">
+        </div>
+      `;
+    case 'short_text':
+      return `
+        <div style="margin-bottom:10px;">
+          <div class="small" style="margin-bottom:4px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <input data-fill-text="${q.key}" value="${escapeHtml(val || '')}">
+        </div>
+      `;
+    case 'long_text':
+      return `
+        <div style="margin-bottom:10px;">
+          <div class="small" style="margin-bottom:4px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <textarea data-fill-text="${q.key}" rows="3">${escapeHtml(val || '')}</textarea>
+        </div>
+      `;
+    case 'date':
+      return `
+        <div style="margin-bottom:10px;">
+          <div class="small" style="margin-bottom:4px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          <input data-fill-date="${q.key}" type="date" value="${val || ''}">
+        </div>
+      `;
+    case 'image_upload':
+      return `
+        <div style="margin-bottom:14px;">
+          <div class="small" style="margin-bottom:6px;">${escapeHtml(q.label)}${q.required ? ' *' : ''}</div>
+          ${val ? `<img src="/uploads/${encodeURIComponent(val)}" style="max-width:140px; border-radius:10px; display:block; margin-bottom:8px;">` : ''}
+          <input type="file" accept="image/*" data-fill-image="${q.key}">
+        </div>
+      `;
+    default:
+      return '';
+  }
+}
+
+async function renderAssessmentTab(subscriptionId) {
+  render(`${renderHubTabs(subscriptionId, 'assessment')}<div class="card"><div class="skeleton block"></div></div>`);
+  wireHubNav(subscriptionId, 'assessment');
+
+  let data;
+  try { data = await api('/assessments/' + subscriptionId); } catch (e) { return; }
+
+  if (data.needsTemplate) {
+    render(`${renderHubTabs(subscriptionId, 'assessment')}<div class="card">${renderEmptyState(svgIconPro('document', 30), t('noAssessmentTemplateYet'), '')}</div>`);
+    wireHubNav(subscriptionId, 'assessment');
+    return;
+  }
+
+  const a = data.assessment;
+  const isCoach = state.user.role === 'coach';
+
+  if (isCoach) {
+    const allQuestions = [...a.questions.map((q) => ({ ...q, kind: 'main' })), ...a.extraQuestions.map((q, i) => ({ ...q, kind: 'extra', refIndex: i }))];
+    render(`
+      ${renderHubTabs(subscriptionId, 'assessment')}
+      <div class="card">
+        <h2>${t('assessmentSummaryTitle')}</h2>
+        ${!a.submittedAt ? `<p class="small">${t('noAssessmentAnswersYet')}</p>` : allQuestions.map((q) => {
+          const value = q.kind === 'main' ? a.answers[q.id] : a.extraAnswers[q.refIndex];
+          return renderReadOnlyQuestion(q, value);
+        }).join('')}
+      </div>
+      <div class="card">
+        <div class="section-header">
+          <h2>${t('extraQuestionsTitle')}</h2>
+          ${a.extraQuestions.length < 2 ? `<button class="secondary" id="addExtraQ" style="width:auto; padding:6px 12px;">${t('addExtraQuestionBtn')}</button>` : ''}
+        </div>
+        ${a.extraQuestions.length === 0 ? `<p class="small">${t('noQuestionsYetInSection')}</p>` : a.extraQuestions.map((q) => `
+          <div class="coach-row"><div>${escapeHtml(q.label)}</div><div class="small">${t(TYPE_LABEL_KEYS[q.type])}</div></div>
+        `).join('')}
+      </div>
+    `);
+    wireHubNav(subscriptionId, 'assessment');
+    const addBtn = document.getElementById('addExtraQ');
+    if (addBtn) addBtn.onclick = () => {
+      openQuestionEditor('notes', async (q) => {
+        try {
+          await api('/assessments/' + subscriptionId + '/extra-questions', { method: 'POST', body: JSON.stringify({ questions: [q] }) });
+          renderAssessmentTab(subscriptionId);
+        } catch (e) { alert(e.message); }
+      });
+    };
+    return;
+  }
+
+  // فورم تعبئة التقييم للمتدرب - الأسئلة الأساسية والإضافية مدموجة في
+  // قايمة واحدة بمفتاح موحّد، وبتترجع تاني لشكلهم الأصلي وقت الحفظ.
+  const combinedQuestions = [
+    ...a.questions.map((q) => ({ ...q, kind: 'main', key: 'q' + q.id, refId: q.id })),
+    ...a.extraQuestions.map((q, i) => ({ ...q, kind: 'extra', key: 'e' + i, refId: i })),
+  ];
+  const localAnswers = {};
+  combinedQuestions.forEach((q) => {
+    localAnswers[q.key] = q.kind === 'main' ? (a.answers[q.refId] ?? null) : (a.extraAnswers[q.refId] ?? null);
+  });
+
+  function renderFillBody() {
+    render(`
+      ${renderHubTabs(subscriptionId, 'assessment')}
+      <div class="card">
+        <h2>${t('fillAssessmentTitle')}</h2>
+        ${ASSESSMENT_SECTIONS.map((section) => {
+          const qs = combinedQuestions.filter((q) => q.section === section);
+          if (!qs.length) return '';
+          return `<h2 style="margin-top:14px;">${t(SECTION_LABEL_KEYS[section])}</h2>${qs.map((q) => renderFillQuestion(q, localAnswers[q.key])).join('')}`;
+        }).join('')}
+        <button id="submitAssessment" style="margin-top:12px;">${t('submitAssessmentBtn')}</button>
+      </div>
+    `);
+    wireHubNav(subscriptionId, 'assessment');
+    wireFillInputs();
+    on('submitAssessment', 'click', async () => {
+      const answers = {};
+      const extraAnswers = {};
+      combinedQuestions.forEach((q) => {
+        if (q.kind === 'main') answers[q.refId] = localAnswers[q.key];
+        else extraAnswers[q.refId] = localAnswers[q.key];
+      });
+      try {
+        await api('/assessments/' + subscriptionId + '/answers', { method: 'PUT', body: JSON.stringify({ answers, extraAnswers }) });
+        alert(t('assessmentSubmittedAlert'));
+      } catch (e) { alert(e.message); }
+    });
+  }
+
+  function wireFillInputs() {
+    document.querySelectorAll('[data-fill-choice]').forEach((box) => {
+      box.querySelectorAll('[data-opt]').forEach((chip) => {
+        chip.onclick = () => { localAnswers[box.dataset.fillChoice] = chip.dataset.opt; renderFillBody(); };
+      });
+    });
+    document.querySelectorAll('[data-fill-multi]').forEach((box) => {
+      box.querySelectorAll('[data-opt]').forEach((chip) => {
+        chip.onclick = () => {
+          const key = box.dataset.fillMulti;
+          const cur = Array.isArray(localAnswers[key]) ? [...localAnswers[key]] : [];
+          const idx = cur.indexOf(chip.dataset.opt);
+          if (idx >= 0) cur.splice(idx, 1); else cur.push(chip.dataset.opt);
+          localAnswers[key] = cur;
+          renderFillBody();
+        };
+      });
+    });
+    document.querySelectorAll('[data-fill-yesno]').forEach((box) => {
+      box.querySelectorAll('[data-opt]').forEach((chip) => {
+        chip.onclick = () => { localAnswers[box.dataset.fillYesno] = chip.dataset.opt === 'yes'; renderFillBody(); };
+      });
+    });
+    document.querySelectorAll('[data-fill-number]').forEach((el) => {
+      el.oninput = () => { localAnswers[el.dataset.fillNumber] = el.value === '' ? null : Number(el.value); };
+    });
+    document.querySelectorAll('[data-fill-text]').forEach((el) => {
+      el.oninput = () => { localAnswers[el.dataset.fillText] = el.value; };
+    });
+    document.querySelectorAll('[data-fill-date]').forEach((el) => {
+      el.onchange = () => { localAnswers[el.dataset.fillDate] = el.value || null; };
+    });
+    document.querySelectorAll('[data-fill-image]').forEach((el) => {
+      el.onchange = async () => {
+        const file = el.files[0];
+        if (!file) return;
+        const key = el.dataset.fillImage;
+        const formData = new FormData();
+        formData.append('photo', file);
+        try {
+          const res = await apiUpload('/assessments/' + subscriptionId + '/upload-answer', formData);
+          localAnswers[key] = res.filename;
+          renderFillBody();
+        } catch (e) { alert(e.message); }
+      };
+    });
+  }
+
+  renderFillBody();
 }
 
 // -------------------- خطط التمرين والتغذية --------------------
