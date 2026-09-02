@@ -3,16 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>مدربين الإسماعيلية - NAFE3</title>
+<title>Traino</title>
+<meta name="theme-color" content="#0D0D0D">
+<meta name="description" content="Traino - منصة تربط المتدربين بمدربين شخصيين معتمدين">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">🟢 مدربين الإسماعيلية</div>
+  <div class="topbar">
+    <div class="brand">Traino</div>
+    <button id="langToggle" class="lang-toggle" type="button"></button>
+  </div>
   <div id="app"></div>
 </div>
+<nav id="bottomNav" class="bottom-nav hidden"></nav>
+<script src="/icons.js"></script>
+<script src="/icons-pro.js"></script>
+<script src="/i18n.js"></script>
+<script src="/features.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

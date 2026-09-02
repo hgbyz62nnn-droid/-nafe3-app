@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.traino.app",
+      "sha256_cert_fingerprints": [
+        "85:0C:46:7B:16:25:A9:E4:B9:D5:63:72:91:D2:BD:52:0C:1F:A3:46:4E:BA:AB:79:3B:6F:7E:E6:E5:BC:A8:44"
+      ]
+    }
+  }
+]

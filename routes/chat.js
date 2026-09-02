@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { containsContactInfo } = require('../lib/privacyFilter');
+const { analyzeWithHistory, shouldBlock } = require('../lib/privacyFilter');
 
 const router = express.Router();
 
@@ -17,6 +17,10 @@ router.get('/:subscriptionId', requireAuth, (req, res) => {
   const messages = db
     .prepare('SELECT * FROM messages WHERE subscription_id = ? ORDER BY id ASC')
     .all(req.params.subscriptionId);
+
+  const seenCol = req.user.id === sub.trainee_id ? 'trainee_last_seen_at' : 'coach_last_seen_at';
+  db.prepare(`UPDATE subscriptions SET ${seenCol} = datetime('now') WHERE id = ?`).run(sub.id);
+
   res.json({ messages });
 });
 
@@ -28,9 +32,31 @@ router.post('/:subscriptionId', requireAuth, (req, res) => {
   if (!assertParticipant(sub, req.user.id)) return res.status(403).json({ error: 'مش معاك صلاحية' });
   if (sub.status !== 'active') return res.status(403).json({ error: 'الشات بيتفعّل بعد تأكيد الاشتراك' });
 
-  const flagged = containsContactInfo(content) ? 1 : 0;
+  const otherId = req.user.id === sub.trainee_id ? sub.coach_id : sub.trainee_id;
+  const isUserBlocked = db
+    .prepare(
+      `SELECT 1 FROM blocked_users
+       WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`
+    )
+    .get(req.user.id, otherId, otherId, req.user.id);
+  if (isUserBlocked) return res.status(403).json({ error: 'الشات متوقف بسبب الحظر بين الطرفين' });
+
+  const recent = db
+    .prepare('SELECT content FROM messages WHERE subscription_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 5')
+    .all(req.params.subscriptionId, req.user.id)
+    .map((r) => r.content)
+    .reverse();
+
+  const { flagged, reasons } = analyzeWithHistory(content, recent);
+  const blocked = flagged && shouldBlock(reasons);
 
   if (flagged) {
+    db.prepare(
+      'INSERT INTO flagged_attempts (user_id, subscription_id, message, reasons, blocked) VALUES (?, ?, ?, ?, ?)'
+    ).run(req.user.id, req.params.subscriptionId, content, reasons.join(','), blocked ? 1 : 0);
+  }
+
+  if (blocked) {
     db.prepare(
       'INSERT INTO messages (subscription_id, sender_id, content, flagged) VALUES (?, ?, ?, 1)'
     ).run(req.params.subscriptionId, req.user.id, '[رسالة اتمنعت - محتوى تواصل خارجي]');
