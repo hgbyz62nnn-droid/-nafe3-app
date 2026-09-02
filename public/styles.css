@@ -22,6 +22,9 @@ input, select, textarea{
   width:100%; padding:11px 13px; margin-bottom:10px; border-radius:10px;
   background:var(--surface-2); border:1px solid var(--line); color:var(--text); font-family:inherit; font-size:13.5px;
 }
+/* بيخلي أيقونة/بوب-أب اختيار التاريخ الأصلية للمتصفح تتماشى مع الثيم
+   الغامق بدل ما تظهر بخلفية بيضاء غريبة عن باقي التصميم. */
+input[type="date"]{ color-scheme:dark; }
 button{
   width:100%; padding:12px; border-radius:12px; border:none; font-weight:800; font-size:13.5px;
   background:linear-gradient(135deg,var(--red-soft),var(--red)); color:#fff; cursor:pointer; font-family:inherit;
@@ -44,7 +47,11 @@ button.danger{ background:var(--danger); color:#fff; }
 .hidden{ display:none !important; }
 a.link{ color:var(--red-soft); font-size:12.5px; text-decoration:none; }
 
-.subtabs{ display:flex; gap:6px; overflow-x:auto; margin-bottom:14px; padding-bottom:2px; }
+.subtabs{
+  display:flex; gap:6px; overflow-x:auto; margin-bottom:14px; padding-bottom:2px;
+  mask-image:linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+  -webkit-mask-image:linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+}
 .subtab{ flex:0 0 auto; padding:8px 12px; border-radius:999px; background:var(--surface-2); color:var(--text-dim); font-size:11.5px; font-weight:700; cursor:pointer; border:1px solid var(--line); white-space:nowrap; }
 .subtab.active{ background:linear-gradient(135deg,var(--red),#a5202b); color:#fff; border-color:transparent; }
 

@@ -1493,6 +1493,13 @@ function exerciseTagLine(ex) {
   return parts.join(' · ');
 }
 
+// بديل موحّد لأيقونة القلب ♥/♡ اللي كانت نص عادي (مش من نظام الأيقونات) -
+// نفس شكل القلب من TRAINO_PRO_Icon_System، بس متملي ومتلوّن وقت المفضلة.
+function favoriteHeartIcon(isFav) {
+  const raw = svgIconPro('heart', 16, isFav ? 'color:var(--red-soft);' : '');
+  return isFav ? raw.replace('fill="none"', 'fill="currentColor"') : raw;
+}
+
 function secondaryMusclesText(raw) {
   let list = [];
   try { list = Array.isArray(raw) ? raw : JSON.parse(raw || '[]'); } catch (e) { list = []; }
@@ -1692,7 +1699,7 @@ function openExerciseLibrary(onSelect, swapOptions) {
           <div class="small">${escapeHtml(exerciseTagLine(ex))}</div>
         </div>
         <button class="secondary" data-detail-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('viewDetailBtn')}</button>
-        <button class="secondary" data-fav-ex="${ex.id}" data-fav-state="${ex.is_favorite}" style="width:auto; padding:6px 10px;">${ex.is_favorite ? '♥' : '♡'}</button>
+        <button class="secondary" data-fav-ex="${ex.id}" data-fav-state="${ex.is_favorite}" style="width:auto; padding:6px 10px;">${favoriteHeartIcon(!!ex.is_favorite)}</button>
         ${ex.coach_id ? `<button class="secondary" data-del-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
         <button data-select-ex="${ex.id}" style="width:auto; padding:6px 10px;">${t('selectExerciseBtn')}</button>
       </div>
@@ -2136,6 +2143,12 @@ function wireHubNav(subscriptionId, active) {
   const isCoach = state.user.role === 'coach';
   if (active === 'chat') renderBottomNav('messages');
   else if (active === 'sessions') renderBottomNav(isCoach ? 'csessions' : 'bookings');
+
+  // السبعة تابات مش بتتلم كلها في عرض شاشة الموبايل، فلازم نلف بالتاب
+  // النشط لمنتصف الصف كل ما نفتحه - وإلا ممكن يفضل مقطوع على حافة
+  // الشاشة (زي "التقييم الدوري") من غير ما المستخدم يعرف إنه موجود أصلًا.
+  const activeTabEl = document.querySelector(`.subtabs [data-subtab="${active}"]`);
+  if (activeTabEl) activeTabEl.scrollIntoView({ inline: 'center', block: 'nearest' });
 
   document.getElementById('back').onclick = () => { clearInterval(state.chatTimer); boot(); };
   document.querySelectorAll('[data-subtab]').forEach((el) => {
@@ -2943,7 +2956,7 @@ function renderWorkoutBody(subscriptionId, isCoach) {
           <div class="exercise-card">
             <div style="display:flex; gap:6px;">
               <input data-ex="name:${di}:${ei}" value="${escapeHtml(ex.name)}" placeholder="${t('exerciseNamePlaceholder')}" style="flex:1;">
-              <button type="button" class="secondary" data-browse-ex="${di}:${ei}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('browseLibraryBtn')}">${svgIcon('search', 16)}</button>
+              <button type="button" class="secondary" data-browse-ex="${di}:${ei}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('browseLibraryBtn')}">${svgIconPro('search', 16)}</button>
               <button type="button" class="secondary" data-swap-ex="${di}:${ei}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('swapExerciseBtn')}">${svgIconPro('swap', 16)}</button>
               <select data-ex="type:${di}:${ei}" style="width:auto; flex-shrink:0;">
                 ${Object.entries(EXERCISE_TYPE_KEYS).map(([val, key]) => `<option value="${val}" ${ex.type === val ? 'selected' : ''}>${t(key)}</option>`).join('')}
@@ -2957,8 +2970,8 @@ function renderWorkoutBody(subscriptionId, isCoach) {
               <input data-ex="reps:${di}:${ei}" value="${escapeHtml(ex.reps)}" placeholder="${t('repsPlaceholder')}">
               <input data-ex="rir:${di}:${ei}" type="number" min="0" max="5" value="${ex.rir ?? ''}" placeholder="${t('rirPlaceholder')}">
               <input data-ex="rpe:${di}:${ei}" type="number" min="1" max="10" value="${ex.rpe ?? ''}" placeholder="${t('rpePlaceholder')}">
-              <input data-ex="rest:${di}:${ei}" value="${escapeHtml(ex.rest)}" placeholder="${t('restPlaceholder')}">
-              <input data-ex="tempo:${di}:${ei}" value="${escapeHtml(ex.tempo)}" placeholder="${t('tempoPlaceholder')}">
+              <input data-ex="rest:${di}:${ei}" value="${escapeHtml(ex.rest)}" placeholder="${t('restShortPlaceholder')}" title="${t('restPlaceholder')}">
+              <input data-ex="tempo:${di}:${ei}" value="${escapeHtml(ex.tempo)}" placeholder="${t('tempoPlaceholderShort')}" title="${t('tempoPlaceholder')}">
               <input data-ex="weight:${di}:${ei}" value="${escapeHtml(ex.weight)}" placeholder="${t('weightPlaceholder')}">
             </div>
             <input data-ex="video_url:${di}:${ei}" value="${escapeHtml(ex.video_url)}" placeholder="${t('videoUrlPlaceholder')}">
@@ -3344,7 +3357,7 @@ function openFoodLibrary(onSelect) {
           <div>${escapeHtml(f.name)}</div>
           <div class="small">${escapeHtml(foodTagLine(f))}</div>
         </div>
-        <button class="secondary" data-fav-food="${f.id}" data-fav-state="${f.is_favorite}" style="width:auto; padding:6px 10px;">${f.is_favorite ? '♥' : '♡'}</button>
+        <button class="secondary" data-fav-food="${f.id}" data-fav-state="${f.is_favorite}" style="width:auto; padding:6px 10px;">${favoriteHeartIcon(!!f.is_favorite)}</button>
         ${f.coach_id ? `<button class="secondary" data-del-food="${f.id}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>` : ''}
         <button data-select-food="${f.id}" style="width:auto; padding:6px 10px;">${t('selectFoodBtn')}</button>
       </div>
@@ -3480,7 +3493,7 @@ function renderNutritionBody(subscriptionId, isCoach) {
           <div class="food-row">
             <div style="display:flex; gap:6px;">
               <input data-food="name:${mi}:${fi}" value="${escapeHtml(f.name)}" placeholder="${t('foodNamePlaceholder')}" style="flex:1;">
-              <button type="button" class="secondary" data-browse-food="${mi}:${fi}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('browseFoodLibraryBtn')}">${svgIcon('search', 16)}</button>
+              <button type="button" class="secondary" data-browse-food="${mi}:${fi}" style="width:auto; padding:9px 10px; flex-shrink:0;" title="${t('browseFoodLibraryBtn')}">${svgIconPro('search', 16)}</button>
             </div>
             <div class="macro-grid-2">
               <input data-food="quantity:${mi}:${fi}" value="${escapeHtml(f.quantity)}" placeholder="${t('foodQuantityPlaceholder')}">
@@ -3645,10 +3658,14 @@ async function renderProgressTab(subscriptionId) {
     <div class="card">
       <h2>${t('logWeightBtn')}</h2>
       <div class="error hidden" id="progressErr"></div>
-      <input id="weightInput" type="number" step="0.1" placeholder="${t('weightPlaceholder')}">
+      <input id="weightInput" type="number" step="0.1" placeholder="${t('progressWeightPlaceholder')}">
       <input id="noteInput" placeholder="${t('progressNotePlaceholder')}">
       <label class="small" style="display:block; margin-bottom:6px;">${t('uploadPhotoLabel')}</label>
-      <input id="photoInput" type="file" accept="image/png,image/jpeg,image/webp" style="margin-bottom:10px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <button type="button" class="secondary" id="choosePhotoBtn" style="width:auto; padding:9px 14px; flex-shrink:0;">${t('choosePhotoBtn')}</button>
+        <span class="small" id="photoInputName">${t('noFileChosenLabel')}</span>
+      </div>
+      <input id="photoInput" type="file" accept="image/png,image/jpeg,image/webp" style="display:none;">
       <button id="saveEntry">${t('addEntryBtn')}</button>
     </div>` : ''}
     ${weighed.length >= 2 ? `
@@ -3675,6 +3692,12 @@ async function renderProgressTab(subscriptionId) {
   `);
   wireHubNav(subscriptionId, 'progress');
   loadAndRenderTransformations('transformBox', subscriptionId, isCoach);
+
+  on('choosePhotoBtn', 'click', () => document.getElementById('photoInput').click());
+  on('photoInput', 'change', () => {
+    const f = document.getElementById('photoInput').files[0];
+    document.getElementById('photoInputName').textContent = f ? f.name : t('noFileChosenLabel');
+  });
 
   on('saveEntry', 'click', async () => {
     const fd = new FormData();

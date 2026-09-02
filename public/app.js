@@ -269,13 +269,6 @@ function showAuthErr(msg) {
   el.textContent = msg; el.classList.remove('hidden');
 }
 
-function logoutBtn() {
-  return `<button class="secondary" id="logoutBtn" style="margin-top:14px;">${t('logoutBtn')}</button>`;
-}
-function wireLogout() {
-  on('logoutBtn', 'click', async () => { await api('/auth/logout', { method: 'POST' }); boot(); });
-}
-
 async function renderTraineeHome() {
   renderBottomNav('home');
   const { coaches } = await api('/coaches');
@@ -348,7 +341,6 @@ async function renderTraineeHome() {
           </div>
         `).join('')}
       </div>` : ''}
-    ${logoutBtn()}
   `);
 
   document.querySelectorAll('[data-open-coach]').forEach(el => {
@@ -365,7 +357,6 @@ async function renderTraineeHome() {
   on('seeAllContent', 'click', (e) => { e.preventDefault(); renderContentFeed(); });
   const homeContentBox = document.getElementById('homeContentPreview');
   if (homeContentBox) wirePostCards(homeContentBox, contentPreview, () => renderTraineeHome());
-  wireLogout();
 }
 
 async function renderCoachProfile(coachId) {
@@ -605,7 +596,6 @@ async function renderCoachDashboard() {
           </div>
         `).join('')}
       </div>` : ''}
-    ${logoutBtn()}
   `);
 
   document.querySelectorAll('[data-open-chat]').forEach(el => {
@@ -616,8 +606,6 @@ async function renderCoachDashboard() {
   on('qaMyClients', 'click', renderMyClients);
   on('qaAvailability', 'click', renderCoachAvailability);
   on('qaDocuments', 'click', renderTrainerDocuments);
-
-  wireLogout();
 }
 
 async function renderCoachProfileEdit() {
