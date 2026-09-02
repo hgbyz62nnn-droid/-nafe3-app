@@ -22,6 +22,7 @@ export function AssetSlot({
   placeholderIcon,
   label,
   labelPosition = 'bottom-left',
+  compact = false,
 }: {
   src?: string;
   alt?: string;
@@ -33,6 +34,10 @@ export function AssetSlot({
   /** short tag shown on the placeholder, e.g. "ATHLETE PHOTO" */
   label?: string;
   labelPosition?: 'bottom-left' | 'top-left';
+  /** For small boxes (e.g. list thumbnails) where the full text tag would
+   * overflow: shows a small placeholder dot badge instead of text. The
+   * hatch pattern still marks the whole box as a placeholder. */
+  compact?: boolean;
 }) {
   if (src) {
     return (
@@ -67,14 +72,17 @@ export function AssetSlot({
             {placeholderIcon}
           </div>
         )}
-        {label && (
+        {label && !compact && (
           <div
-            className={`absolute left-1.5 bg-black/70 border border-red/50 text-red text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded ${
+            className={`absolute left-1.5 bg-black/70 border border-red/50 text-red text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded whitespace-nowrap ${
               labelPosition === 'top-left' ? 'top-1.5' : 'bottom-1.5'
             }`}
           >
             {label} · placeholder
           </div>
+        )}
+        {compact && (
+          <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red border border-black/60" />
         )}
       </div>
     </div>
