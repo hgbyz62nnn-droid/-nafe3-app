@@ -72,6 +72,7 @@ export const ICONS = {
   sliders: '<path d="M6 4v6M6 14v6M12 4v3M12 11v9M18 4v11M18 19v1"/><circle cx="6" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="2" fill="currentColor" stroke="none"/><circle cx="18" cy="17" r="2" fill="currentColor" stroke="none"/>',
   dotsVertical: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor" stroke="none"/>',
   share: '<path d="M12 14.5V4M8 7.5 12 4l4 3.5"/><path d="M5 12v6.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V12"/>',
+  swap: '<path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 20l-4-4 4-4"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

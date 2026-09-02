@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { BottomNav } from '../components/ui/BottomNav';
 import { getAiCoachReply } from '../domain/engine/aiCoachEngine';
 import type { AiCoachIntent, AiCoachReply } from '../domain/engine/types';
+import { useProfile } from '../domain/state/ProfileContext';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: "Adjust today's workout", intent: 'adjust_todays_workout' },
@@ -24,11 +25,22 @@ const INITIAL_MESSAGES: Message[] = [
 ];
 
 export default function AiCoach() {
+  const navigate = useNavigate();
+  const { setActiveAdjustment } = useProfile();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
 
   function handleSuggestion(label: string, intent: AiCoachIntent) {
     const reply = getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
+  }
+
+  function handleCta(msg: Message & { role: 'ai' }) {
+    if (msg.adjustment) {
+      setActiveAdjustment(msg.adjustment);
+      navigate('/todays-workout');
+    } else if (msg.ctaLabel === 'OPEN NUTRITION') {
+      navigate('/nutrition');
+    }
   }
 
   return (
@@ -83,11 +95,23 @@ export default function AiCoach() {
                     ))}
                   </div>
                   {msg.ctaLabel && (
-                    <button className="w-full bg-red rounded-button py-3 text-white font-extrabold text-[13px] tracking-wide mt-4 shadow-button">
+                    <button
+                      onClick={() => handleCta(msg)}
+                      className="w-full bg-red rounded-button py-3 text-white font-extrabold text-[13px] tracking-wide mt-4 shadow-button"
+                    >
                       {msg.ctaLabel}
                     </button>
                   )}
                 </div>
+              )}
+
+              {!msg.adjustmentSummary && msg.ctaLabel && (
+                <button
+                  onClick={() => handleCta(msg)}
+                  className="self-start ml-10 border border-red/50 rounded-chip px-4 py-2 text-red text-[12.5px] font-bold"
+                >
+                  {msg.ctaLabel}
+                </button>
               )}
             </div>
           )

@@ -1,0 +1,60 @@
+/**
+ * Deterministic exercise-replacement table for the "Replace an exercise"
+ * flow: each entry lists pre-authored alternatives that target the same
+ * movement pattern/muscle group. A fixed lookup, not a generated swap.
+ */
+export interface AlternativeExercise {
+  name: string;
+  reps: string;
+}
+
+const EXERCISE_ALTERNATIVES: Record<string, AlternativeExercise[]> = {
+  'Back Squat': [
+    { name: 'Front Squat', reps: '6' },
+    { name: 'Bulgarian Split Squat', reps: '10 / leg' },
+  ],
+  'Romanian Deadlift': [
+    { name: 'Single-Leg Glute Bridge', reps: '12 / leg' },
+    { name: 'Good Morning', reps: '10' },
+  ],
+  'Bulgarian Split Squat': [
+    { name: 'Walking Lunges', reps: '12 / leg' },
+    { name: 'Step-Ups', reps: '10 / leg' },
+  ],
+  'Leg Press': [
+    { name: 'Walking Lunges', reps: '12 / leg' },
+    { name: 'Goblet Squat', reps: '12' },
+  ],
+  'Bench Press': [
+    { name: 'Push-Ups', reps: '15' },
+    { name: 'Dumbbell Floor Press', reps: '10' },
+  ],
+  'Pull-Up': [
+    { name: 'Dumbbell Row', reps: '10 / side' },
+    { name: 'Lat Pulldown', reps: '10' },
+  ],
+  'Weighted Pull-Up': [
+    { name: 'Pull-Up', reps: '8-10' },
+    { name: 'Dumbbell Row', reps: '12 / side' },
+  ],
+  'Sprint Intervals': [
+    { name: 'Bike Intervals', reps: '20 sec' },
+    { name: 'Shuttle Runs', reps: '20 sec' },
+  ],
+  'Box Jump': [
+    { name: 'Broad Jump', reps: '6' },
+    { name: 'Step-Up with Drive', reps: '8 / leg' },
+  ],
+  'Push-Ups': [
+    { name: 'Incline Push-Ups', reps: '15' },
+    { name: 'Dumbbell Bench Press', reps: '10' },
+  ],
+  Plank: [
+    { name: 'Dead Bug', reps: '10 / side' },
+    { name: 'Side Plank', reps: '30 sec / side' },
+  ],
+};
+
+export function getExerciseAlternatives(name: string): AlternativeExercise[] {
+  return EXERCISE_ALTERNATIVES[name] ?? [];
+}

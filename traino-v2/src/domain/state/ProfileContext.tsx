@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import type { AssessmentAnswers, UserProfile } from '../engine/types';
+import type { AiCoachAdjustment, AssessmentAnswers, UserProfile } from '../engine/types';
 import { determineLevel } from '../engine/levelEngine';
 import { calculateNutritionTargets } from '../engine/nutritionEngine';
 import { getSportModule } from '../sports/registry';
@@ -59,12 +59,17 @@ interface ProfileContextValue {
   hasCompletedAssessment: boolean;
   updateAnswers: (partial: Partial<AssessmentAnswers>) => void;
   completeAssessment: () => void;
+  /** The most recent AI Coach plan adjustment (e.g. "feeling tired" -> reduced volume),
+   * applied to today's workout until cleared. Session-only, not persisted. */
+  activeAdjustment: AiCoachAdjustment | null;
+  setActiveAdjustment: (adjustment: AiCoachAdjustment | null) => void;
 }
 
 const ProfileContext = createContext<ProfileContextValue | null>(null);
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<StoredState>(loadStoredState);
+  const [activeAdjustment, setActiveAdjustment] = useState<AiCoachAdjustment | null>(null);
 
   function persist(next: StoredState) {
     setState(next);
@@ -97,8 +102,10 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       hasCompletedAssessment: state.hasCompletedAssessment,
       updateAnswers,
       completeAssessment,
+      activeAdjustment,
+      setActiveAdjustment,
     }),
-    [state, profile]
+    [state, profile, activeAdjustment]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

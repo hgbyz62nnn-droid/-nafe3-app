@@ -1,14 +1,28 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
-import { generateTodayWorkout } from '../domain/engine/planEngine';
+import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
+import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
 
 export default function TodaysWorkout() {
-  const { profile } = useProfile();
-  const workout = generateTodayWorkout(profile, 0);
+  const { profile, activeAdjustment, setActiveAdjustment } = useProfile();
+  const [swaps, setSwaps] = useState<Record<number, number>>({});
+
+  const workout = activeAdjustment
+    ? applyCoachAdjustment(profile, 0, activeAdjustment)
+    : generateTodayWorkout(profile, 0);
+
+  function cycleSwap(index: number, altCount: number) {
+    setSwaps((prev) => {
+      const current = prev[index] ?? -1;
+      const next = current + 1 >= altCount ? -1 : current + 1;
+      return { ...prev, [index]: next };
+    });
+  }
 
   return (
     <Screen withNav={false} className="pb-8">
@@ -23,6 +37,19 @@ export default function TodaysWorkout() {
         </h1>
         <Icon name="sliders" size={18} className="text-white shrink-0" />
       </div>
+
+      {activeAdjustment && (
+        <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
+          <Icon name="aiMascot" size={16} className="text-red shrink-0" />
+          <p className="flex-1 text-red text-[12px] font-semibold">Adjusted by AI Coach</p>
+          <button
+            onClick={() => setActiveAdjustment(null)}
+            className="text-text-secondary text-[11.5px] font-semibold underline"
+          >
+            Reset
+          </button>
+        </div>
+      )}
 
       <div className="px-4 mt-4">
         <div className="bg-card rounded-card border border-border-soft p-4">
@@ -42,7 +69,10 @@ export default function TodaysWorkout() {
         <div className="mt-2">
           {workout.exercises.map((ex, i) => {
             const isTimedBlock = ex.category === 'warmup' || ex.category === 'cooldown';
-            const meta = isTimedBlock ? ex.reps : `${ex.sets} x ${ex.reps}`;
+            const alternatives = getExerciseAlternatives(ex.name);
+            const swapIndex = swaps[i] ?? -1;
+            const display = swapIndex >= 0 && alternatives[swapIndex] ? alternatives[swapIndex] : ex;
+            const meta = isTimedBlock ? display.reps : `${ex.sets} x ${display.reps}`;
             const hasImage = !isTimedBlock;
 
             return (
@@ -54,7 +84,7 @@ export default function TodaysWorkout() {
               >
                 <span className="text-text-muted text-[14px] font-bold w-4 shrink-0">{i + 1}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-[14.5px] font-bold truncate">{ex.name}</p>
+                  <p className="text-white text-[14.5px] font-bold truncate">{display.name}</p>
                   <p className="flex items-center gap-1.5 text-text-secondary text-[12.5px] mt-0.5">
                     {meta}
                     {ex.restSec && (
@@ -65,6 +95,15 @@ export default function TodaysWorkout() {
                     )}
                   </p>
                 </div>
+                {!isTimedBlock && alternatives.length > 0 && (
+                  <button
+                    onClick={() => cycleSwap(i, alternatives.length)}
+                    className="w-8 h-8 min-w-[32px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
+                    aria-label="Replace exercise"
+                  >
+                    <Icon name="swap" size={14} className="text-text-secondary" strokeWidth={2} />
+                  </button>
+                )}
                 {hasImage && (
                   <AssetSlot className="w-14 h-11 rounded-lg shrink-0" fit="cover" compact />
                 )}

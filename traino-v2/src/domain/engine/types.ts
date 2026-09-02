@@ -66,9 +66,16 @@ export interface ExerciseSlot {
   restSec?: number;
   /** Equipment ids that satisfy this slot; empty array = bodyweight/no equipment needed. */
   equipment: string[];
-  /** Substitute exercise used when none of `equipment` is available. Always bodyweight-only. */
+  /** Substitute exercise used when none of `equipment` is available, an injury contraindicates
+   * this slot, or the AI Coach applies a bodyweight-only/pain-safe adjustment. Always low-load
+   * and bodyweight-only. */
   bodyweightAlternative?: { name: string; reps: string };
   category: ExerciseCategory;
+  /** Health-limitation tag ids (see domain/assessment/health.ts) this movement should be avoided
+   * for, e.g. a loaded knee-flexion exercise tagged 'knee'. */
+  contraindications?: string[];
+  /** Jumping/sprinting/direction-change movements — dropped or swapped when the athlete reports pain. */
+  highImpact?: boolean;
 }
 
 export interface WorkoutDayTemplate {
