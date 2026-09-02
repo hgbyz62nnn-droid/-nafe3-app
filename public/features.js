@@ -2235,12 +2235,14 @@ async function renderAssessmentTemplateBuilder() {
               <h2>${t(SECTION_LABEL_KEYS[section])}</h2>
               <button class="secondary" data-add-q="${section}" style="width:auto; padding:6px 12px;">${t('addQuestionBtn')}</button>
             </div>
-            ${qs.length === 0 ? `<p class="small">${t('noQuestionsYetInSection')}</p>` : qs.map((q) => `
+            ${qs.length === 0 ? `<p class="small">${t('noQuestionsYetInSection')}</p>` : qs.map((q, pos) => `
               <div class="coach-row" style="gap:8px;">
                 <div style="flex:1; min-width:0;">
                   <div>${escapeHtml(q.label)} ${q.required ? `<span class="pill">${t('requiredLabel')}</span>` : ''}</div>
                   <div class="small">${t(TYPE_LABEL_KEYS[q.type])}${q.options.length ? ' · ' + q.options.map(escapeHtml).join('، ') : ''}</div>
                 </div>
+                <button class="secondary" data-move-q="up:${q.i}" ${pos === 0 ? 'disabled' : ''} style="width:auto; padding:6px 10px;">↑</button>
+                <button class="secondary" data-move-q="down:${q.i}" ${pos === qs.length - 1 ? 'disabled' : ''} style="width:auto; padding:6px 10px;">↓</button>
                 <button class="secondary" data-remove-q="${q.i}" style="width:auto; padding:6px 10px;">${t('removeBtn')}</button>
               </div>
             `).join('')}
@@ -2266,6 +2268,25 @@ async function renderAssessmentTemplateBuilder() {
     });
     document.querySelectorAll('[data-remove-q]').forEach((btn) => {
       btn.onclick = () => { assessmentTemplateEditState.splice(Number(btn.dataset.removeQ), 1); renderBody(); };
+    });
+    // الترتيب هنا داخل نفس القسم بس - بندور على أقرب سؤال بنفس القسم قبل/بعد
+    // الفهرس الحالي في المصفوفة الكاملة ونبدّل مكانهم، عشان ترتيب الأقسام
+    // نفسه (general_info -> ... -> notes) يفضل ثابت زي ما هو دايمًا.
+    document.querySelectorAll('[data-move-q]').forEach((btn) => {
+      btn.onclick = () => {
+        const [dir, iStr] = btn.dataset.moveQ.split(':');
+        const i = Number(iStr);
+        const section = assessmentTemplateEditState[i].section;
+        let target = -1;
+        if (dir === 'up') {
+          for (let j = i - 1; j >= 0; j--) { if (assessmentTemplateEditState[j].section === section) { target = j; break; } }
+        } else {
+          for (let j = i + 1; j < assessmentTemplateEditState.length; j++) { if (assessmentTemplateEditState[j].section === section) { target = j; break; } }
+        }
+        if (target === -1) return;
+        [assessmentTemplateEditState[i], assessmentTemplateEditState[target]] = [assessmentTemplateEditState[target], assessmentTemplateEditState[i]];
+        renderBody();
+      };
     });
     on('saveTemplate', 'click', async () => {
       if (!assessmentTemplateEditState.length) { alert(t('noQuestionsYetInSection')); return; }
