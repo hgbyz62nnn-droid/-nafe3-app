@@ -3020,6 +3020,88 @@ function foodTagLine(f) {
   return parts.join(' · ');
 }
 
+const FOOD_QUANTITY_PRESETS = [25, 50, 100, 150, 200, 300];
+
+function computeFoodMacros(food, qty) {
+  const ratio = qty / 100;
+  return {
+    calories: Math.round(food.calories_per_100g * ratio),
+    protein: Math.round(food.protein_per_100g * ratio * 10) / 10,
+    carbs: Math.round(food.carbs_per_100g * ratio * 10) / 10,
+    fat: Math.round(food.fat_per_100g * ratio * 10) / 10,
+  };
+}
+
+function openFoodDetail(foodId, onSelect) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `<div class="modal-box"><div class="skeleton block"></div></div>`;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+
+  api('/foods/' + foodId).then(({ food }) => {
+    if (!document.getElementById('modalRoot')) return;
+    let qty = 100;
+    document.querySelector('#modalRoot .modal-box').innerHTML = `
+      <h2>${escapeHtml(food.name)}</h2>
+      <div class="small" style="margin-bottom:10px;">${escapeHtml(foodTagLine(food))}</div>
+      <div class="macro-summary" style="margin-bottom:14px;">
+        <span class="macro-chip">${food.calories_per_100g} ${t('kcalUnit')} ${t('per100gLabel')}</span>
+        <span class="macro-chip">${t('proteinLabel')} ${food.protein_per_100g}${t('gramUnit')}</span>
+        <span class="macro-chip">${t('carbsLabel')} ${food.carbs_per_100g}${t('gramUnit')}</span>
+        <span class="macro-chip">${t('fatLabel')} ${food.fat_per_100g}${t('gramUnit')}</span>
+      </div>
+      <div class="small" style="margin-bottom:6px;">${t('chooseQuantityLabel')}</div>
+      <div class="chip-row" id="foodQtyChips" style="margin-bottom:8px;">
+        ${FOOD_QUANTITY_PRESETS.map((g) => `<span class="filter-chip${g === 100 ? ' active' : ''}" data-qty="${g}">${g}${t('gramUnit')}</span>`).join('')}
+      </div>
+      <input id="foodQtyCustom" type="number" min="1" placeholder="${t('customQuantityPlaceholder')}" style="margin-bottom:10px;">
+      <div id="foodQtyPreview" class="macro-summary" style="margin-bottom:12px;"></div>
+      <button id="confirmFoodSelect">${t('confirmSelectFoodBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    `;
+    document.getElementById('closeModal').onclick = closeModal;
+
+    function updatePreview() {
+      const m = computeFoodMacros(food, qty);
+      document.getElementById('foodQtyPreview').innerHTML = `
+        <span class="macro-chip">${qty}${t('gramUnit')}</span>
+        <span class="macro-chip">${m.calories} ${t('kcalUnit')}</span>
+        <span class="macro-chip">${t('proteinLabel')} ${m.protein}${t('gramUnit')}</span>
+        <span class="macro-chip">${t('carbsLabel')} ${m.carbs}${t('gramUnit')}</span>
+        <span class="macro-chip">${t('fatLabel')} ${m.fat}${t('gramUnit')}</span>
+      `;
+    }
+    updatePreview();
+
+    document.querySelectorAll('#foodQtyChips .filter-chip').forEach((chip) => {
+      chip.onclick = () => {
+        qty = Number(chip.dataset.qty);
+        document.getElementById('foodQtyCustom').value = '';
+        document.querySelectorAll('#foodQtyChips .filter-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        updatePreview();
+      };
+    });
+    document.getElementById('foodQtyCustom').oninput = (e) => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v) && v > 0) {
+        qty = v;
+        document.querySelectorAll('#foodQtyChips .filter-chip').forEach((c) => c.classList.remove('active'));
+        updatePreview();
+      }
+    };
+    document.getElementById('confirmFoodSelect').onclick = () => {
+      const m = computeFoodMacros(food, qty);
+      const selection = { name: food.name, food_id: food.id, quantity: qty + t('gramUnit'), calories: m.calories, protein: m.protein, carbs: m.carbs, fat: m.fat };
+      closeModal();
+      onSelect(selection);
+    };
+  }).catch(() => { closeModal(); });
+}
+
 function openFoodLibrary(onSelect) {
   closeModal();
   const root = document.createElement('div');
@@ -3127,24 +3209,7 @@ function openFoodLibrary(onSelect) {
     `).join('');
 
     listBox.querySelectorAll('[data-select-food]').forEach((btn) => {
-      btn.onclick = () => {
-        const f = foods.find((x) => x.id === Number(btn.dataset.selectFood));
-        const qtyStr = prompt(t('enterQuantityPrompt'), '100');
-        if (qtyStr === null) return;
-        const qty = Number(qtyStr);
-        if (!Number.isFinite(qty) || qty <= 0) { alert(t('invalidQuantityAlert')); return; }
-        const ratio = qty / 100;
-        closeModal();
-        onSelect({
-          name: f.name,
-          food_id: f.id,
-          quantity: qty + t('gramUnit'),
-          calories: Math.round(f.calories_per_100g * ratio),
-          protein: Math.round(f.protein_per_100g * ratio * 10) / 10,
-          carbs: Math.round(f.carbs_per_100g * ratio * 10) / 10,
-          fat: Math.round(f.fat_per_100g * ratio * 10) / 10,
-        });
-      };
+      btn.onclick = () => openFoodDetail(Number(btn.dataset.selectFood), onSelect);
     });
     listBox.querySelectorAll('[data-fav-food]').forEach((btn) => {
       btn.onclick = async () => {
@@ -3192,7 +3257,7 @@ function macroSummaryChips(totals, targets) {
   const fatTarget = targets.fat_target ? Number(targets.fat_target) : null;
   return `
     <div class="macro-summary">
-      <span class="macro-chip">🔥 ${totals.calories}${calTarget ? ' / ' + calTarget : ''} ${t('kcalUnit')}</span>
+      <span class="macro-chip">${totals.calories}${calTarget ? ' / ' + calTarget : ''} ${t('kcalUnit')}</span>
       <span class="macro-chip">${t('proteinLabel')} ${totals.protein}${proTarget ? ' / ' + proTarget : ''}${t('gramUnit')}</span>
       <span class="macro-chip">${t('carbsLabel')} ${totals.carbs}${carbTarget ? ' / ' + carbTarget : ''}${t('gramUnit')}</span>
       <span class="macro-chip">${t('fatLabel')} ${totals.fat}${fatTarget ? ' / ' + fatTarget : ''}${t('gramUnit')}</span>
@@ -3285,9 +3350,19 @@ function renderNutritionBody(subscriptionId, isCoach) {
           </div>
         `).join('')}
         <button class="secondary" data-add-food="${mi}" style="margin-bottom:6px;">${t('addFoodBtn')}</button>
-        <button class="danger" data-remove-meal="${mi}" style="width:auto; padding:8px 12px;">${t('removeBtn')}</button>
+        <div style="display:flex; gap:6px;">
+          <button class="secondary" data-dup-meal="${mi}" style="width:auto; padding:8px 12px; display:flex; align-items:center; gap:6px;">${svgIconPro('copy', 16)}${t('duplicateMealBtn')}</button>
+          <button class="danger" data-remove-meal="${mi}" style="width:auto; padding:8px 12px;">${t('removeBtn')}</button>
+        </div>
       </div>
     `).join('')}
+    <div class="chip-row" id="mealPresetChips" style="margin:10px 0 4px; align-items:center;">
+      <span class="small">${t('quickAddMealLabel')}</span>
+      <span class="filter-chip" data-meal-preset="mealPresetBreakfast">${t('mealPresetBreakfast')}</span>
+      <span class="filter-chip" data-meal-preset="mealPresetLunch">${t('mealPresetLunch')}</span>
+      <span class="filter-chip" data-meal-preset="mealPresetDinner">${t('mealPresetDinner')}</span>
+      <span class="filter-chip" data-meal-preset="mealPresetSnack">${t('mealPresetSnack')}</span>
+    </div>
     <button class="secondary" id="addMeal">${t('addMealBtn')}</button>
     <button id="saveNutrition" style="margin-top:10px;">${t('savePlanBtn')}</button>
   `;
@@ -3308,6 +3383,22 @@ function renderNutritionBody(subscriptionId, isCoach) {
   });
   document.querySelectorAll('[data-remove-meal]').forEach((el) => {
     el.onclick = () => { np.meals.splice(+el.dataset.removeMeal, 1); renderNutritionBody(subscriptionId, isCoach); };
+  });
+  document.querySelectorAll('[data-dup-meal]').forEach((el) => {
+    el.onclick = () => {
+      const idx = +el.dataset.dupMeal;
+      const copy = JSON.parse(JSON.stringify(np.meals[idx]));
+      np.meals.splice(idx + 1, 0, copy);
+      renderNutritionBody(subscriptionId, isCoach);
+    };
+  });
+  document.querySelectorAll('[data-meal-preset]').forEach((chip) => {
+    chip.onclick = () => {
+      const m = newMeal();
+      m.label = t(chip.dataset.mealPreset);
+      np.meals.push(m);
+      renderNutritionBody(subscriptionId, isCoach);
+    };
   });
   document.querySelectorAll('[data-add-food]').forEach((el) => {
     el.onclick = () => { np.meals[+el.dataset.addFood].foods.push(newFood()); renderNutritionBody(subscriptionId, isCoach); };

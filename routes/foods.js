@@ -53,6 +53,20 @@ router.get('/', requireAuth, requireRole('coach'), (req, res) => {
   res.json({ foods });
 });
 
+router.get('/:id', requireAuth, requireRole('coach'), (req, res) => {
+  const food = db
+    .prepare(
+      `SELECT f.id, f.name, f.category, f.calories_per_100g, f.protein_per_100g, f.carbs_per_100g, f.fat_per_100g, f.coach_id,
+              CASE WHEN fav.coach_id IS NULL THEN 0 ELSE 1 END AS is_favorite
+       FROM foods f
+       LEFT JOIN food_favorites fav ON fav.food_id = f.id AND fav.coach_id = ?
+       WHERE f.id = ? AND (f.coach_id IS NULL OR f.coach_id = ?)`
+    )
+    .get(req.user.id, req.params.id, req.user.id);
+  if (!food) return res.status(404).json({ error: 'الطعام غير موجود' });
+  res.json({ food });
+});
+
 router.post('/', requireAuth, requireRole('coach'), (req, res) => {
   const count = db.prepare('SELECT COUNT(*) c FROM foods WHERE coach_id = ?').get(req.user.id).c;
   if (count >= MAX_CUSTOM_FOODS) return res.status(400).json({ error: 'وصلت للحد الأقصى من الأطعمة المخصصة' });
