@@ -12,7 +12,9 @@ const MAX_EXERCISES_PER_DAY = 20;
 const MAX_MEALS = 12;
 const MAX_FOODS_PER_MEAL = 15;
 const MAX_TEMPLATES = 30;
-const EXERCISE_TYPES = ['normal', 'superset', 'dropset', 'warmup', 'cooldown'];
+// نفس أنواع "Set Type" المذكورة في المواصفة بالظبط - warmup/cooldown كانوا
+// موجودين قبل كده ومفيش سبب نمسحهم، فبقوا زيادة على قايمة المواصفة مش بدل منها.
+const EXERCISE_TYPES = ['normal', 'superset', 'dropset', 'giant_set', 'circuit', 'rest_pause', 'myo_reps', 'amrap', 'warmup', 'cooldown'];
 
 function sanitizeDays(days) {
   if (!Array.isArray(days)) return [];
@@ -21,6 +23,7 @@ function sanitizeDays(days) {
     exercises: Array.isArray(d?.exercises)
       ? d.exercises.slice(0, MAX_EXERCISES_PER_DAY).map((e) => {
           const rpe = toNullableNumber(e?.rpe);
+          const rir = toNullableNumber(e?.rir);
           return {
             name: clampStr(e?.name, 100),
             exercise_id: toNullableNumber(e?.exercise_id),
@@ -30,6 +33,7 @@ function sanitizeDays(days) {
             rest: clampStr(e?.rest, 30),
             tempo: clampStr(e?.tempo, 20),
             rpe: rpe === null ? null : Math.min(10, Math.max(1, rpe)),
+            rir: rir === null ? null : Math.min(5, Math.max(0, rir)),
             type: EXERCISE_TYPES.includes(e?.type) ? e.type : 'normal',
             video_url: clampStr(e?.video_url, 300),
             notes: clampStr(e?.notes, 200),
