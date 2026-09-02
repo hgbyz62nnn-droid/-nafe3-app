@@ -4,64 +4,102 @@ import { determineLevel } from '../engine/levelEngine';
 import { calculateNutritionTargets } from '../engine/nutritionEngine';
 import { getSportModule } from '../sports/registry';
 
-const STORAGE_KEY = 'traino.assessmentAnswers.v1';
+const STORAGE_KEY = 'traino.assessment.v2';
 
+/**
+ * Neutral bootstrapping state only — NOT a fake/demo athlete. Every field
+ * here is "unanswered" (empty/zero) except the two that need *some* valid
+ * enum value to keep the app rendering before onboarding: `sport` (so a
+ * program can resolve) and `sex` (so nutrition math doesn't branch on
+ * undefined). The assessment flow overwrites all of this with the real
+ * user's answers; `hasCompletedAssessment` tracks whether that has
+ * happened yet.
+ */
 const DEFAULT_ANSWERS: AssessmentAnswers = {
+  firstName: '',
   sport: 'football',
-  goal: 'performance',
-  experienceYears: 2,
-  currentTrainingFrequency: 4,
-  daysAvailablePerWeek: 4,
-  trainingLocationIds: ['gym'],
-  equipmentIds: ['dumbbells', 'barbell', 'resistance_bands'],
+  goal: 'general_fitness',
+  experienceYears: 0,
+  currentTrainingFrequency: 0,
+  daysAvailablePerWeek: 0,
+  trainingLocationIds: [],
+  equipmentIds: [],
   injuryIds: [],
   sex: 'male',
-  age: 24,
-  heightCm: 178,
-  weightKg: 76,
+  age: 0,
+  heightCm: 0,
+  weightKg: 0,
+  dietaryPreference: 'no_restriction',
+  allergyIds: [],
+  budgetTier: 'medium',
 };
 
-function loadStoredAnswers(): AssessmentAnswers {
+interface StoredState {
+  answers: AssessmentAnswers;
+  hasCompletedAssessment: boolean;
+}
+
+function loadStoredState(): StoredState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_ANSWERS;
-    return { ...DEFAULT_ANSWERS, ...JSON.parse(raw) };
+    if (!raw) return { answers: DEFAULT_ANSWERS, hasCompletedAssessment: false };
+    const parsed = JSON.parse(raw);
+    return {
+      answers: { ...DEFAULT_ANSWERS, ...parsed.answers },
+      hasCompletedAssessment: Boolean(parsed.hasCompletedAssessment),
+    };
   } catch {
-    return DEFAULT_ANSWERS;
+    return { answers: DEFAULT_ANSWERS, hasCompletedAssessment: false };
   }
 }
 
 interface ProfileContextValue {
   answers: AssessmentAnswers;
   profile: UserProfile;
+  hasCompletedAssessment: boolean;
   updateAnswers: (partial: Partial<AssessmentAnswers>) => void;
+  completeAssessment: () => void;
 }
 
 const ProfileContext = createContext<ProfileContextValue | null>(null);
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
-  const [answers, setAnswers] = useState<AssessmentAnswers>(loadStoredAnswers);
+  const [state, setState] = useState<StoredState>(loadStoredState);
+
+  function persist(next: StoredState) {
+    setState(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // localStorage unavailable (private mode etc.) — state still updates for this session.
+    }
+  }
 
   function updateAnswers(partial: Partial<AssessmentAnswers>) {
-    setAnswers((prev) => {
-      const next = { ...prev, ...partial };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // localStorage unavailable (private mode etc.) — state still updates for this session.
-      }
-      return next;
-    });
+    persist({ ...state, answers: { ...state.answers, ...partial } });
+  }
+
+  function completeAssessment() {
+    persist({ ...state, hasCompletedAssessment: true });
   }
 
   const profile = useMemo<UserProfile>(() => {
-    const level = determineLevel(answers);
-    const sportModule = getSportModule(answers.sport);
-    const nutrition = calculateNutritionTargets(answers, sportModule.nutritionProfile);
-    return { answers, level, nutrition };
-  }, [answers]);
+    const level = determineLevel(state.answers);
+    const sportModule = getSportModule(state.answers.sport);
+    const nutrition = calculateNutritionTargets(state.answers, sportModule.nutritionProfile);
+    return { answers: state.answers, level, nutrition };
+  }, [state.answers]);
 
-  const value = useMemo(() => ({ answers, profile, updateAnswers }), [answers, profile]);
+  const value = useMemo(
+    () => ({
+      answers: state.answers,
+      profile,
+      hasCompletedAssessment: state.hasCompletedAssessment,
+      updateAnswers,
+      completeAssessment,
+    }),
+    [state, profile]
+  );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }

@@ -3,6 +3,10 @@ import { StatusBar } from '../components/ui/StatusBar';
 import { Icon, type IconName } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { BottomNav } from '../components/ui/BottomNav';
+import { useProfile } from '../domain/state/ProfileContext';
+import { SPORTS } from '../domain/sports/sports';
+import { GOAL_OPTIONS } from '../domain/assessment/goals';
+import { EQUIPMENT_OPTIONS } from '../domain/assessment/equipment';
 
 interface InfoRow {
   icon: IconName;
@@ -10,18 +14,6 @@ interface InfoRow {
   value?: string;
   chevron?: boolean;
 }
-
-const MY_INFO: InfoRow[] = [
-  { icon: 'profile', label: 'Athlete Profile', chevron: true },
-  { icon: 'bookmark', label: 'Goals', value: 'Improve Performance' },
-  { icon: 'calendar', label: 'Training Schedule', value: '4 days / week' },
-  { icon: 'heart', label: 'Injuries & Health', chevron: true },
-  { icon: 'copy', label: 'Measurements', value: '72 kg, 175 cm' },
-];
-
-const PREFERENCES: InfoRow[] = [
-  { icon: 'dumbbell', label: 'Equipment', value: 'Gym, Dumbbells, Barbell...', chevron: true },
-];
 
 function InfoList({ rows }: { rows: InfoRow[] }) {
   return (
@@ -46,6 +38,45 @@ function InfoList({ rows }: { rows: InfoRow[] }) {
 }
 
 export default function Profile() {
+  const { answers } = useProfile();
+  const sportName = SPORTS.find((s) => s.id === answers.sport)?.name ?? 'Athlete';
+  const goalName = GOAL_OPTIONS.find((g) => g.id === answers.goal)?.name ?? 'Not set';
+  const equipmentNames = answers.equipmentIds
+    .map((id) => EQUIPMENT_OPTIONS.find((e) => e.id === id)?.name)
+    .filter(Boolean)
+    .join(', ');
+  const injuryLabel =
+    answers.injuryIds.length === 0
+      ? 'Not answered yet'
+      : answers.injuryIds.includes('none')
+        ? 'No injuries or limitations'
+        : `${answers.injuryIds.length} noted`;
+
+  const MY_INFO: InfoRow[] = [
+    { icon: 'profile', label: 'Athlete Profile', chevron: true },
+    { icon: 'bookmark', label: 'Goals', value: goalName },
+    {
+      icon: 'calendar',
+      label: 'Training Schedule',
+      value: answers.daysAvailablePerWeek > 0 ? `${answers.daysAvailablePerWeek} days / week` : 'Not set',
+    },
+    { icon: 'heart', label: 'Injuries & Health', value: injuryLabel, chevron: true },
+    {
+      icon: 'copy',
+      label: 'Measurements',
+      value: answers.weightKg > 0 ? `${answers.weightKg} kg, ${answers.heightCm} cm` : 'Not set',
+    },
+  ];
+
+  const PREFERENCES: InfoRow[] = [
+    {
+      icon: 'dumbbell',
+      label: 'Equipment',
+      value: equipmentNames || 'Bodyweight only',
+      chevron: true,
+    },
+  ];
+
   return (
     <Screen>
       <StatusBar />
@@ -69,8 +100,8 @@ export default function Profile() {
           placeholderIcon={<Icon name="profile" size={26} className="text-text-muted" />}
         />
         <div className="flex-1">
-          <p className="text-white text-[18px] font-extrabold">Abdallah M.</p>
-          <p className="text-text-secondary text-[13px] mt-0.5">Football Player</p>
+          <p className="text-white text-[18px] font-extrabold">{answers.firstName || 'Athlete'}</p>
+          <p className="text-text-secondary text-[13px] mt-0.5">{sportName} Player</p>
           <button className="border border-border-soft rounded-chip px-3.5 py-1.5 text-white text-[12px] font-semibold mt-2">
             Edit Profile
           </button>

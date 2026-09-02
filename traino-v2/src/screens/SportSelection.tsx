@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { Icon } from '../components/ui/Icon';
-import { SPORTS, type SportId } from '../domain/sports/sports';
+import { SPORTS } from '../domain/sports/sports';
+import { useProfile } from '../domain/state/ProfileContext';
 
 function SportCard({
   name,
@@ -44,12 +45,13 @@ function SportCard({
 }
 
 export default function SportSelection() {
-  const [selected, setSelected] = useState<SportId>('football');
+  const navigate = useNavigate();
+  const { answers, updateAnswers } = useProfile();
 
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="Choose Your Sport" progress={0.25} />
+      <OnboardingHeader title="Choose Your Sport" progress={2 / 8} />
 
       <div className="px-5 mt-5 grid grid-cols-2 gap-3">
         {SPORTS.map((sport) => (
@@ -57,14 +59,17 @@ export default function SportSelection() {
             key={sport.id}
             name={sport.name}
             photoLabel={sport.photoAssetLabel}
-            selected={selected === sport.id}
-            onClick={() => setSelected(sport.id)}
+            selected={answers.sport === sport.id}
+            onClick={() => updateAnswers({ sport: sport.id })}
           />
         ))}
       </div>
 
       <div className="px-5 mt-5">
-        <button className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button">
+        <button
+          onClick={() => navigate('/assessment')}
+          className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button"
+        >
           NEXT
         </button>
       </div>

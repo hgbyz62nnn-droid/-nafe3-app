@@ -16,7 +16,12 @@ export type Goal = 'performance' | 'fat_loss' | 'muscle_gain' | 'general_fitness
 
 export type Sex = 'male' | 'female';
 
+export type DietaryPreference = 'no_restriction' | 'vegetarian' | 'vegan' | 'high_protein' | 'low_carb';
+
+export type BudgetTier = 'low' | 'medium' | 'high';
+
 export interface AssessmentAnswers {
+  firstName: string;
   sport: SportId;
   goal: Goal;
   /** Years of consistent training/playing experience in this sport. */
@@ -27,11 +32,15 @@ export interface AssessmentAnswers {
   daysAvailablePerWeek: number;
   trainingLocationIds: string[];
   equipmentIds: string[];
+  /** Injury/limitation tag ids, e.g. 'knee', 'shoulder'; ['none'] = no limitations. */
   injuryIds: string[];
   sex: Sex;
   age: number;
   heightCm: number;
   weightKg: number;
+  dietaryPreference: DietaryPreference;
+  allergyIds: string[];
+  budgetTier: BudgetTier;
 }
 
 export interface UserProfile {

@@ -1,9 +1,14 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ProfileProvider } from './domain/state/ProfileContext';
 import Home from './screens/Home';
+import AssessmentAbout from './screens/AssessmentAbout';
 import SportSelection from './screens/SportSelection';
 import AssessmentTrainingLocation from './screens/AssessmentTrainingLocation';
 import Equipment from './screens/Equipment';
+import AssessmentExperience from './screens/AssessmentExperience';
+import AssessmentHealth from './screens/AssessmentHealth';
+import AssessmentBody from './screens/AssessmentBody';
+import AssessmentNutritionPreferences from './screens/AssessmentNutritionPreferences';
 import AiCoach from './screens/AiCoach';
 import TodaysWorkout from './screens/TodaysWorkout';
 import Nutrition from './screens/Nutrition';
@@ -18,9 +23,14 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/onboarding/about" element={<AssessmentAbout />} />
           <Route path="/sport-selection" element={<SportSelection />} />
           <Route path="/assessment" element={<AssessmentTrainingLocation />} />
           <Route path="/equipment" element={<Equipment />} />
+          <Route path="/assessment/experience" element={<AssessmentExperience />} />
+          <Route path="/assessment/health" element={<AssessmentHealth />} />
+          <Route path="/assessment/body" element={<AssessmentBody />} />
+          <Route path="/assessment/nutrition-preferences" element={<AssessmentNutritionPreferences />} />
           <Route path="/ai-coach" element={<AiCoach />} />
           <Route path="/todays-workout" element={<TodaysWorkout />} />
           <Route path="/nutrition" element={<Nutrition />} />

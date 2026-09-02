@@ -1,20 +1,21 @@
-import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon } from '../components/ui/Icon';
 import { EQUIPMENT_OPTIONS } from '../domain/assessment/equipment';
+import { useProfile } from '../domain/state/ProfileContext';
 
 export default function Equipment() {
-  const [selected, setSelected] = useState<Set<string>>(new Set(['dumbbells', 'barbell', 'resistance_bands']));
+  const navigate = useNavigate();
+  const { answers, updateAnswers } = useProfile();
+  const selected = new Set(answers.equipmentIds);
 
   function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    updateAnswers({ equipmentIds: Array.from(next) });
   }
 
   return (
@@ -58,7 +59,10 @@ export default function Equipment() {
       </div>
 
       <div className="px-5 mt-5">
-        <button className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button">
+        <button
+          onClick={() => navigate('/assessment/experience')}
+          className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button"
+        >
           NEXT
         </button>
       </div>

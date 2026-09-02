@@ -53,7 +53,7 @@ export default function Home() {
         <div>
           <p className="text-text-secondary text-[15px]">Good morning,</p>
           <p className="text-white text-[26px] font-extrabold leading-tight">
-            Abdallah <span className="align-middle">👋</span>
+            {profile.answers.firstName || 'Athlete'} <span className="align-middle">👋</span>
           </p>
         </div>
         <button className="relative w-10 h-10 rounded-full bg-card border border-border-soft flex items-center justify-center shrink-0 mt-1">
