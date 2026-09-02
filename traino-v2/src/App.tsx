@@ -5,6 +5,7 @@ import AssessmentTrainingLocation from './screens/AssessmentTrainingLocation';
 import Equipment from './screens/Equipment';
 import AiCoach from './screens/AiCoach';
 import TodaysWorkout from './screens/TodaysWorkout';
+import Nutrition from './screens/Nutrition';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/equipment" element={<Equipment />} />
         <Route path="/ai-coach" element={<AiCoach />} />
         <Route path="/todays-workout" element={<TodaysWorkout />} />
+        <Route path="/nutrition" element={<Nutrition />} />
       </Routes>
     </BrowserRouter>
   );
