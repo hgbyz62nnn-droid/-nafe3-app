@@ -8,6 +8,7 @@ import TodaysWorkout from './screens/TodaysWorkout';
 import Nutrition from './screens/Nutrition';
 import Progress from './screens/Progress';
 import WeeklyReport from './screens/WeeklyReport';
+import HumanCoach from './screens/HumanCoach';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/nutrition" element={<Nutrition />} />
         <Route path="/progress" element={<Progress />} />
         <Route path="/weekly-report" element={<WeeklyReport />} />
+        <Route path="/human-coach" element={<HumanCoach />} />
       </Routes>
     </BrowserRouter>
   );

@@ -74,7 +74,7 @@ export function AssetSlot({
         )}
         {label && !compact && (
           <div
-            className={`absolute left-1.5 bg-black/70 border border-red/50 text-red text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded whitespace-nowrap ${
+            className={`absolute left-1.5 right-1.5 bg-black/70 border border-red/50 text-red text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded leading-tight ${
               labelPosition === 'top-left' ? 'top-1.5' : 'bottom-1.5'
             }`}
           >
