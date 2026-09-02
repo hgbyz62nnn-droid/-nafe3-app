@@ -63,6 +63,12 @@ export const ICONS = {
   medicineBall: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
   plyoBox: '<path d="M4 9.5 12 5l8 4.5v9L12 23l-8-4.5Z"/><path d="M4 9.5 12 14l8-4.5M12 14v9"/>',
   otherEquipment: '<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+
+  // -- AI Coach chat screen extensions, same 24x24 / 1.8px-stroke language
+  send: '<path d="M4 12l16-8-6 16-2.5-6.5L4 12Z" fill="currentColor" stroke="none"/>',
+  checkPlain: 'm5 12.5 4.3 4.3L19.5 7.3',
+  sliders: '<path d="M6 4v6M6 14v6M12 4v3M12 11v9M18 4v11M18 19v1"/><circle cx="6" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="2" fill="currentColor" stroke="none"/><circle cx="18" cy="17" r="2" fill="currentColor" stroke="none"/>',
+  dotsVertical: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor" stroke="none"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

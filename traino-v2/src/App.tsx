@@ -3,6 +3,7 @@ import Home from './screens/Home';
 import SportSelection from './screens/SportSelection';
 import AssessmentTrainingLocation from './screens/AssessmentTrainingLocation';
 import Equipment from './screens/Equipment';
+import AiCoach from './screens/AiCoach';
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/sport-selection" element={<SportSelection />} />
         <Route path="/assessment" element={<AssessmentTrainingLocation />} />
         <Route path="/equipment" element={<Equipment />} />
+        <Route path="/ai-coach" element={<AiCoach />} />
       </Routes>
     </BrowserRouter>
   );
