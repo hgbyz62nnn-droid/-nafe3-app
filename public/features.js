@@ -2653,6 +2653,7 @@ async function renderPlanTab(subscriptionId) {
 
   render(`
     ${renderHubTabs(subscriptionId, 'plan')}
+    ${isCoach ? `<button class="secondary" id="clientPreviewBtn" style="width:auto; padding:9px 14px; display:flex; align-items:center; gap:6px;">${svgIconPro('client', 16)}${t('clientPreviewBtn')}</button>` : ''}
     <div class="card">
       <h2>${t('workoutPlanTitle')}</h2>
       ${isCoach ? `<div id="templateToolbar" class="template-toolbar"></div>` : ''}
@@ -2667,7 +2668,36 @@ async function renderPlanTab(subscriptionId) {
   wireHubNav(subscriptionId, 'plan');
   renderWorkoutBody(subscriptionId, isCoach);
   renderNutritionBody(subscriptionId, isCoach);
-  if (isCoach) { wireTemplateToolbar(subscriptionId); wireNutritionTemplateToolbar(subscriptionId); }
+  if (isCoach) {
+    wireTemplateToolbar(subscriptionId);
+    wireNutritionTemplateToolbar(subscriptionId);
+    on('clientPreviewBtn', 'click', openClientPreview);
+  }
+}
+
+function openClientPreview() {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('clientPreviewTitle')}</h2>
+      <p class="small" style="margin-bottom:12px;">${t('clientPreviewHint')}</p>
+      <div class="card" style="margin-bottom:10px;">
+        <h2>${t('workoutPlanTitle')}</h2>
+        ${workoutReadOnlyHtml(planEditState.workout)}
+      </div>
+      <div class="card">
+        <h2>${t('nutritionPlanTitle')}</h2>
+        ${nutritionReadOnlyHtml(planEditState.nutrition)}
+      </div>
+      <button class="secondary" id="closeModal" style="margin-top:12px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
 }
 
 // -------------------- قوالب برامج التمرين --------------------
@@ -2843,12 +2873,8 @@ function exerciseSummaryLine(ex) {
   return parts.join(' · ');
 }
 
-function renderWorkoutBody(subscriptionId, isCoach) {
-  const body = document.getElementById('workoutBody');
-  const wp = planEditState.workout;
-
-  if (!isCoach) {
-    body.innerHTML = wp.days.length ? wp.days.map((day) => `
+function workoutReadOnlyHtml(wp) {
+  return wp.days.length ? wp.days.map((day) => `
       <div class="plan-day">
         <div class="plan-day-title">${escapeHtml(day.label)}</div>
         ${day.exercises.map((ex) => `
@@ -2863,6 +2889,14 @@ function renderWorkoutBody(subscriptionId, isCoach) {
         `).join('')}
       </div>
     `).join('') : `<p class="small">${t('noWorkoutPlanYet')}</p>`;
+}
+
+function renderWorkoutBody(subscriptionId, isCoach) {
+  const body = document.getElementById('workoutBody');
+  const wp = planEditState.workout;
+
+  if (!isCoach) {
+    body.innerHTML = workoutReadOnlyHtml(wp);
     return;
   }
 
@@ -3321,13 +3355,9 @@ function foodSummaryLine(f) {
   return parts.join(' · ');
 }
 
-function renderNutritionBody(subscriptionId, isCoach) {
-  const body = document.getElementById('nutritionBody');
-  const np = planEditState.nutrition;
-
-  if (!isCoach) {
-    const totals = sumMealsMacros(np.meals);
-    body.innerHTML = `
+function nutritionReadOnlyHtml(np) {
+  const totals = sumMealsMacros(np.meals);
+  return `
       ${np.daily_calories || np.protein_target || np.carbs_target || np.fat_target ? macroSummaryChips(totals, np) : ''}
       ${np.notes ? `<p style="font-size:13px; line-height:1.8;">${escapeHtml(np.notes)}</p>` : ''}
       ${np.meals.length ? np.meals.map((m) => `
@@ -3346,6 +3376,14 @@ function renderNutritionBody(subscriptionId, isCoach) {
         </div>
       `).join('') : `<p class="small">${t('noNutritionPlanYet')}</p>`}
     `;
+}
+
+function renderNutritionBody(subscriptionId, isCoach) {
+  const body = document.getElementById('nutritionBody');
+  const np = planEditState.nutrition;
+
+  if (!isCoach) {
+    body.innerHTML = nutritionReadOnlyHtml(np);
     return;
   }
 
