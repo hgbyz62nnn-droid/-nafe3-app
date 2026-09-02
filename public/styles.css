@@ -116,6 +116,19 @@ a.link{ color:var(--red-soft); font-size:12.5px; text-decoration:none; }
   .plan-table-mobile{ display:block; }
 }
 
+/* عرض أوسع لمحتوى شاشة "الخطة" بس (تبويب Plan + معاينة كعميل) على
+   تابلت/ديسكتوب، عشان جداول التمرين/التغذية تلاقي مساحة كافية من غير
+   لف أفقي زيادة عن اللازم. باقي شاشات التطبيق فاضلة بعرضها الحالي
+   (480px) - مفيش تغيير على .wrap العادي ولا على أي شاشة تانية. */
+@media (min-width:641px) and (max-width:1023px){
+  .wrap.plan-view-wide{ max-width:720px; }
+  .modal-box.plan-preview-modal{ max-width:680px; }
+}
+@media (min-width:1024px){
+  .wrap.plan-view-wide{ max-width:clamp(1100px, 80vw, 1400px); }
+  .modal-box.plan-preview-modal{ max-width:clamp(1000px, 75vw, 1300px); }
+}
+
 .badge-shelf{ display:flex; gap:10px; overflow-x:auto; padding-bottom:2px; }
 .badge-item{ flex:0 0 auto; width:78px; text-align:center; }
 .badge-icon{ font-size:26px; background:var(--surface-2); border:1px solid var(--line); border-radius:50%; width:56px; height:56px; display:flex; align-items:center; justify-content:center; margin:0 auto 6px; }

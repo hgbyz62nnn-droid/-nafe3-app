@@ -2730,6 +2730,10 @@ async function renderPlanTab(subscriptionId) {
     wireNutritionTemplateToolbar(subscriptionId);
     on('clientPreviewBtn', 'click', openClientPreview);
   }
+  // العرض الأوسع بس لعرض المتدرب للخطة (الجداول) - مش لوضع تحرير الكوتش
+  // (الـ builder فيه شبكات إدخال 3 أعمدة هتتمدد بشكل قبيح لو اتوسّعت لحد
+  // 1400px). render() بيمسح الكلاس ده تلقائي لما ننتقل لأي شاشة تانية.
+  if (!isCoach) document.querySelector('.wrap')?.classList.add('plan-view-wide');
 }
 
 function openClientPreview() {
@@ -2738,7 +2742,7 @@ function openClientPreview() {
   root.id = 'modalRoot';
   root.className = 'modal-backdrop';
   root.innerHTML = `
-    <div class="modal-box">
+    <div class="modal-box plan-preview-modal">
       <h2>${t('clientPreviewTitle')}</h2>
       <p class="small" style="margin-bottom:12px;">${t('clientPreviewHint')}</p>
       <div class="card" style="margin-bottom:10px;">

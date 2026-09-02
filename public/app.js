@@ -49,6 +49,10 @@ async function apiUpload(path, formData) {
 function render(html) {
   const topbar = document.querySelector('.topbar');
   if (topbar) topbar.style.display = '';
+  // شاشة الخطة (renderPlanTab) بتضيف plan-view-wide على .wrap بعد ما تنده
+  // render() عشان جداول التمرين/التغذية تاخد مساحة أوسع على تابلت/ديسكتوب
+  // - أي شاشة تانية بتعمل render() تلاقي العرض يرجع تلقائي للـ480px العادي.
+  document.querySelector('.wrap')?.classList.remove('plan-view-wide');
   app.innerHTML = html;
 }
 function on(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
