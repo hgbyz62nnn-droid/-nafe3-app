@@ -2942,22 +2942,194 @@ function exerciseSummaryLine(ex) {
   return parts.join(' · ');
 }
 
-function workoutReadOnlyHtml(wp) {
-  return wp.days.length ? wp.days.map((day) => `
-      <div class="plan-day">
-        <div class="plan-day-title">${escapeHtml(day.label)}</div>
-        ${day.exercises.map((ex) => `
-          <div class="exercise-row read">
-            <div>
-              <div class="exercise-name">${escapeHtml(ex.name)} ${ex.type && ex.type !== 'normal' ? `<span class="ex-type-badge">${t(EXERCISE_TYPE_KEYS[ex.type])}</span>` : ''}</div>
-              <div class="small">${exerciseSummaryLine(ex)}</div>
-              ${ex.notes ? `<div class="small">${escapeHtml(ex.notes)}</div>` : ''}
+// بيقسّم مصفوفة الأيام المسطّحة (days_json) لمجموعات كل مجموعة 7 أيام =
+// "أسبوع" للعرض بس - مفيش حقل "week" مخزّن في القاعدة أصلًا، فده مجرد
+// تقسيم عرضي فوق نفس البيانات المحفوظة (مفيش مصدر بيانات جديد).
+function chunkDaysIntoWeeks(days, perWeek = 7) {
+  const weeks = [];
+  for (let i = 0; i < days.length; i += perWeek) weeks.push(days.slice(i, i + perWeek));
+  return weeks;
+}
+
+// يوم "راحة" = يوم اتضاف من غير أي تمرين جواه (نفس البيانات الموجودة،
+// مفيش علم rest_day مخزّن منفصل).
+function isRestDay(day) {
+  return !day.exercises || day.exercises.length === 0;
+}
+
+// صورة مصغّرة للتمرين بس لو فيه رابط يوتيوب محفوظ أصلًا على التمرين نفسه
+// (video_url) - مفيش عمود صورة منفصل في قاعدة البيانات، ومفيش أيقونة
+// UI بتتستخدم بدل الصورة زي ما التعليمات بتطلب.
+function youtubeThumbnailUrl(videoUrl) {
+  if (!videoUrl) return null;
+  const m = String(videoUrl).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+}
+
+function sumFoodsMacros(foods) {
+  return (foods || []).reduce((acc, f) => {
+    acc.calories += f.calories || 0;
+    acc.protein += f.protein || 0;
+    acc.carbs += f.carbs || 0;
+    acc.fat += f.fat || 0;
+    return acc;
+  }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+}
+
+// تقريب لمنزلة عشرية واحدة وإزالة ".0" الزيادة - عشان جمع أرقام عشرية
+// (زي بروتين 3.6 + 4.2...) ميطلعش بذيل أرقام طويل زي 155.60000000000002.
+function roundMacro(n) {
+  const r = Math.round(n * 10) / 10;
+  return Number.isInteger(r) ? r : r.toFixed(1);
+}
+
+function macroTotalsLine(totals) {
+  return `${roundMacro(totals.calories)} ${t('kcalUnit')} · ${t('proteinLabel')} ${roundMacro(totals.protein)}${t('gramUnit')} · ${t('carbsLabel')} ${roundMacro(totals.carbs)}${t('gramUnit')} · ${t('fatLabel')} ${roundMacro(totals.fat)}${t('gramUnit')}`;
+}
+
+function exerciseThumbHtml(ex) {
+  const thumb = youtubeThumbnailUrl(ex.video_url);
+  return thumb ? `<img class="plan-ex-thumb" src="${escapeHtml(thumb)}" alt="" loading="lazy">` : '';
+}
+
+// جدول تمارين اليوم لسطح المكتب - كل الأعمدة المطلوبة، بيلف أفقيًا لو
+// المساحة مش كفاية بدل ما يكسر التخطيط (نفس بيانات exercise-card في
+// الـ builder، مجرد عرض مختلف للقراءة فقط).
+function exerciseTableDesktopHtml(exercises) {
+  return `
+    <div class="plan-table-wrap plan-table-desktop">
+      <table class="plan-table">
+        <thead><tr>
+          <th>${t('exerciseNumColumnHeader')}</th>
+          <th>${t('exerciseColumnHeader')}</th>
+          <th>${t('setsColumnHeader')}</th>
+          <th>${t('repsColumnHeader')}</th>
+          <th>${t('rirColumnHeader')}</th>
+          <th>${t('rpeColumnHeader')}</th>
+          <th>${t('restColumnHeader')}</th>
+          <th>${t('weightColumnHeader')}</th>
+          <th>${t('tempoColumnHeader')}</th>
+          <th>${t('executionColumnHeader')}</th>
+          <th>${t('setTypeColumnHeader')}</th>
+          <th>${t('notesColumnHeader')}</th>
+          <th>${t('videoColumnHeader')}</th>
+        </tr></thead>
+        <tbody>
+          ${exercises.map((ex, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td class="wrap-cell" style="display:flex; align-items:center; gap:8px;">${exerciseThumbHtml(ex)}<span>${escapeHtml(ex.name)}</span></td>
+              <td>${ex.sets ?? '-'}</td>
+              <td>${escapeHtml(ex.reps) || '-'}</td>
+              <td>${ex.rir ?? '-'}</td>
+              <td>${ex.rpe ?? '-'}</td>
+              <td>${escapeHtml(ex.rest) || '-'}</td>
+              <td>${escapeHtml(ex.weight) || '-'}</td>
+              <td>${escapeHtml(ex.tempo) || '-'}</td>
+              <td>${ex.execution ? (EXECUTION_LABEL_KEYS[ex.execution] ? t(EXECUTION_LABEL_KEYS[ex.execution]) : escapeHtml(ex.execution)) : '-'}</td>
+              <td>${ex.type && ex.type !== 'normal' ? `<span class="ex-type-badge">${t(EXERCISE_TYPE_KEYS[ex.type])}</span>` : '-'}</td>
+              <td class="wrap-cell">${escapeHtml(ex.notes) || '-'}</td>
+              <td>${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener" style="display:inline-flex;">${svgIconPro('play', 15)}</a>` : '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// صف مضغوط للموبايل: تمبنيل + اسم + Sets×Reps + RIR/RPE/Rest، والباقي
+// (وزن/تمبو/طريقة أداء/نوع مجموعة/ملاحظات/فيديو) وراء "التفاصيل" native
+// <details> بدل ما نحشر 13 عمود في شاشة صغيرة.
+function exerciseRowMobileHtml(ex) {
+  const hasMoreDetails = ex.weight || ex.tempo || ex.execution || (ex.type && ex.type !== 'normal') || ex.notes || ex.video_url;
+  return `
+    <div class="plan-mobile-row">
+      ${exerciseThumbHtml(ex)}
+      <div class="plan-mobile-row-main">
+        <div class="exercise-name">${escapeHtml(ex.name)}</div>
+        <div class="plan-mobile-row-stats">${ex.sets ? `${ex.sets} × ${escapeHtml(ex.reps) || '-'}` : (ex.reps ? escapeHtml(ex.reps) : '-')}</div>
+        <div class="plan-mobile-row-stats">${[ex.rir != null ? 'RIR ' + ex.rir : '', ex.rpe ? 'RPE ' + ex.rpe : '', ex.rest ? t('restShortLabel', { rest: escapeHtml(ex.rest) }) : ''].filter(Boolean).join(' • ')}</div>
+        ${hasMoreDetails ? `
+          <details class="plan-mobile-details">
+            <summary>${t('viewDetailsLabel')}</summary>
+            <div class="plan-mobile-details-body">
+              ${ex.weight ? `<div>${t('weightColumnHeader')}: ${escapeHtml(ex.weight)}</div>` : ''}
+              ${ex.tempo ? `<div>${t('tempoColumnHeader')}: ${escapeHtml(ex.tempo)}</div>` : ''}
+              ${ex.execution ? `<div>${t('executionColumnHeader')}: ${EXECUTION_LABEL_KEYS[ex.execution] ? t(EXECUTION_LABEL_KEYS[ex.execution]) : escapeHtml(ex.execution)}</div>` : ''}
+              ${ex.type && ex.type !== 'normal' ? `<div>${t('setTypeColumnHeader')}: ${t(EXERCISE_TYPE_KEYS[ex.type])}</div>` : ''}
+              ${ex.notes ? `<div style="grid-column:1/-1;">${t('notesColumnHeader')}: ${escapeHtml(ex.notes)}</div>` : ''}
+              ${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:4px;">${svgIconPro('play', 14)}${t('videoColumnHeader')}</a>` : ''}
             </div>
-            ${ex.video_url ? `<a class="link" href="${escapeHtml(ex.video_url)}" target="_blank" rel="noopener" style="display:inline-flex;">${svgIconPro('play', 16)}</a>` : ''}
-          </div>
-        `).join('')}
+          </details>
+        ` : ''}
       </div>
-    `).join('') : `<p class="small">${t('noWorkoutPlanYet')}</p>`;
+    </div>
+  `;
+}
+
+function exerciseTableMobileHtml(exercises) {
+  return `<div class="plan-table-mobile">${exercises.map(exerciseRowMobileHtml).join('')}</div>`;
+}
+
+// جدول "نظرة عامة" لأيام الأسبوع (اليوم/التركيز/عدد التمارين/الحالة) -
+// من نفس مصفوفة الأيام بالظبط، من غير أي بيانات جديدة.
+function weekOverviewTableHtml(weekDays) {
+  return `
+    <div class="plan-table-wrap">
+      <table class="plan-table">
+        <thead><tr>
+          <th>${t('dayColumnHeader')}</th>
+          <th>${t('focusColumnHeader')}</th>
+          <th>${t('exercisesColumnHeader')}</th>
+          <th>${t('statusColumnHeader')}</th>
+        </tr></thead>
+        <tbody>
+          ${weekDays.map((day, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td class="wrap-cell">${escapeHtml(day.label) || '-'}</td>
+              <td>${isRestDay(day) ? '—' : day.exercises.length}</td>
+              <td>${isRestDay(day)
+                ? `<span class="day-type-badge rest">${t('dayTypeRest')}</span>`
+                : `<span class="day-type-badge training">${t('dayTypeTraining')}</span>`}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function workoutReadOnlyHtml(wp) {
+  if (!wp.days.length) return `<p class="small">${t('noWorkoutPlanYet')}</p>`;
+  const weeks = chunkDaysIntoWeeks(wp.days, 7);
+  return weeks.map((weekDays, wi) => `
+    <div class="plan-week-block">
+      ${weeks.length > 1 ? `<div class="plan-week-header">${t('weekLabel', { n: wi + 1 })}</div>` : ''}
+      <div class="small" style="font-weight:700; margin-bottom:6px;">${t('weeklyOverviewTitle')}</div>
+      ${weekOverviewTableHtml(weekDays)}
+      ${weekDays.map((day) => isRestDay(day) ? `
+        <div class="plan-day-block">
+          <div class="plan-day-body" style="padding:12px 14px; display:flex; align-items:center; justify-content:space-between;">
+            <b style="font-size:13.5px;">${escapeHtml(day.label)}</b>
+            <span class="day-type-badge rest">${t('dayTypeRest')}</span>
+          </div>
+        </div>
+      ` : `
+        <details class="plan-day-block">
+          <summary>
+            <span>${escapeHtml(day.label)}</span>
+            <span class="day-type-badge training">${t('dayTypeTraining')}</span>
+          </summary>
+          <div class="plan-day-body">
+            ${exerciseTableDesktopHtml(day.exercises)}
+            ${exerciseTableMobileHtml(day.exercises)}
+          </div>
+        </details>
+      `).join('')}
+    </div>
+  `).join('');
 }
 
 function renderWorkoutBody(subscriptionId, isCoach) {
@@ -3455,27 +3627,108 @@ function foodSummaryLine(f) {
   return parts.join(' · ');
 }
 
-function nutritionReadOnlyHtml(np) {
-  const totals = sumMealsMacros(np.meals);
+function dailyTargetsTableHtml(np) {
+  if (!(np.daily_calories || np.protein_target || np.carbs_target || np.fat_target)) return '';
   return `
-      ${np.daily_calories || np.protein_target || np.carbs_target || np.fat_target ? macroSummaryChips(totals, np) : ''}
-      ${np.notes ? `<p style="font-size:13px; line-height:1.8;">${escapeHtml(np.notes)}</p>` : ''}
-      ${np.meals.length ? np.meals.map((m) => `
-        <div class="plan-day">
-          <div class="plan-day-title">${escapeHtml(m.label)}${m.time ? ` <span class="small">· ${escapeHtml(m.time)}</span>` : ''}</div>
-          ${m.description ? `<p class="small">${escapeHtml(m.description)}</p>` : ''}
-          ${(m.foods || []).map((f) => `
-            <div class="exercise-row read">
-              <div>
-                <div class="exercise-name">${escapeHtml(f.name)}</div>
-                <div class="small">${foodSummaryLine(f)}</div>
-                ${f.alternative ? `<div class="small">${t('alternativeLabel')} ${escapeHtml(f.alternative)}</div>` : ''}
-              </div>
-            </div>
+    <div class="small" style="font-weight:700; margin-bottom:6px;">${t('dailyTargetsTitle')}</div>
+    <div class="plan-table-wrap">
+      <table class="plan-table">
+        <thead><tr>
+          <th>${t('caloriesLabel')}</th>
+          <th>${t('proteinLabel')}</th>
+          <th>${t('carbsLabel')}</th>
+          <th>${t('fatLabel')}</th>
+        </tr></thead>
+        <tbody><tr>
+          <td>${np.daily_calories ? `${np.daily_calories} ${t('kcalUnit')}` : '-'}</td>
+          <td>${np.protein_target ? `${np.protein_target}${t('gramUnit')}` : '-'}</td>
+          <td>${np.carbs_target ? `${np.carbs_target}${t('gramUnit')}` : '-'}</td>
+          <td>${np.fat_target ? `${np.fat_target}${t('gramUnit')}` : '-'}</td>
+        </tr></tbody>
+      </table>
+    </div>
+  `;
+}
+
+function mealFoodTableDesktopHtml(foods) {
+  return `
+    <div class="plan-table-wrap plan-table-desktop">
+      <table class="plan-table">
+        <thead><tr>
+          <th>${t('foodColumnHeader')}</th>
+          <th>${t('quantityColumnHeader')}</th>
+          <th>${t('caloriesLabel')}</th>
+          <th>${t('proteinLabel')}</th>
+          <th>${t('carbsLabel')}</th>
+          <th>${t('fatLabel')}</th>
+        </tr></thead>
+        <tbody>
+          ${foods.map((f) => `
+            <tr>
+              <td class="wrap-cell">${escapeHtml(f.name)}${f.alternative ? `<div class="small">${t('alternativeLabel')} ${escapeHtml(f.alternative)}</div>` : ''}</td>
+              <td>${escapeHtml(f.quantity) || '-'}</td>
+              <td>${f.calories ?? '-'}</td>
+              <td>${f.protein ?? '-'}</td>
+              <td>${f.carbs ?? '-'}</td>
+              <td>${f.fat ?? '-'}</td>
+            </tr>
           `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function mealFoodTableMobileHtml(foods) {
+  return `
+    <div class="plan-table-mobile">
+      ${foods.map((f) => `
+        <div class="plan-mobile-row">
+          <div class="plan-mobile-row-main">
+            <div class="exercise-name">${escapeHtml(f.name)}</div>
+            <div class="plan-mobile-row-stats">${[escapeHtml(f.quantity), f.calories ? f.calories + ' ' + t('kcalUnit') : ''].filter(Boolean).join(' • ')}</div>
+            ${f.alternative ? `<div class="plan-mobile-row-stats">${t('alternativeLabel')} ${escapeHtml(f.alternative)}</div>` : ''}
+            <details class="plan-mobile-details">
+              <summary>${t('viewDetailsLabel')}</summary>
+              <div class="plan-mobile-details-body">
+                <div>${t('proteinLabel')}: ${f.protein ?? '-'}${t('gramUnit')}</div>
+                <div>${t('carbsLabel')}: ${f.carbs ?? '-'}${t('gramUnit')}</div>
+                <div>${t('fatLabel')}: ${f.fat ?? '-'}${t('gramUnit')}</div>
+              </div>
+            </details>
+          </div>
         </div>
-      `).join('') : `<p class="small">${t('noNutritionPlanYet')}</p>`}
-    `;
+      `).join('')}
+    </div>
+  `;
+}
+
+function nutritionReadOnlyHtml(np) {
+  if (!np.meals.length) return `<p class="small">${t('noNutritionPlanYet')}</p>`;
+  const dailyTotals = sumMealsMacros(np.meals);
+  return `
+    ${dailyTargetsTableHtml(np)}
+    ${np.notes ? `<p style="font-size:13px; line-height:1.8;">${escapeHtml(np.notes)}</p>` : ''}
+    ${np.meals.map((m) => {
+      const foods = m.foods || [];
+      const mealTotals = sumFoodsMacros(foods);
+      return `
+        <div class="plan-day-block" style="border:1px solid var(--line); border-radius:12px; margin-bottom:10px; padding:12px 14px;">
+          <div class="plan-day-title" style="font-weight:800; font-size:13.5px; margin-bottom:2px;">${escapeHtml(m.label)}${m.time ? ` <span class="small">· ${escapeHtml(m.time)}</span>` : ''}</div>
+          ${m.description ? `<p class="small" style="margin:2px 0 8px;">${escapeHtml(m.description)}</p>` : ''}
+          ${foods.length ? `
+            ${mealFoodTableDesktopHtml(foods)}
+            ${mealFoodTableMobileHtml(foods)}
+            <div class="meal-subtotal-row"><span>${t('mealSubtotalLabel')}</span><span>${macroTotalsLine(mealTotals)}</span></div>
+          ` : ''}
+        </div>
+      `;
+    }).join('')}
+    <div class="daily-total-block">
+      <span class="daily-total-label">${t('dailyTotalLabel')}</span>
+      <span class="daily-total-value">${macroTotalsLine(dailyTotals)}</span>
+    </div>
+  `;
 }
 
 function renderNutritionBody(subscriptionId, isCoach) {
