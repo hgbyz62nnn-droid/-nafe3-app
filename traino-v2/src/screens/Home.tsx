@@ -3,6 +3,9 @@ import { BottomNav } from '../components/ui/BottomNav';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
+import { useProfile } from '../domain/state/ProfileContext';
+import { generateTodayWorkout } from '../domain/engine/planEngine';
+import { SPORTS } from '../domain/sports/sports';
 
 function ProgressRing({ percent, color }: { percent: number; color: string }) {
   const r = 15;
@@ -38,6 +41,10 @@ function StatTile({ children, label }: { children: React.ReactNode; label: strin
 }
 
 export default function Home() {
+  const { profile } = useProfile();
+  const workout = generateTodayWorkout(profile, 0);
+  const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
+
   return (
     <Screen>
       <StatusBar />
@@ -95,20 +102,27 @@ export default function Home() {
             <div className="absolute inset-x-0 bottom-0 top-0 bg-gradient-to-t from-card via-transparent to-transparent" />
             <div className="absolute left-4 top-4 right-4">
               <p className="text-text-secondary text-[11px] font-bold tracking-wider uppercase">
-                Football Performance
+                {sportName} Performance
               </p>
               <p className="text-white text-[26px] font-extrabold leading-[1.15] mt-1">
-                Speed +<br />Lower Body
+                {workout.name.includes(' + ') ? (
+                  <>
+                    {workout.name.split(' + ')[0]} +<br />
+                    {workout.name.split(' + ').slice(1).join(' + ')}
+                  </>
+                ) : (
+                  workout.name
+                )}
               </p>
               <div className="flex items-center gap-3 mt-3 text-white text-[13px] font-medium">
                 <span className="flex items-center gap-1.5">
                   <Icon name="clock" size={15} />
-                  45 min
+                  {workout.durationMin} min
                 </span>
                 <span className="text-border">|</span>
                 <span className="flex items-center gap-1.5">
                   <Icon name="target" size={15} />
-                  Medium
+                  {workout.intensity}
                 </span>
               </div>
             </div>

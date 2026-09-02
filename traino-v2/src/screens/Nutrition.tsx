@@ -4,12 +4,7 @@ import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { BottomNav } from '../components/ui/BottomNav';
-
-const MACROS = [
-  { label: 'Protein', value: 168, total: 175, unit: 'g', color: '#3DDC84' },
-  { label: 'Carbs', value: 280, total: 300, unit: 'g', color: '#3B82F6' },
-  { label: 'Fat', value: 61, total: 65, unit: 'g', color: '#F5A623' },
-];
+import { useProfile } from '../domain/state/ProfileContext';
 
 const MEALS = [
   { name: 'Breakfast', desc: 'Oatmeal, Banana, Whey Protein', kcal: 620, logged: true },
@@ -69,6 +64,36 @@ function CalorieRing({ value, total }: { value: number; total: number }) {
 }
 
 export default function Nutrition() {
+  const { profile } = useProfile();
+  const targets = profile.nutrition;
+
+  const loggedKcal = MEALS.filter((m) => m.logged).reduce((sum, m) => sum + m.kcal, 0);
+  const consumedRatio = Math.min(loggedKcal / targets.calories, 1);
+
+  const MACROS = [
+    {
+      label: 'Protein',
+      value: Math.round(targets.proteinG * consumedRatio),
+      total: targets.proteinG,
+      unit: 'g',
+      color: '#3DDC84',
+    },
+    {
+      label: 'Carbs',
+      value: Math.round(targets.carbsG * consumedRatio),
+      total: targets.carbsG,
+      unit: 'g',
+      color: '#3B82F6',
+    },
+    {
+      label: 'Fat',
+      value: Math.round(targets.fatG * consumedRatio),
+      total: targets.fatG,
+      unit: 'g',
+      color: '#F5A623',
+    },
+  ];
+
   return (
     <Screen>
       <StatusBar />
@@ -86,7 +111,7 @@ export default function Nutrition() {
       <p className="text-text-secondary text-[13px] px-4 mt-3">Today, 18 May</p>
 
       <div className="flex items-center gap-4 px-4 mt-3">
-        <CalorieRing value={2340} total={2500} />
+        <CalorieRing value={loggedKcal} total={targets.calories} />
         <div className="flex-1 flex flex-col gap-3.5">
           {MACROS.map((m) => (
             <div key={m.label}>

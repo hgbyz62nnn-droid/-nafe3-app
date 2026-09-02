@@ -1,0 +1,130 @@
+import type { SportId } from '../sports/sports';
+import type { IconName } from '../../components/ui/Icon';
+
+/**
+ * TRAINO Deterministic Coaching Engine — shared types.
+ *
+ * Everything under domain/engine and domain/sports is a pure, static
+ * rule/data system: level, plan, and coaching-response computation is
+ * table lookups and arithmetic over pre-authored data, not a call to a
+ * live LLM/AI API. This file has no side effects and no I/O.
+ */
+
+export type FitnessLevel = 'beginner' | 'intermediate' | 'advanced';
+
+export type Goal = 'performance' | 'fat_loss' | 'muscle_gain' | 'general_fitness' | 'recovery';
+
+export type Sex = 'male' | 'female';
+
+export interface AssessmentAnswers {
+  sport: SportId;
+  goal: Goal;
+  /** Years of consistent training/playing experience in this sport. */
+  experienceYears: number;
+  /** Sessions per week the athlete currently trains. */
+  currentTrainingFrequency: number;
+  /** Sessions per week the athlete wants/can commit to going forward. */
+  daysAvailablePerWeek: number;
+  trainingLocationIds: string[];
+  equipmentIds: string[];
+  injuryIds: string[];
+  sex: Sex;
+  age: number;
+  heightCm: number;
+  weightKg: number;
+}
+
+export interface UserProfile {
+  answers: AssessmentAnswers;
+  level: FitnessLevel;
+  nutrition: NutritionTargets;
+}
+
+export interface NutritionTargets {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+}
+
+export type ExerciseCategory = 'warmup' | 'strength' | 'power' | 'conditioning' | 'cooldown';
+
+export interface ExerciseSlot {
+  name: string;
+  sets: number;
+  /** e.g. "6", "8-10", "20 sec", "6 / leg" */
+  reps: string;
+  restSec?: number;
+  /** Equipment ids that satisfy this slot; empty array = bodyweight/no equipment needed. */
+  equipment: string[];
+  /** Substitute exercise used when none of `equipment` is available. Always bodyweight-only. */
+  bodyweightAlternative?: { name: string; reps: string };
+  category: ExerciseCategory;
+}
+
+export interface WorkoutDayTemplate {
+  id: string;
+  name: string;
+  focus: string;
+  intensity: 'Low' | 'Medium' | 'High';
+  durationMin: number;
+  exercises: ExerciseSlot[];
+}
+
+/** One ordered weekly cycle of day templates per fitness level. */
+export type SportTrainingProgram = Record<FitnessLevel, WorkoutDayTemplate[]>;
+
+export interface SportModuleData {
+  id: SportId;
+  program: SportTrainingProgram;
+  /** Nutrition macro emphasis multiplier applied on top of the generic calculator. */
+  nutritionProfile: {
+    proteinGPerKg: number;
+    carbBias: 'low' | 'moderate' | 'high';
+  };
+}
+
+/** The fixed set of quick-reply intents the AI Coach screen offers — a closed, enumerable list. */
+export type AiCoachIntent =
+  | 'feeling_tired'
+  | 'adjust_todays_workout'
+  | 'have_pain'
+  | 'traveling'
+  | 'replace_exercise'
+  | 'missed_workout'
+  | 'ask_about_nutrition';
+
+export interface AiCoachAdjustment {
+  /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */
+  volumeMultiplier?: number;
+  swapToBodyweight?: boolean;
+  skipHighImpact?: boolean;
+  note: string;
+}
+
+export interface AiCoachReply {
+  message: string;
+  adjustment?: AiCoachAdjustment;
+  adjustmentSummary?: string[];
+  ctaLabel?: string;
+}
+
+export interface PerformanceStat {
+  label: string;
+  icon: IconName;
+  color: string;
+  changePct: number;
+  trend: number[];
+}
+
+export interface WeeklyReportData {
+  headline: string;
+  subtext: string;
+  workoutsCompleted: number;
+  workoutsPlanned: number;
+  nutritionAdherencePct: number;
+  recoveryLabel: string;
+  recoveryAveragePct: number;
+  weightDeltaKg: number;
+  coachFeedback: string;
+}

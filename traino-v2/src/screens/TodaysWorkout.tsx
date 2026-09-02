@@ -3,25 +3,13 @@ import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
-
-interface WorkoutExercise {
-  n: number;
-  title: string;
-  meta: string;
-  rest?: string;
-  hasImage: boolean;
-}
-
-const EXERCISES: WorkoutExercise[] = [
-  { n: 1, title: 'Warm Up', meta: '8 min', hasImage: false },
-  { n: 2, title: 'Back Squat', meta: '4 x 6', hasImage: true },
-  { n: 3, title: 'Romanian Deadlift', meta: '3 x 8', rest: '90 sec', hasImage: true },
-  { n: 4, title: 'Bulgarian Split Squat', meta: '3 x 8 / leg', rest: '90 sec', hasImage: true },
-  { n: 5, title: 'Leg Press', meta: '3 x 10', rest: '90 sec', hasImage: true },
-  { n: 6, title: 'Sprint Intervals', meta: '6 x 20 sec', rest: '60 sec', hasImage: true },
-];
+import { useProfile } from '../domain/state/ProfileContext';
+import { generateTodayWorkout } from '../domain/engine/planEngine';
 
 export default function TodaysWorkout() {
+  const { profile } = useProfile();
+  const workout = generateTodayWorkout(profile, 0);
+
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
@@ -38,48 +26,54 @@ export default function TodaysWorkout() {
 
       <div className="px-4 mt-4">
         <div className="bg-card rounded-card border border-border-soft p-4">
-          <h2 className="text-white text-[20px] font-extrabold">Speed + Lower Body</h2>
+          <h2 className="text-white text-[20px] font-extrabold">{workout.name}</h2>
           <div className="flex items-center gap-4 mt-2">
             <span className="flex items-center gap-1.5 text-text-secondary text-[12.5px]">
               <Icon name="clock" size={14} className="text-text-secondary" />
-              45 min
+              {workout.durationMin} min
             </span>
             <span className="flex items-center gap-1.5 text-text-secondary text-[12.5px]">
               <Icon name="target" size={14} className="text-text-secondary" />
-              Medium
+              {workout.intensity}
             </span>
           </div>
         </div>
 
         <div className="mt-2">
-          {EXERCISES.map((ex, i) => (
-            <div
-              key={ex.n}
-              className={`flex items-center gap-3 py-4 ${
-                i < EXERCISES.length - 1 ? 'border-b border-border-soft' : ''
-              }`}
-            >
-              <span className="text-text-muted text-[14px] font-bold w-4 shrink-0">{ex.n}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-[14.5px] font-bold truncate">{ex.title}</p>
-                <p className="flex items-center gap-1.5 text-text-secondary text-[12.5px] mt-0.5">
-                  {ex.meta}
-                  {ex.rest && (
-                    <span className="flex items-center gap-1 text-text-muted">
-                      <Icon name="clock" size={11} className="text-text-muted" />
-                      {ex.rest}
-                    </span>
-                  )}
-                </p>
+          {workout.exercises.map((ex, i) => {
+            const isTimedBlock = ex.category === 'warmup' || ex.category === 'cooldown';
+            const meta = isTimedBlock ? ex.reps : `${ex.sets} x ${ex.reps}`;
+            const hasImage = !isTimedBlock;
+
+            return (
+              <div
+                key={`${ex.name}-${i}`}
+                className={`flex items-center gap-3 py-4 ${
+                  i < workout.exercises.length - 1 ? 'border-b border-border-soft' : ''
+                }`}
+              >
+                <span className="text-text-muted text-[14px] font-bold w-4 shrink-0">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-[14.5px] font-bold truncate">{ex.name}</p>
+                  <p className="flex items-center gap-1.5 text-text-secondary text-[12.5px] mt-0.5">
+                    {meta}
+                    {ex.restSec && (
+                      <span className="flex items-center gap-1 text-text-muted">
+                        <Icon name="clock" size={11} className="text-text-muted" />
+                        {ex.restSec} sec
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {hasImage && (
+                  <AssetSlot className="w-14 h-11 rounded-lg shrink-0" fit="cover" compact />
+                )}
+                <span className="w-8 h-8 min-w-[32px] rounded-full bg-red flex items-center justify-center shrink-0">
+                  <Icon name="checkPlain" size={14} className="text-white" strokeWidth={2.8} />
+                </span>
               </div>
-              {ex.hasImage && (
-                <AssetSlot className="w-14 h-11 rounded-lg shrink-0" fit="cover" compact />
-              )}
-              <span className="w-8 h-8 min-w-[32px] rounded-full bg-red flex items-center justify-center shrink-0">
-                <Icon name="checkPlain" size={14} className="text-white" strokeWidth={2.8} />
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
