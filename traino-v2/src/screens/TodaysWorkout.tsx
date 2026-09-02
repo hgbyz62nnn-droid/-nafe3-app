@@ -5,12 +5,15 @@ import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLogs } from '../domain/state/LogContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
 
 export default function TodaysWorkout() {
   const { profile, activeAdjustment, setActiveAdjustment } = useProfile();
+  const { today, getDayLog, setWorkoutCompleted } = useLogs();
   const [swaps, setSwaps] = useState<Record<number, number>>({});
+  const completed = getDayLog(today).workoutCompleted;
 
   const workout = activeAdjustment
     ? applyCoachAdjustment(profile, 0, activeAdjustment)
@@ -117,8 +120,20 @@ export default function TodaysWorkout() {
       </div>
 
       <div className="px-4 mt-4">
-        <button className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button">
-          START WORKOUT
+        <button
+          onClick={() => setWorkoutCompleted(today, !completed)}
+          className={`w-full rounded-button py-4 font-extrabold text-[15px] tracking-wide shadow-button flex items-center justify-center gap-2 ${
+            completed ? 'bg-success text-bg' : 'bg-red text-white'
+          }`}
+        >
+          {completed ? (
+            <>
+              <Icon name="checkPlain" size={15} strokeWidth={2.8} />
+              WORKOUT COMPLETED
+            </>
+          ) : (
+            'START WORKOUT'
+          )}
         </button>
       </div>
     </Screen>

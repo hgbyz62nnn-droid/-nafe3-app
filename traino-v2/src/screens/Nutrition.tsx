@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
@@ -6,6 +5,7 @@ import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { BottomNav } from '../components/ui/BottomNav';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLogs } from '../domain/state/LogContext';
 import { generateMealPlan, getMealAlternative } from '../domain/engine/nutritionPlanEngine';
 import { MEAL_LIBRARY } from '../domain/nutrition/meals';
 import type { MealSlot } from '../domain/engine/types';
@@ -69,32 +69,26 @@ function CalorieRing({ value, total }: { value: number; total: number }) {
 export default function Nutrition() {
   const { answers, profile } = useProfile();
   const targets = profile.nutrition;
-
-  const [mealOverrides, setMealOverrides] = useState<Partial<Record<MealSlot, string>>>({});
-  const [loggedSlots, setLoggedSlots] = useState<Set<MealSlot>>(new Set());
+  const { today, getDayLog, toggleMealLogged, setMealOverride } = useLogs();
+  const dayLog = getDayLog(today);
 
   const plan = generateMealPlan(answers, targets).map((entry) => {
-    const overrideId = mealOverrides[entry.slot];
+    const overrideId = dayLog.mealOverrides[entry.slot];
     const meal = overrideId ? (MEAL_LIBRARY.find((m) => m.id === overrideId) ?? entry.meal) : entry.meal;
     return { slot: entry.slot, meal };
   });
 
   function toggleLogged(slot: MealSlot) {
-    setLoggedSlots((prev) => {
-      const next = new Set(prev);
-      if (next.has(slot)) next.delete(slot);
-      else next.add(slot);
-      return next;
-    });
+    toggleMealLogged(today, slot);
   }
 
   function swapMeal(slot: MealSlot, currentMealId: string) {
     const next = getMealAlternative(slot, currentMealId, answers);
-    setMealOverrides((prev) => ({ ...prev, [slot]: next.id }));
+    setMealOverride(today, slot, next.id);
   }
 
   const loggedKcal = plan
-    .filter((entry) => loggedSlots.has(entry.slot))
+    .filter((entry) => dayLog.loggedMealSlots.includes(entry.slot))
     .reduce((sum, entry) => sum + entry.meal.kcal, 0);
   const consumedRatio = targets.calories > 0 ? Math.min(loggedKcal / targets.calories, 1) : 0;
 
@@ -163,7 +157,7 @@ export default function Nutrition() {
 
       <div className="px-4 mt-2 flex flex-col gap-2.5">
         {plan.map(({ slot, meal }) => {
-          const logged = loggedSlots.has(slot);
+          const logged = dayLog.loggedMealSlots.includes(slot);
           return (
             <div
               key={slot}

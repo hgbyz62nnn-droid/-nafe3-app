@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ProfileProvider } from './domain/state/ProfileContext';
+import { LogProvider } from './domain/state/LogContext';
 import Home from './screens/Home';
 import AssessmentAbout from './screens/AssessmentAbout';
 import SportSelection from './screens/SportSelection';
@@ -20,26 +21,28 @@ import Profile from './screens/Profile';
 export default function App() {
   return (
     <ProfileProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/onboarding/about" element={<AssessmentAbout />} />
-          <Route path="/sport-selection" element={<SportSelection />} />
-          <Route path="/assessment" element={<AssessmentTrainingLocation />} />
-          <Route path="/equipment" element={<Equipment />} />
-          <Route path="/assessment/experience" element={<AssessmentExperience />} />
-          <Route path="/assessment/health" element={<AssessmentHealth />} />
-          <Route path="/assessment/body" element={<AssessmentBody />} />
-          <Route path="/assessment/nutrition-preferences" element={<AssessmentNutritionPreferences />} />
-          <Route path="/ai-coach" element={<AiCoach />} />
-          <Route path="/todays-workout" element={<TodaysWorkout />} />
-          <Route path="/nutrition" element={<Nutrition />} />
-          <Route path="/progress" element={<Progress />} />
-          <Route path="/weekly-report" element={<WeeklyReport />} />
-          <Route path="/human-coach" element={<HumanCoach />} />
-          <Route path="/profile" element={<Profile />} />
-        </Routes>
-      </BrowserRouter>
+      <LogProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/onboarding/about" element={<AssessmentAbout />} />
+            <Route path="/sport-selection" element={<SportSelection />} />
+            <Route path="/assessment" element={<AssessmentTrainingLocation />} />
+            <Route path="/equipment" element={<Equipment />} />
+            <Route path="/assessment/experience" element={<AssessmentExperience />} />
+            <Route path="/assessment/health" element={<AssessmentHealth />} />
+            <Route path="/assessment/body" element={<AssessmentBody />} />
+            <Route path="/assessment/nutrition-preferences" element={<AssessmentNutritionPreferences />} />
+            <Route path="/ai-coach" element={<AiCoach />} />
+            <Route path="/todays-workout" element={<TodaysWorkout />} />
+            <Route path="/nutrition" element={<Nutrition />} />
+            <Route path="/progress" element={<Progress />} />
+            <Route path="/weekly-report" element={<WeeklyReport />} />
+            <Route path="/human-coach" element={<HumanCoach />} />
+            <Route path="/profile" element={<Profile />} />
+          </Routes>
+        </BrowserRouter>
+      </LogProvider>
     </ProfileProvider>
   );
 }
