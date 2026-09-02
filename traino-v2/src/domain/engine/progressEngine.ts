@@ -1,4 +1,7 @@
 import type { DayLog } from '../state/LogContext';
+import type { PerformanceCategory } from './types';
+
+export type { PerformanceCategory };
 
 /**
  * Derives Progress-screen stats from real logged history (LogContext) —
@@ -6,18 +9,19 @@ import type { DayLog } from '../state/LogContext';
  * honestly flat/zero rather than pretending to have data.
  */
 
-export type PerformanceCategory = 'speed' | 'strength' | 'stamina';
-
-/** Buckets a completed workout's name into one of the three Progress
- * categories by keyword — football's day-template names all match one
- * of these; anything else (e.g. the generic "Full Body A/B/C" fallback
- * program) defaults to 'strength' since full-body sessions are
- * strength-dominant. */
-export function deriveStatCategory(workoutName: string): PerformanceCategory {
+/** Legacy fallback only: logs written before `WorkoutDayTemplate.statCategory`
+ * existed have no stored category, so guess one from the workout's name.
+ * Every current sport module sets `statCategory` explicitly and should never
+ * need this. */
+function deriveStatCategoryFromName(workoutName: string): PerformanceCategory {
   const name = workoutName.toLowerCase();
   if (name.includes('speed') || name.includes('sprint')) return 'speed';
   if (name.includes('agility') || name.includes('conditioning')) return 'stamina';
   return 'strength';
+}
+
+function categoryForDay(day: DayLog): PerformanceCategory {
+  return day.statCategory ?? deriveStatCategoryFromName(day.workoutName ?? '');
 }
 
 function isoWeekKey(dateStr: string): string {
@@ -38,8 +42,8 @@ export interface PerformanceStatResult {
 export function computePerformanceStats(recentLogs: DayLog[]): Record<PerformanceCategory, PerformanceStatResult> {
   const completedByCategory: Record<PerformanceCategory, DayLog[]> = { speed: [], strength: [], stamina: [] };
   for (const day of recentLogs) {
-    if (day.workoutCompleted && day.workoutName) {
-      completedByCategory[deriveStatCategory(day.workoutName)].push(day);
+    if (day.workoutCompleted && (day.statCategory || day.workoutName)) {
+      completedByCategory[categoryForDay(day)].push(day);
     }
   }
 

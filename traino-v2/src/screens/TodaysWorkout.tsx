@@ -121,7 +121,7 @@ export default function TodaysWorkout() {
 
       <div className="px-4 mt-4">
         <button
-          onClick={() => setWorkoutCompleted(today, !completed, workout.name)}
+          onClick={() => setWorkoutCompleted(today, !completed, workout.name, workout.statCategory)}
           className={`w-full rounded-button py-4 font-extrabold text-[15px] tracking-wide shadow-button flex items-center justify-center gap-2 ${
             completed ? 'bg-success text-bg' : 'bg-red text-white'
           }`}

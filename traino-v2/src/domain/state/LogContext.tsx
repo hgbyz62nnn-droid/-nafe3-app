@@ -1,15 +1,18 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import type { MealSlot } from '../engine/types';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import type { MealSlot, PerformanceCategory } from '../engine/types';
 
 const STORAGE_KEY = 'traino.logs.v1';
 
 export interface DayLog {
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD, local calendar date
   loggedMealSlots: MealSlot[];
   mealOverrides: Partial<Record<MealSlot, string>>;
   workoutCompleted: boolean;
-  /** The completed workout's name (e.g. "Speed + Lower Body") — lets Progress bucket real history by focus. */
+  /** The completed workout's name (e.g. "Speed + Lower Body") — kept for display/debugging. */
   workoutName?: string;
+  /** The completed workout's stat bucket, read straight off its WorkoutDayTemplate — this is
+   * what Progress actually buckets by, not a guess from `workoutName`. */
+  statCategory?: PerformanceCategory;
   weightKg?: number;
 }
 
@@ -17,8 +20,13 @@ function emptyDayLog(date: string): DayLog {
   return { date, loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false };
 }
 
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Local calendar date (not UTC) — a workout logged at 11pm should count for
+ * the athlete's local "today", not flip to tomorrow for negative-UTC-offset users. */
+function localDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 type LogsByDate = Record<string, DayLog>;
@@ -38,7 +46,7 @@ interface LogContextValue {
   getDayLog: (date: string) => DayLog;
   toggleMealLogged: (date: string, slot: MealSlot) => void;
   setMealOverride: (date: string, slot: MealSlot, mealId: string) => void;
-  setWorkoutCompleted: (date: string, completed: boolean, workoutName?: string) => void;
+  setWorkoutCompleted: (date: string, completed: boolean, workoutName?: string, statCategory?: PerformanceCategory) => void;
   logWeight: (date: string, weightKg: number) => void;
   /** Most recent `days` day-logs, oldest first, including empty days with no activity. */
   getRecentLogs: (days: number) => DayLog[];
@@ -48,24 +56,23 @@ const LogContext = createContext<LogContextValue | null>(null);
 
 export function LogProvider({ children }: { children: ReactNode }) {
   const [logs, setLogs] = useState<LogsByDate>(loadLogs);
-  const today = todayKey();
+  const today = localDateKey(new Date());
 
-  function persist(next: LogsByDate) {
-    setLogs(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // localStorage unavailable — state still updates for this session.
-    }
+  function updateDay(date: string, updater: (day: DayLog) => DayLog) {
+    setLogs((prev) => {
+      const current = prev[date] ?? emptyDayLog(date);
+      const next = { ...prev, [date]: updater(current) };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // localStorage unavailable — state still updates for this session.
+      }
+      return next;
+    });
   }
 
   function getDayLog(date: string): DayLog {
     return logs[date] ?? emptyDayLog(date);
-  }
-
-  function updateDay(date: string, updater: (day: DayLog) => DayLog) {
-    const current = getDayLog(date);
-    persist({ ...logs, [date]: updater(current) });
   }
 
   function toggleMealLogged(date: string, slot: MealSlot) {
@@ -82,11 +89,17 @@ export function LogProvider({ children }: { children: ReactNode }) {
     updateDay(date, (day) => ({ ...day, mealOverrides: { ...day.mealOverrides, [slot]: mealId } }));
   }
 
-  function setWorkoutCompleted(date: string, completed: boolean, workoutName?: string) {
+  function setWorkoutCompleted(
+    date: string,
+    completed: boolean,
+    workoutName?: string,
+    statCategory?: PerformanceCategory
+  ) {
     updateDay(date, (day) => ({
       ...day,
       workoutCompleted: completed,
       workoutName: completed ? (workoutName ?? day.workoutName) : day.workoutName,
+      statCategory: completed ? (statCategory ?? day.statCategory) : day.statCategory,
     }));
   }
 
@@ -100,22 +113,24 @@ export function LogProvider({ children }: { children: ReactNode }) {
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(cursor);
       d.setDate(cursor.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      result.push(getDayLog(key));
+      result.push(getDayLog(localDateKey(d)));
     }
     return result;
   }
 
-  const value: LogContextValue = {
-    logs,
-    today,
-    getDayLog,
-    toggleMealLogged,
-    setMealOverride,
-    setWorkoutCompleted,
-    logWeight,
-    getRecentLogs,
-  };
+  const value = useMemo<LogContextValue>(
+    () => ({
+      logs,
+      today,
+      getDayLog,
+      toggleMealLogged,
+      setMealOverride,
+      setWorkoutCompleted,
+      logWeight,
+      getRecentLogs,
+    }),
+    [logs, today]
+  );
 
   return <LogContext.Provider value={value}>{children}</LogContext.Provider>;
 }

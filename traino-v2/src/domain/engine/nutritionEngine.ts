@@ -28,12 +28,16 @@ const GOAL_CALORIE_FACTOR: Record<Goal, number> = {
   recovery: 0.97,
 };
 
+/** Floor under which a calorie target is not a safe recommendation regardless of the formula's output. */
+const MIN_SAFE_CALORIES = 1200;
+
 export function calculateNutritionTargets(
   answers: AssessmentAnswers,
   sportProfile: SportModuleData['nutritionProfile']
 ): NutritionTargets {
   const tdee = bmr(answers) * activityMultiplier(answers.daysAvailablePerWeek);
-  const calories = Math.round(tdee * GOAL_CALORIE_FACTOR[answers.goal]);
+  const goalFactor = GOAL_CALORIE_FACTOR[answers.goal] ?? 1.0;
+  const calories = Math.max(Math.round(tdee * goalFactor), MIN_SAFE_CALORIES);
 
   const proteinG = Math.round(answers.weightKg * sportProfile.proteinGPerKg);
   const proteinKcal = proteinG * 4;

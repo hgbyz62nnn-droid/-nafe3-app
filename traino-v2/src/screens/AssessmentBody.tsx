@@ -2,7 +2,6 @@ import { useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { OnboardingHeader } from '../components/ui/OnboardingHeader';
-import { Icon } from '../components/ui/Icon';
 import { useProfile } from '../domain/state/ProfileContext';
 import type { Sex } from '../domain/engine/types';
 

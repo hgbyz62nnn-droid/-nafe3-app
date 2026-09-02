@@ -84,12 +84,12 @@ export default function Nutrition() {
 
   function swapMeal(slot: MealSlot, currentMealId: string) {
     const next = getMealAlternative(slot, currentMealId, answers);
-    setMealOverride(today, slot, next.id);
+    if (next) setMealOverride(today, slot, next.id);
   }
 
   const loggedKcal = plan
-    .filter((entry) => dayLog.loggedMealSlots.includes(entry.slot))
-    .reduce((sum, entry) => sum + entry.meal.kcal, 0);
+    .filter((entry) => entry.meal && dayLog.loggedMealSlots.includes(entry.slot))
+    .reduce((sum, entry) => sum + (entry.meal?.kcal ?? 0), 0);
   const consumedRatio = targets.calories > 0 ? Math.min(loggedKcal / targets.calories, 1) : 0;
 
   const MACROS = [
@@ -130,7 +130,9 @@ export default function Nutrition() {
         <Icon name="calendar" size={19} className="text-white shrink-0" />
       </div>
 
-      <p className="text-text-secondary text-[13px] px-4 mt-3">Today, 18 May</p>
+      <p className="text-text-secondary text-[13px] px-4 mt-3">
+        Today, {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}
+      </p>
 
       <div className="flex items-center gap-4 px-4 mt-3">
         <CalorieRing value={loggedKcal} total={targets.calories} />
@@ -145,7 +147,7 @@ export default function Nutrition() {
               <div className="h-1.5 rounded-full bg-border-soft mt-1.5 overflow-hidden">
                 <div
                   className="h-full rounded-full"
-                  style={{ width: `${(m.value / m.total) * 100}%`, backgroundColor: m.color }}
+                  style={{ width: `${m.total > 0 ? (m.value / m.total) * 100 : 0}%`, backgroundColor: m.color }}
                 />
               </div>
             </div>
@@ -158,6 +160,23 @@ export default function Nutrition() {
       <div className="px-4 mt-2 flex flex-col gap-2.5">
         {plan.map(({ slot, meal }) => {
           const logged = dayLog.loggedMealSlots.includes(slot);
+
+          if (!meal) {
+            return (
+              <div
+                key={slot}
+                className="flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-2.5 py-2.5"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-[13.5px] font-bold">{SLOT_LABEL[slot]}</p>
+                  <p className="text-text-muted text-[11.5px] mt-0.5">
+                    No meal matches your preferences for this slot
+                  </p>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={slot}

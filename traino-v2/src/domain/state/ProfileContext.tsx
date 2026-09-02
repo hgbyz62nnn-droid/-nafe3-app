@@ -7,13 +7,16 @@ import { getSportModule } from '../sports/registry';
 const STORAGE_KEY = 'traino.assessment.v2';
 
 /**
- * Neutral bootstrapping state only — NOT a fake/demo athlete. Every field
- * here is "unanswered" (empty/zero) except the two that need *some* valid
- * enum value to keep the app rendering before onboarding: `sport` (so a
- * program can resolve) and `sex` (so nutrition math doesn't branch on
- * undefined). The assessment flow overwrites all of this with the real
- * user's answers; `hasCompletedAssessment` tracks whether that has
- * happened yet.
+ * Neutral bootstrapping state only — NOT a fake/demo athlete. `firstName`
+ * and every preference/history field are genuinely unanswered (empty/
+ * zero). The three body-stat fields (age/height/weight) are the one
+ * exception: they can't be zero without breaking the nutrition formula
+ * (BMR is linear in all three, so a zero — or a negative value for a
+ * `sex: 'female'` default — produces NaN or negative calorie targets
+ * before onboarding even renders). They hold small neutral placeholder
+ * values purely so pre-assessment screens don't show broken math; the
+ * assessment flow overwrites them with the athlete's real numbers, per
+ * `hasCompletedAssessment`.
  */
 const DEFAULT_ANSWERS: AssessmentAnswers = {
   firstName: '',
@@ -24,11 +27,11 @@ const DEFAULT_ANSWERS: AssessmentAnswers = {
   daysAvailablePerWeek: 0,
   trainingLocationIds: [],
   equipmentIds: [],
-  injuryIds: [],
+  injuryIds: ['none'],
   sex: 'male',
-  age: 0,
-  heightCm: 0,
-  weightKg: 0,
+  age: 25,
+  heightCm: 170,
+  weightKg: 70,
   dietaryPreference: 'no_restriction',
   allergyIds: [],
   budgetTier: 'medium',

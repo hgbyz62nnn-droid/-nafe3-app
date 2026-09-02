@@ -1,5 +1,4 @@
 import type { SportId } from '../sports/sports';
-import type { IconName } from '../../components/ui/Icon';
 
 /**
  * TRAINO Deterministic Coaching Engine — shared types.
@@ -78,12 +77,18 @@ export interface ExerciseSlot {
   highImpact?: boolean;
 }
 
+/** The 3 buckets the Progress screen reports on. A required field on every
+ * day template (not guessed from the workout's name) so that a new sport
+ * module is correctly bucketed without touching progressEngine.ts. */
+export type PerformanceCategory = 'speed' | 'strength' | 'stamina';
+
 export interface WorkoutDayTemplate {
   id: string;
   name: string;
   focus: string;
   intensity: 'Low' | 'Medium' | 'High';
   durationMin: number;
+  statCategory: PerformanceCategory;
   exercises: ExerciseSlot[];
 }
 
@@ -125,13 +130,6 @@ export interface AiCoachReply {
   ctaLabel?: string;
 }
 
-export interface PerformanceStat {
-  label: string;
-  icon: IconName;
-  color: string;
-  changePct: number;
-  trend: number[];
-}
 
 export type MealSlot = 'breakfast' | 'lunch' | 'snack' | 'dinner';
 
@@ -153,7 +151,8 @@ export interface MealTemplate {
 
 export interface MealPlanEntry {
   slot: MealSlot;
-  meal: MealTemplate;
+  /** Null only if no meal in the library is safe against the athlete's allergies for this slot. */
+  meal: MealTemplate | null;
 }
 
 export interface WeeklyReportData {

@@ -15,6 +15,7 @@ import type { SportModuleData, WorkoutDayTemplate } from '../../engine/types';
 const beginnerDays: WorkoutDayTemplate[] = [
   {
     id: 'football_beg_speed_lower',
+    statCategory: 'speed',
     name: 'Speed + Lower Body',
     focus: 'Football Performance',
     intensity: 'Low',
@@ -68,6 +69,7 @@ const beginnerDays: WorkoutDayTemplate[] = [
   },
   {
     id: 'football_beg_upper_core',
+    statCategory: 'strength',
     name: 'Upper Body + Core',
     focus: 'Football Performance',
     intensity: 'Low',
@@ -111,6 +113,7 @@ const beginnerDays: WorkoutDayTemplate[] = [
   },
   {
     id: 'football_beg_agility',
+    statCategory: 'stamina',
     name: 'Agility + Conditioning',
     focus: 'Football Performance',
     intensity: 'Medium',
@@ -158,6 +161,7 @@ const beginnerDays: WorkoutDayTemplate[] = [
 const intermediateDays: WorkoutDayTemplate[] = [
   {
     id: 'football_int_speed_lower',
+    statCategory: 'speed',
     name: 'Speed + Lower Body',
     focus: 'Football Performance',
     intensity: 'Medium',
@@ -218,6 +222,7 @@ const intermediateDays: WorkoutDayTemplate[] = [
   },
   {
     id: 'football_int_upper_core',
+    statCategory: 'strength',
     name: 'Upper Body + Core',
     focus: 'Football Performance',
     intensity: 'Medium',
@@ -266,6 +271,7 @@ const intermediateDays: WorkoutDayTemplate[] = [
   },
   {
     id: 'football_int_agility',
+    statCategory: 'stamina',
     name: 'Agility + Conditioning',
     focus: 'Football Performance',
     intensity: 'High',
@@ -324,6 +330,7 @@ const intermediateDays: WorkoutDayTemplate[] = [
 const advancedDays: WorkoutDayTemplate[] = [
   {
     id: 'football_adv_speed_lower',
+    statCategory: 'speed',
     name: 'Speed + Lower Body',
     focus: 'Football Performance',
     intensity: 'High',
@@ -356,7 +363,7 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '6 / leg',
         restSec: 90,
         equipment: ['bench', 'dumbbells'],
-        bodyweightAlternative: { name: 'Jump Split Squat', reps: '8 / leg' },
+        bodyweightAlternative: { name: 'Glute Bridge', reps: '15' },
         category: 'strength',
         contraindications: ['knee'],
       },
@@ -385,6 +392,7 @@ const advancedDays: WorkoutDayTemplate[] = [
   },
   {
     id: 'football_adv_upper_core',
+    statCategory: 'strength',
     name: 'Upper Body + Core',
     focus: 'Football Performance',
     intensity: 'Medium',
@@ -407,7 +415,7 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '6',
         restSec: 120,
         equipment: ['barbell', 'bench'],
-        bodyweightAlternative: { name: 'Explosive Push-Ups', reps: '12' },
+        bodyweightAlternative: { name: 'Incline Push-Ups (light)', reps: '12' },
         category: 'strength',
         contraindications: ['shoulder'],
       },
@@ -434,6 +442,7 @@ const advancedDays: WorkoutDayTemplate[] = [
   },
   {
     id: 'football_adv_agility',
+    statCategory: 'stamina',
     name: 'Agility + Conditioning',
     focus: 'Football Performance',
     intensity: 'High',
@@ -446,7 +455,7 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '5',
         restSec: 120,
         equipment: ['plyo_box'],
-        bodyweightAlternative: { name: 'Box Jump', reps: '6' },
+        bodyweightAlternative: { name: 'Wall Sit', reps: '40 sec' },
         category: 'power',
         highImpact: true,
         contraindications: ['knee', 'ankle'],

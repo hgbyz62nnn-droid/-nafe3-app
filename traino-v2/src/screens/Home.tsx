@@ -4,8 +4,29 @@ import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLogs } from '../domain/state/LogContext';
 import { generateTodayWorkout } from '../domain/engine/planEngine';
+import {
+  computePerformanceStats,
+  computeWorkoutCompletion,
+  computeNutritionAdherence,
+  computeRecoveryScore,
+} from '../domain/engine/progressEngine';
 import { SPORTS } from '../domain/sports/sports';
+
+function trendToPoints(trend: number[], width = 60, height = 20): string {
+  const max = Math.max(...trend, 1);
+  const min = Math.min(...trend, 0);
+  const range = max - min || 1;
+  const step = trend.length > 1 ? width / (trend.length - 1) : 0;
+  return trend
+    .map((v, i) => {
+      const x = i * step;
+      const y = height - ((v - min) / range) * (height - 4) - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
 
 function ProgressRing({ percent, color }: { percent: number; color: string }) {
   const r = 15;
@@ -42,8 +63,22 @@ function StatTile({ children, label }: { children: React.ReactNode; label: strin
 
 export default function Home() {
   const { profile } = useProfile();
+  const { getRecentLogs } = useLogs();
   const workout = generateTodayWorkout(profile);
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
+
+  const last7 = getRecentLogs(7);
+  const { completed: workoutsCompleted } = computeWorkoutCompletion(last7);
+  const workoutsPlanned = Math.max(profile.answers.daysAvailablePerWeek, 1);
+  const nutritionPct = computeNutritionAdherence(last7);
+  const recoveryPct = computeRecoveryScore(last7, profile.answers.daysAvailablePerWeek);
+
+  const perfStats = computePerformanceStats(last7);
+  const leadCategory = (['strength', 'speed', 'stamina'] as const).reduce((best, cat) =>
+    perfStats[cat].hasData && Math.abs(perfStats[cat].changePct) > Math.abs(perfStats[best].changePct) ? cat : best
+  );
+  const leadStat = perfStats[leadCategory];
+  const hasAnyWorkoutHistory = last7.some((d) => d.workoutCompleted);
 
   return (
     <Screen>
@@ -150,14 +185,17 @@ export default function Home() {
       <div className="px-5 mt-3 flex gap-2">
         <StatTile label="Workouts">
           <p className="text-white text-[20px] font-extrabold leading-none">
-            12<span className="text-text-muted text-[13px] font-medium">/14</span>
+            {workoutsCompleted}
+            <span className="text-text-muted text-[13px] font-medium">/{workoutsPlanned}</span>
           </p>
         </StatTile>
         <StatTile label="Performance">
-          <p className="text-white text-[20px] font-extrabold leading-none mb-1">68%</p>
+          <p className="text-white text-[20px] font-extrabold leading-none mb-1">
+            {leadStat.hasData ? `${Math.abs(leadStat.changePct)}%` : '—'}
+          </p>
           <svg viewBox="0 0 60 20" className="w-full h-4">
             <polyline
-              points="0,16 10,13 20,15 28,9 38,11 48,4 58,2"
+              points={trendToPoints(leadStat.trend)}
               fill="none"
               stroke="#E0272E"
               strokeWidth="2"
@@ -167,9 +205,9 @@ export default function Home() {
           </svg>
         </StatTile>
         <StatTile label="Nutrition">
-          <p className="text-white text-[20px] font-extrabold leading-none mb-1">87%</p>
+          <p className="text-white text-[20px] font-extrabold leading-none mb-1">{nutritionPct}%</p>
           <div className="relative w-[38px] h-[38px]">
-            <ProgressRing percent={87} color="#3DDC84" />
+            <ProgressRing percent={nutritionPct} color="#3DDC84" />
             <Icon
               name="nutrition"
               size={13}
@@ -178,9 +216,9 @@ export default function Home() {
           </div>
         </StatTile>
         <StatTile label="Recovery">
-          <p className="text-white text-[20px] font-extrabold leading-none mb-1">82%</p>
+          <p className="text-white text-[20px] font-extrabold leading-none mb-1">{recoveryPct}%</p>
           <div className="relative w-[38px] h-[38px]">
-            <ProgressRing percent={82} color="#4A9EFF" />
+            <ProgressRing percent={recoveryPct} color="#4A9EFF" />
             <Icon name="heart" size={13} className="text-info absolute inset-0 m-auto" />
           </div>
         </StatTile>
@@ -192,8 +230,9 @@ export default function Home() {
             AI Coach
           </p>
           <p className="text-white text-[13px] leading-relaxed max-w-[65%]">
-            Your recovery looks good today. I've prepared your next session for optimal
-            performance.
+            {hasAnyWorkoutHistory
+              ? "Your recovery looks good today. I've prepared your next session for optimal performance."
+              : "Let's get your first session logged — I'll adjust your plan as your history builds up."}
           </p>
           <button className="text-red text-[13px] font-bold mt-2.5">Chat with AI</button>
           <div className="absolute right-4 bottom-3 text-red drop-shadow-[0_0_8px_rgba(224,39,46,0.5)]">

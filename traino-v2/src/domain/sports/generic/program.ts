@@ -13,6 +13,7 @@ function fullBodyDay(id: string, name: string, intensity: WorkoutDayTemplate['in
     focus: 'General Fitness',
     intensity,
     durationMin: 40,
+    statCategory: 'strength',
     exercises: [
       { name: 'Warm Up', sets: 1, reps: '8 min', equipment: [], category: 'warmup' },
       {

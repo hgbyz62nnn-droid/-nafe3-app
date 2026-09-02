@@ -33,11 +33,13 @@ export default function WeeklyReport() {
   const nutritionAdherencePct = computeNutritionAdherence(last7);
   const recoveryAveragePct = computeRecoveryScore(last7, answers.daysAvailablePerWeek);
 
-  const thisWeekWeights = last7.filter((d) => typeof d.weightKg === 'number');
-  const priorWeekWeights = prior7.filter((d) => typeof d.weightKg === 'number');
+  const isWeighIn = (d: (typeof last7)[number]): d is (typeof last7)[number] & { weightKg: number } =>
+    typeof d.weightKg === 'number';
+  const thisWeekWeights = last7.filter(isWeighIn);
+  const priorWeekWeights = prior7.filter(isWeighIn);
   const weightDeltaKg =
     thisWeekWeights.length > 0 && priorWeekWeights.length > 0
-      ? Math.round((thisWeekWeights[thisWeekWeights.length - 1].weightKg! - priorWeekWeights[priorWeekWeights.length - 1].weightKg!) * 10) / 10
+      ? Math.round((thisWeekWeights[thisWeekWeights.length - 1].weightKg - priorWeekWeights[priorWeekWeights.length - 1].weightKg) * 10) / 10
       : 0;
 
   const stats = computePerformanceStats(last7);

@@ -18,6 +18,7 @@ export interface ResolvedWorkout {
   focus: string;
   intensity: WorkoutDayTemplate['intensity'];
   durationMin: number;
+  statCategory: WorkoutDayTemplate['statCategory'];
   exercises: ResolvedExercise[];
 }
 
@@ -40,24 +41,38 @@ function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExerc
   const injuryFlagged = (slot.contraindications ?? []).some((tag) => ctx.injuryIds.includes(tag));
   const shouldSubstitute = ctx.forceBodyweight || missingEquipment || injuryFlagged;
 
-  const base =
-    shouldSubstitute && slot.bodyweightAlternative
-      ? {
-          name: slot.bodyweightAlternative.name,
-          sets: slot.sets,
-          reps: slot.bodyweightAlternative.reps,
-          restSec: slot.restSec,
-          category: slot.category,
-          substitutionReason: (injuryFlagged ? 'injury' : missingEquipment ? 'equipment' : 'adjustment') as const,
-        }
-      : {
-          name: slot.name,
-          sets: slot.sets,
-          reps: slot.reps,
-          restSec: slot.restSec,
-          category: slot.category,
-          substitutionReason: 'none' as const,
-        };
+  if (shouldSubstitute && !slot.bodyweightAlternative) {
+    // No safe/available substitute exists for this slot — drop it rather than
+    // emit the original movement (which is either unavailable or, for an
+    // injury match, exactly the movement the athlete should be avoiding).
+    return null;
+  }
+
+  let base: ResolvedExercise;
+  if (shouldSubstitute && slot.bodyweightAlternative) {
+    const reason: ResolvedExercise['substitutionReason'] = injuryFlagged
+      ? 'injury'
+      : missingEquipment
+        ? 'equipment'
+        : 'adjustment';
+    base = {
+      name: slot.bodyweightAlternative.name,
+      sets: slot.sets,
+      reps: slot.bodyweightAlternative.reps,
+      restSec: slot.restSec,
+      category: slot.category,
+      substitutionReason: reason,
+    };
+  } else {
+    base = {
+      name: slot.name,
+      sets: slot.sets,
+      reps: slot.reps,
+      restSec: slot.restSec,
+      category: slot.category,
+      substitutionReason: 'none',
+    };
+  }
 
   return ctx.weekNumber ? applyProgression(base, ctx.weekNumber) : base;
 }
@@ -73,6 +88,7 @@ function resolveDay(day: WorkoutDayTemplate, ctx: ResolveContext): ResolvedWorko
     focus: day.focus,
     intensity: day.intensity,
     durationMin: day.durationMin,
+    statCategory: day.statCategory,
     exercises,
   };
 }
@@ -83,14 +99,6 @@ function baseContext(profile: UserProfile, weekNumber = 1): ResolveContext {
     injuryIds: profile.answers.injuryIds,
     weekNumber,
   };
-}
-
-/** The full weekly cycle for the athlete's sport/level, equipment- and injury-resolved, in order. */
-export function generateWeekProgram(profile: UserProfile, weekNumber = 1): ResolvedWorkout[] {
-  const sportModule = getSportModule(profile.answers.sport);
-  const days = sportModule.program[profile.level];
-  const ctx = baseContext(profile, weekNumber);
-  return days.map((day) => resolveDay(day, ctx));
 }
 
 /**
@@ -104,6 +112,21 @@ export function todayDayIndex(programLength: number, date: Date = new Date()): n
   return isoWeekday % programLength;
 }
 
+function dayForIndex(profile: UserProfile, dayIndex?: number): WorkoutDayTemplate {
+  const sportModule = getSportModule(profile.answers.sport);
+  const days = sportModule.program[profile.level];
+  const index = dayIndex ?? todayDayIndex(days.length);
+  return days[index % days.length];
+}
+
+/** The full weekly cycle for the athlete's sport/level, equipment- and injury-resolved, in order. */
+export function generateWeekProgram(profile: UserProfile, weekNumber = 1): ResolvedWorkout[] {
+  const sportModule = getSportModule(profile.answers.sport);
+  const days = sportModule.program[profile.level];
+  const ctx = baseContext(profile, weekNumber);
+  return days.map((day) => resolveDay(day, ctx));
+}
+
 /**
  * Today's workout, cycling deterministically through the weekly program
  * by real day-of-week rather than picking randomly. Pass `dayIndex`
@@ -111,11 +134,7 @@ export function todayDayIndex(programLength: number, date: Date = new Date()): n
  * history behind Progress/Weekly Report); omit it to mean "today".
  */
 export function generateTodayWorkout(profile: UserProfile, dayIndex?: number, weekNumber = 1): ResolvedWorkout {
-  const sportModule = getSportModule(profile.answers.sport);
-  const days = sportModule.program[profile.level];
-  const index = dayIndex ?? todayDayIndex(days.length);
-  const day = days[index % days.length];
-  return resolveDay(day, baseContext(profile, weekNumber));
+  return resolveDay(dayForIndex(profile, dayIndex), baseContext(profile, weekNumber));
 }
 
 /**
@@ -130,10 +149,7 @@ export function applyCoachAdjustment(
   adjustment: AiCoachAdjustment,
   weekNumber = 1
 ): ResolvedWorkout {
-  const sportModule = getSportModule(profile.answers.sport);
-  const days = sportModule.program[profile.level];
-  const index = dayIndex ?? todayDayIndex(days.length);
-  const day = days[index % days.length];
+  const day = dayForIndex(profile, dayIndex);
 
   const ctx: ResolveContext = {
     ...baseContext(profile, weekNumber),

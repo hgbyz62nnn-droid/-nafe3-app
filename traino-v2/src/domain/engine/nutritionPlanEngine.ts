@@ -49,12 +49,20 @@ function candidatesForSlot(slot: MealSlot, answers: AssessmentAnswers): MealTemp
   return slotMeals;
 }
 
-function pickClosestToTarget(candidates: MealTemplate[], targetKcal: number): MealTemplate {
+function pickClosestToTarget(candidates: MealTemplate[], targetKcal: number): MealTemplate | null {
+  if (candidates.length === 0) return null;
   return candidates.reduce((best, m) =>
     Math.abs(m.kcal - targetKcal) < Math.abs(best.kcal - targetKcal) ? m : best
   );
 }
 
+/**
+ * `meal` is null only if no meal in the library for that slot is safe
+ * against the athlete's allergies — with today's library that can't
+ * happen (every slot has at least one allergen-free entry), but callers
+ * must handle it rather than assume a meal always exists, since allergy
+ * safety is never relaxed to force a match.
+ */
 export function generateMealPlan(answers: AssessmentAnswers, targets: NutritionTargets): MealPlanEntry[] {
   return SLOT_ORDER.map((slot) => {
     const candidates = candidatesForSlot(slot, answers);
@@ -64,9 +72,10 @@ export function generateMealPlan(answers: AssessmentAnswers, targets: NutritionT
   });
 }
 
-/** Next eligible alternative for one slot, cycling deterministically past the current meal. */
-export function getMealAlternative(slot: MealSlot, currentMealId: string, answers: AssessmentAnswers): MealTemplate {
+/** Next eligible alternative for one slot, cycling deterministically past the current meal; null if none is safe. */
+export function getMealAlternative(slot: MealSlot, currentMealId: string, answers: AssessmentAnswers): MealTemplate | null {
   const candidates = candidatesForSlot(slot, answers);
+  if (candidates.length === 0) return null;
   const currentIndex = candidates.findIndex((m) => m.id === currentMealId);
   const nextIndex = (currentIndex + 1) % candidates.length;
   return candidates[nextIndex];
