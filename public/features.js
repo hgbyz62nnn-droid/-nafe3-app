@@ -2672,6 +2672,30 @@ async function renderPlanTab(subscriptionId) {
 
 // -------------------- قوالب برامج التمرين --------------------
 
+function openSaveTemplateModal(onSave) {
+  closeModal();
+  const root = document.createElement('div');
+  root.id = 'modalRoot';
+  root.className = 'modal-backdrop';
+  root.innerHTML = `
+    <div class="modal-box">
+      <h2>${t('saveAsTemplateBtn')}</h2>
+      <input id="templateNameInput" placeholder="${t('templateNamePlaceholder')}">
+      <button id="confirmSaveTemplate" style="margin-top:10px;">${t('saveAsTemplateBtn')}</button>
+      <button class="secondary" id="closeModal" style="margin-top:8px;">${t('closeBtn2')}</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+  root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+  document.getElementById('closeModal').onclick = closeModal;
+  document.getElementById('confirmSaveTemplate').onclick = () => {
+    const name = document.getElementById('templateNameInput').value.trim();
+    if (!name) return;
+    closeModal();
+    onSave(name);
+  };
+}
+
 async function wireTemplateToolbar(subscriptionId) {
   const box = document.getElementById('templateToolbar');
   if (!box) return;
@@ -2687,6 +2711,7 @@ async function wireTemplateToolbar(subscriptionId) {
     </select>
     <button class="secondary" id="applyTemplateBtn" style="width:auto; padding:9px 12px;">${t('applyTemplateBtn')}</button>
     <button class="secondary" id="saveAsTemplateBtn" style="width:auto; padding:9px 12px;">${t('saveAsTemplateBtn')}</button>
+    <button class="secondary" id="deleteTemplateBtn" title="${t('deleteTemplateBtn')}" style="width:auto; padding:9px 10px;">${svgIconPro('trash', 16)}</button>
   `;
 
   on('applyTemplateBtn', 'click', async () => {
@@ -2700,12 +2725,22 @@ async function wireTemplateToolbar(subscriptionId) {
     } catch (e) { alert(e.message); }
   });
 
-  on('saveAsTemplateBtn', 'click', async () => {
-    const title = prompt(t('templateNamePrompt'));
-    if (!title) return;
+  on('saveAsTemplateBtn', 'click', () => {
+    openSaveTemplateModal(async (title) => {
+      try {
+        await api('/plans/workout-templates', { method: 'POST', body: JSON.stringify({ title, days: planEditState.workout.days }) });
+        alert(t('templateSavedAlert'));
+        wireTemplateToolbar(subscriptionId);
+      } catch (e) { alert(e.message); }
+    });
+  });
+
+  on('deleteTemplateBtn', 'click', async () => {
+    const id = document.getElementById('templateSelect').value;
+    if (!id) { alert(t('chooseTemplateFirstAlert')); return; }
+    if (!confirm(t('confirmDeleteTemplate'))) return;
     try {
-      await api('/plans/workout-templates', { method: 'POST', body: JSON.stringify({ title, days: planEditState.workout.days }) });
-      alert(t('templateSavedAlert'));
+      await api('/plans/workout-templates/' + id, { method: 'DELETE' });
       wireTemplateToolbar(subscriptionId);
     } catch (e) { alert(e.message); }
   });
@@ -2726,6 +2761,7 @@ async function wireNutritionTemplateToolbar(subscriptionId) {
     </select>
     <button class="secondary" id="applyNutritionTemplateBtn" style="width:auto; padding:9px 12px;">${t('applyTemplateBtn')}</button>
     <button class="secondary" id="saveAsNutritionTemplateBtn" style="width:auto; padding:9px 12px;">${t('saveAsTemplateBtn')}</button>
+    <button class="secondary" id="deleteNutritionTemplateBtn" title="${t('deleteTemplateBtn')}" style="width:auto; padding:9px 10px;">${svgIconPro('trash', 16)}</button>
   `;
 
   on('applyNutritionTemplateBtn', 'click', async () => {
@@ -2746,20 +2782,30 @@ async function wireNutritionTemplateToolbar(subscriptionId) {
     } catch (e) { alert(e.message); }
   });
 
-  on('saveAsNutritionTemplateBtn', 'click', async () => {
-    const title = prompt(t('templateNamePrompt'));
-    if (!title) return;
+  on('saveAsNutritionTemplateBtn', 'click', () => {
+    openSaveTemplateModal(async (title) => {
+      try {
+        await api('/plans/nutrition-templates', { method: 'POST', body: JSON.stringify({
+          title,
+          daily_calories: document.getElementById('dailyCalories')?.value,
+          protein_target: document.getElementById('proteinTarget')?.value,
+          carbs_target: document.getElementById('carbsTarget')?.value,
+          fat_target: document.getElementById('fatTarget')?.value,
+          notes: document.getElementById('nutritionNotes')?.value,
+          meals: planEditState.nutrition.meals,
+        }) });
+        alert(t('templateSavedAlert'));
+        wireNutritionTemplateToolbar(subscriptionId);
+      } catch (e) { alert(e.message); }
+    });
+  });
+
+  on('deleteNutritionTemplateBtn', 'click', async () => {
+    const id = document.getElementById('nutritionTemplateSelect').value;
+    if (!id) { alert(t('chooseTemplateFirstAlert')); return; }
+    if (!confirm(t('confirmDeleteTemplate'))) return;
     try {
-      await api('/plans/nutrition-templates', { method: 'POST', body: JSON.stringify({
-        title,
-        daily_calories: document.getElementById('dailyCalories')?.value,
-        protein_target: document.getElementById('proteinTarget')?.value,
-        carbs_target: document.getElementById('carbsTarget')?.value,
-        fat_target: document.getElementById('fatTarget')?.value,
-        notes: document.getElementById('nutritionNotes')?.value,
-        meals: planEditState.nutrition.meals,
-      }) });
-      alert(t('templateSavedAlert'));
+      await api('/plans/nutrition-templates/' + id, { method: 'DELETE' });
       wireNutritionTemplateToolbar(subscriptionId);
     } catch (e) { alert(e.message); }
   });
