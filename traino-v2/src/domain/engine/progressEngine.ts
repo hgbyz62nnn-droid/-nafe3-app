@@ -98,6 +98,22 @@ export function computeNutritionAdherence(recentLogs: DayLog[]): number {
   return Math.round((loggedSlots / totalSlots) * 100);
 }
 
+/** Weight change between the last logged weigh-in of `currentWeekLogs` and the last
+ * logged weigh-in of `priorWeekLogs` — the same week-over-week comparison the Weekly
+ * Report and the Weekly Coaching Loop both need; computed once here rather than
+ * duplicated inline in each screen/engine that wants it. */
+export function computeWeekOverWeekWeightDelta(
+  currentWeekLogs: DayLog[],
+  priorWeekLogs: DayLog[]
+): { deltaKg: number; hasData: boolean } {
+  const isWeighIn = (d: DayLog): d is DayLog & { weightKg: number } => typeof d.weightKg === 'number';
+  const current = currentWeekLogs.filter(isWeighIn);
+  const prior = priorWeekLogs.filter(isWeighIn);
+  if (current.length === 0 || prior.length === 0) return { deltaKg: 0, hasData: false };
+  const deltaKg = Math.round((current[current.length - 1].weightKg - prior[prior.length - 1].weightKg) * 10) / 10;
+  return { deltaKg, hasData: true };
+}
+
 /** Simple deterministic recovery proxy from workout consistency — there's
  * no sleep/HR data source yet, so this stands in until one exists. */
 export function computeRecoveryScore(recentLogs: DayLog[], plannedDaysPerWeek: number): number {

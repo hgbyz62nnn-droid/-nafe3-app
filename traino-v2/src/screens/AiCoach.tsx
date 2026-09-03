@@ -7,6 +7,7 @@ import { BottomNav } from '../components/ui/BottomNav';
 import { getAiCoachReply, getFallbackReply } from '../domain/engine/aiCoachEngine';
 import type { AiCoachIntent, AiCoachReply } from '../domain/engine/types';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: "Adjust today's workout", intent: 'adjust_todays_workout' },
@@ -15,6 +16,9 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'Replace an exercise', intent: 'replace_exercise' },
   { label: 'Missed a workout', intent: 'missed_workout' },
   { label: 'Ask about nutrition', intent: 'ask_about_nutrition' },
+  { label: 'Why did my consistency drop?', intent: 'why_consistency_dropped' },
+  { label: "What's changing next week?", intent: 'whats_next_week_change' },
+  { label: 'Why was my workout reduced?', intent: 'why_workout_reduced' },
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -27,11 +31,16 @@ const INITIAL_MESSAGES: Message[] = [
 export default function AiCoach() {
   const navigate = useNavigate();
   const { setActiveAdjustment } = useProfile();
+  const { getLatestRecord } = useWeeklyCoaching();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [draft, setDraft] = useState('');
 
+  const WEEKLY_COACHING_INTENTS: AiCoachIntent[] = ['why_consistency_dropped', 'whats_next_week_change', 'why_workout_reduced'];
+
   function handleSuggestion(label: string, intent: AiCoachIntent) {
-    const reply = getAiCoachReply(intent);
+    const reply = WEEKLY_COACHING_INTENTS.includes(intent)
+      ? getAiCoachReply(intent, { latestRecord: getLatestRecord() })
+      : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
   }
 
@@ -48,6 +57,8 @@ export default function AiCoach() {
       navigate('/todays-workout');
     } else if (msg.ctaLabel === 'OPEN NUTRITION' || msg.ctaLabel === 'CHOOSE EXERCISE') {
       navigate(msg.ctaLabel === 'OPEN NUTRITION' ? '/nutrition' : '/todays-workout');
+    } else if (msg.ctaLabel === 'VIEW WEEKLY REPORT') {
+      navigate('/weekly-report');
     }
   }
 

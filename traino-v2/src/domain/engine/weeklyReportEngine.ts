@@ -32,7 +32,9 @@ const AREA_FEEDBACK: Record<ReportArea, string> = {
   none: 'consistency across the board',
 };
 
-const AREA_PRAISE: Record<ReportArea, string> = {
+/** Exported so the Weekly Coaching Loop's "What went well" section can reuse the same
+ * praise copy standalone, instead of re-deriving it from `coachFeedback`. */
+export const AREA_PRAISE: Record<ReportArea, string> = {
   speed: 'Your speed work is paying off',
   strength: 'Your strength work improved',
   stamina: 'Your conditioning improved',

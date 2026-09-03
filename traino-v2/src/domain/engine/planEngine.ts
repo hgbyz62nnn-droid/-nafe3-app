@@ -43,7 +43,13 @@ function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExerc
   const wrongLocation =
     (slot.locations ?? []).length > 0 && !slot.locations!.some((loc) => ctx.locationIds.includes(loc));
   const injuryFlagged = (slot.contraindications ?? []).some((tag) => ctx.injuryIds.includes(tag));
-  const shouldSubstitute = ctx.forceBodyweight || missingEquipment || wrongLocation || injuryFlagged;
+  // A "prefer bodyweight" adjustment (traveling, pain-safe, weekly-coaching equipment/travel
+  // recommendations) only means anything for a slot that actually requires equipment or a
+  // specific location — an already-equipment-free, location-unconstrained slot (Warm Up,
+  // Cool Down, or any bodyweight exercise) has nothing to swap away from and must never be
+  // dropped just because forceBodyweight is set.
+  const forceBodyweightApplies = ctx.forceBodyweight && (slot.equipment.length > 0 || (slot.locations?.length ?? 0) > 0);
+  const shouldSubstitute = forceBodyweightApplies || missingEquipment || wrongLocation || injuryFlagged;
 
   if (shouldSubstitute && !slot.bodyweightAlternative) {
     // No safe/available substitute exists for this slot — drop it rather than

@@ -81,6 +81,13 @@ export const ICONS = {
   dotsVertical: '<circle cx="12" cy="5.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.3" fill="currentColor" stroke="none"/>',
   share: '<path d="M12 14.5V4M8 7.5 12 4l4 3.5"/><path d="M5 12v6.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V12"/>',
   swap: '<path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 20l-4-4 4-4"/>',
+
+  // -- Weekly Coaching barrier icons, same 24x24 / 1.8px-stroke language as
+  // the training-location/equipment extensions above.
+  moon: '<path d="M15.5 3.5a8.5 8.5 0 1 0 5 15.4A8.5 8.5 0 0 1 15.5 3.5Z"/>',
+  suitcase: '<rect x="3.5" y="8" width="17" height="11" rx="2"/><path d="M9 8V6.5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2V8M3.5 13.5h17"/>',
+  wallet: '<rect x="3.5" y="6.5" width="17" height="12" rx="2"/><path d="M3.5 10.5h17"/><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/>',
+  stress: 'M13 3 6 13h5l-2 8 9-12h-6l2-6Z',
 } as const;
 
 export type IconName = keyof typeof ICONS;

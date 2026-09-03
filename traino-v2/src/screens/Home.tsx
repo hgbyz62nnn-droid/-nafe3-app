@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { BottomNav } from '../components/ui/BottomNav';
 import { StatusBar } from '../components/ui/StatusBar';
@@ -5,7 +6,8 @@ import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
-import { generateTodayWorkout } from '../domain/engine/planEngine';
+import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
+import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import {
   computePerformanceStats,
@@ -13,6 +15,7 @@ import {
   computeNutritionAdherence,
   computeRecoveryScore,
 } from '../domain/engine/progressEngine';
+import { barrierDisplayName } from '../domain/coaching/barriers';
 import { SPORTS } from '../domain/sports/sports';
 
 function trendToPoints(trend: number[], width = 60, height = 20): string {
@@ -65,18 +68,24 @@ function StatTile({ children, label }: { children: React.ReactNode; label: strin
 export default function Home() {
   const { profile, planStartDate } = useProfile();
   const { getRecentLogs, getLogsSince } = useLogs();
+  const { getRecord, getApprovedAdjustmentForWeek } = useWeeklyCoaching();
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
-  const { progressionWeek } = computeProgressionInfo(
+  const { progressionWeek, currentPlanWeek } = computeProgressionInfo(
     planStartDate,
     progressionLogs,
     profile.answers.daysAvailablePerWeek
   );
-  const workout = generateTodayWorkout(profile, undefined, progressionWeek);
+  const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
+  const workout = weeklyAdjustment
+    ? applyCoachAdjustment(profile, undefined, weeklyAdjustment, progressionWeek)
+    : generateTodayWorkout(profile, undefined, progressionWeek);
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
 
   const last7 = getRecentLogs(7);
   const { completed: workoutsCompleted } = computeWorkoutCompletion(last7);
   const workoutsPlanned = Math.max(profile.answers.daysAvailablePerWeek, 1);
+  const consistencyPct = Math.round((workoutsCompleted / workoutsPlanned) * 100);
+  const coachingRecord = getRecord(currentPlanWeek);
   const nutritionPct = computeNutritionAdherence(last7);
   const recoveryPct = computeRecoveryScore(last7, profile.answers.daysAvailablePerWeek);
 
@@ -230,6 +239,29 @@ export default function Home() {
           </div>
         </StatTile>
       </div>
+
+      {coachingRecord?.decision && (
+        <div className="px-5 mt-3.5">
+          <Link to="/weekly-report" className="block bg-card rounded-card border border-border-soft p-3.5">
+            <p className="text-text-secondary text-[11px] font-bold tracking-wider uppercase mb-1.5">
+              Weekly Coaching
+            </p>
+            <p className="text-white text-[13px] leading-relaxed">
+              Your consistency: <span className="font-bold">{consistencyPct}%</span>
+            </p>
+            {coachingRecord.decision.barrier && (
+              <p className="text-white text-[13px] leading-relaxed mt-0.5">
+                Main barrier: <span className="font-bold">{barrierDisplayName(coachingRecord.decision.barrier)}</span>
+              </p>
+            )}
+            <p className="text-red text-[13px] font-bold mt-2">
+              {coachingRecord.approvalStatus === 'pending'
+                ? "TRAINO has a recommendation for next week"
+                : 'View Weekly Review'}
+            </p>
+          </Link>
+        </div>
+      )}
 
       <div className="px-5 mt-3.5">
         <div className="bg-card rounded-card border border-border-soft p-3.5 relative overflow-hidden">

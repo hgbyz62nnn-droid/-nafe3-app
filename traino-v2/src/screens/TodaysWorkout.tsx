@@ -6,6 +6,7 @@ import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
+import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
@@ -13,18 +14,25 @@ import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
 export default function TodaysWorkout() {
   const { profile, activeAdjustment, setActiveAdjustment, planStartDate } = useProfile();
   const { today, getDayLog, setWorkoutCompleted, getLogsSince } = useLogs();
+  const { getApprovedAdjustmentForWeek } = useWeeklyCoaching();
   const [swaps, setSwaps] = useState<Record<number, number>>({});
   const completed = getDayLog(today).workoutCompleted;
 
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
-  const { progressionWeek } = computeProgressionInfo(
+  const { progressionWeek, currentPlanWeek } = computeProgressionInfo(
     planStartDate,
     progressionLogs,
     profile.answers.daysAvailablePerWeek
   );
 
-  const workout = activeAdjustment
-    ? applyCoachAdjustment(profile, undefined, activeAdjustment, progressionWeek)
+  // A per-session AI Coach chat adjustment always wins over the standing weekly-coaching
+  // adjustment (more specific and more recent); the weekly one only applies while no
+  // session-level override is active, and only for the exact week it was approved for.
+  const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
+  const effectiveAdjustment = activeAdjustment ?? weeklyAdjustment;
+
+  const workout = effectiveAdjustment
+    ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek)
     : generateTodayWorkout(profile, undefined, progressionWeek);
 
   function cycleSwap(index: number, altCount: number) {
@@ -59,6 +67,13 @@ export default function TodaysWorkout() {
           >
             Reset
           </button>
+        </div>
+      )}
+
+      {!activeAdjustment && weeklyAdjustment && (
+        <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
+          <Icon name="aiMascot" size={16} className="text-red shrink-0" />
+          <p className="flex-1 text-red text-[12px] font-semibold">Adjusted by this week's coaching recommendation</p>
         </div>
       )}
 

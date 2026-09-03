@@ -1,4 +1,17 @@
 import type { AiCoachIntent, AiCoachReply } from './types';
+import type { WeeklyCoachingRecord } from '../coaching/types';
+
+/** Weekly Coaching Loop context the last three intents below read from — the most
+ * recently reviewed week's record, if one exists. Every reply built from it is a
+ * pre-templated string over that record's already-deterministic fields; nothing here
+ * generates or infers new text. */
+export interface WeeklyCoachingReplyContext {
+  latestRecord: WeeklyCoachingRecord | null;
+}
+
+function barrierLabel(id: string): string {
+  return id.replace(/_/g, ' ');
+}
 
 /**
  * Fixed fallback for free-text input the composer doesn't map to one of
@@ -19,7 +32,7 @@ export function getFallbackReply(): AiCoachReply {
  * no free-text generation and no external AI/LLM call; "AI Coach" is the
  * product's name for this rule engine, not a live model.
  */
-export function getAiCoachReply(intent: AiCoachIntent): AiCoachReply {
+export function getAiCoachReply(intent: AiCoachIntent, context?: WeeklyCoachingReplyContext): AiCoachReply {
   switch (intent) {
     case 'feeling_tired':
       return {
@@ -77,5 +90,50 @@ export function getAiCoachReply(intent: AiCoachIntent): AiCoachReply {
           "Your nutrition targets are based on your weight, activity level, and goal. Check the Nutrition tab for today's calorie and macro breakdown, or ask me about a specific meal.",
         ctaLabel: 'OPEN NUTRITION',
       };
+
+    case 'why_consistency_dropped': {
+      const record = context?.latestRecord;
+      if (!record?.decision) {
+        return {
+          message:
+            "I don't have a full week of logged data yet to explain a consistency change — keep logging your sessions and I'll break it down after your next weekly review.",
+        };
+      }
+      const { decision } = record;
+      return {
+        message: decision.barrier
+          ? `Your consistency was mainly affected by ${barrierLabel(decision.barrier)}. ${decision.evidence}.`
+          : `Nothing specific stood out — ${decision.evidence}.`,
+        ctaLabel: 'VIEW WEEKLY REPORT',
+      };
+    }
+
+    case 'whats_next_week_change': {
+      const record = context?.latestRecord;
+      if (!record?.decision || !record.decision.proposedChanges) {
+        return { message: "No changes are planned for next week right now — your current plan stays as is." };
+      }
+      return {
+        message: `${record.decision.reason} ${record.decision.proposedChanges.summary}.`,
+        ctaLabel: record.approvalStatus === 'pending' ? 'VIEW WEEKLY REPORT' : undefined,
+      };
+    }
+
+    case 'why_workout_reduced': {
+      const record = context?.latestRecord;
+      if (!record?.decision || record.approvalStatus !== 'approved') {
+        return {
+          message:
+            "TRAINO hasn't reduced your plan through weekly coaching — if today's session looks different, check whether an AI Coach chat adjustment is still active.",
+        };
+      }
+      return {
+        message: `TRAINO adjusted next week because of ${barrierLabel(decisionBarrier(record))}: ${record.decision.evidence}. ${record.decision.reason}`,
+      };
+    }
   }
+}
+
+function decisionBarrier(record: WeeklyCoachingRecord): string {
+  return record.decision?.barrier ?? 'a detected pattern';
 }
