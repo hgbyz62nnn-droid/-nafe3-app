@@ -344,7 +344,7 @@ export default function Home() {
               ? "Your recovery looks good today. I've prepared your next session for optimal performance."
               : "Let's get your first session logged — I'll adjust your plan as your history builds up."}
           </p>
-          <button className="text-red text-[13px] font-bold mt-2.5">Chat with AI</button>
+          <Link to="/ai-coach" className="block text-red text-[13px] font-bold mt-2.5">Chat with AI</Link>
           <div className="absolute right-4 bottom-3 text-red drop-shadow-[0_0_8px_rgba(224,39,46,0.5)]">
             <Icon name="aiMascot" size={50} strokeWidth={1.6} />
           </div>
