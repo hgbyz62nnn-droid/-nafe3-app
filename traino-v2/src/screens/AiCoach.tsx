@@ -11,11 +11,19 @@ import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useExercisePreferences } from '../domain/state/ExercisePreferenceContext';
+import { useFoodPreferences } from '../domain/state/FoodPreferenceContext';
 import { generateTodayWorkout } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { derivePreferenceSignals, deriveRecentlyUsedIds } from '../domain/exercise/preferences';
 import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
+import { deriveNutritionProfile } from '../domain/nutrition/profile';
+import { buildDailyPlan } from '../domain/nutrition/mealBuilder';
+import { deriveFoodPreferenceSignals, deriveRecentlyUsedFoodIds } from '../domain/nutrition/preferences';
+import { computeDetailedNutritionAdherence } from '../domain/nutrition/adherence';
+import type { FoodAthleteConstraints } from '../domain/nutrition/matchingEngine';
+import type { MealRole } from '../domain/nutrition/types';
+import { getFood } from '../domain/nutrition/registry';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'How ready am I today?', intent: 'how_ready_am_i' },
@@ -38,6 +46,12 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: "What's an easier version?", intent: 'easier_version' },
   { label: "What's a harder version?", intent: 'harder_version' },
   { label: "Why can't I use other exercises?", intent: 'why_limited_alternatives' },
+  { label: 'What should I eat today?', intent: 'what_should_i_eat_today' },
+  { label: 'What are my calories?', intent: 'what_are_my_calories' },
+  { label: 'Why did you choose these foods?', intent: 'why_these_foods' },
+  { label: 'Replace this food', intent: 'replace_food' },
+  { label: "I don't like this meal", intent: 'replace_food' },
+  { label: 'How is my nutrition this week?', intent: 'how_is_my_nutrition_this_week' },
 ];
 
 /** Intents that read structured Weekly Coaching / Daily Readiness / Progression /
@@ -58,6 +72,11 @@ const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
   'easier_version',
   'harder_version',
   'why_limited_alternatives',
+  'what_should_i_eat_today',
+  'what_are_my_calories',
+  'why_these_foods',
+  'replace_food',
+  'how_is_my_nutrition_this_week',
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -73,15 +92,19 @@ export default function AiCoach() {
   const { profile, setActiveAdjustment, planStartDate } = useProfile();
   const { getLatestRecord } = useWeeklyCoaching();
   const { getTodayRecord, getRecord } = useDailyReadiness();
-  const { getExerciseHistory, getLogsSince, getRecentLogs } = useLogs();
+  const { getExerciseHistory, getLogsSince, getRecentLogs, getAllNutritionLogs } = useLogs();
   const { replacementCounts } = useExercisePreferences();
+  const { replacementCounts: foodReplacementCounts, explicitSignals: foodExplicitSignals } = useFoodPreferences();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [draft, setDraft] = useState('');
 
   // Set when the athlete reached AI Coach from a specific exercise's detail view
   // (ExerciseDetailPanel's "Ask AI Coach" button) — focuses the exercise-intelligence
   // intents on that exercise instead of falling back to today's first one.
-  const focusedExerciseName = (location.state as { exerciseName?: string } | null)?.exerciseName;
+  const navState = location.state as { exerciseName?: string; foodId?: string; foodRole?: MealRole } | null;
+  const focusedExerciseName = navState?.exerciseName;
+  const focusedFoodId = navState?.foodId;
+  const focusedFoodRole = navState?.foodRole;
 
   const recentExerciseLogs = getRecentLogs(90).flatMap((day) => day.exerciseLogs ?? []);
   const athleteConstraints: AthleteConstraints = {
@@ -92,6 +115,24 @@ export default function AiCoach() {
     preferenceByExerciseId: derivePreferenceSignals(recentExerciseLogs, replacementCounts),
     recentlyUsedExerciseIds: deriveRecentlyUsedIds(recentExerciseLogs),
   };
+
+  const allNutritionLogs = getAllNutritionLogs();
+  const nutritionProfile = deriveNutritionProfile(profile.answers, {
+    dislikedFoodIds: [],
+    likedFoodIds: Object.entries(foodExplicitSignals)
+      .filter(([, s]) => s === 'liked')
+      .map(([id]) => id),
+    isTrainingDay: true,
+  });
+  const dailyPlan = buildDailyPlan(nutritionProfile, profile.nutrition);
+  const foodAthleteConstraints: FoodAthleteConstraints = {
+    dietaryPreference: profile.answers.dietaryPreference,
+    allergyIds: profile.answers.allergyIds,
+    budgetTier: profile.answers.budgetTier,
+    preferenceByFoodId: deriveFoodPreferenceSignals(allNutritionLogs, foodReplacementCounts, foodExplicitSignals),
+    recentlyUsedFoodIds: deriveRecentlyUsedFoodIds(allNutritionLogs),
+  };
+  const nutritionAdherence = computeDetailedNutritionAdherence(getRecentLogs(7), { calories: profile.nutrition.calories, proteinG: profile.nutrition.proteinG });
 
   function todaysProgressionDecisions() {
     const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
@@ -112,6 +153,12 @@ export default function AiCoach() {
           todaysProgressionDecisions: todaysProgressionDecisions(),
           focusedExerciseName,
           athleteConstraints,
+          dailyPlan,
+          nutritionTargets: profile.nutrition,
+          focusedFoodId,
+          focusedFoodRole,
+          foodAthleteConstraints,
+          nutritionAdherence,
         })
       : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
@@ -156,11 +203,14 @@ export default function AiCoach() {
         </div>
       </div>
 
-      {focusedExerciseName && (
+      {(focusedExerciseName || focusedFoodId) && (
         <div className="mx-4 mt-3 flex items-center gap-2 bg-card border border-border-soft rounded-card-sm px-3.5 py-2">
           <Icon name="aiMascot" size={14} className="text-red shrink-0" />
           <p className="flex-1 text-text-secondary text-[11.5px]">
-            Asking about <span className="text-white font-semibold">{focusedExerciseName}</span>
+            Asking about{' '}
+            <span className="text-white font-semibold">
+              {focusedExerciseName ?? getFood(focusedFoodId!)?.displayName ?? focusedFoodId}
+            </span>
           </p>
         </div>
       )}
@@ -224,9 +274,9 @@ export default function AiCoach() {
       </div>
 
       <div className="px-4 mt-4 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((s) => (
+        {SUGGESTIONS.map((s, i) => (
           <button
-            key={s.intent}
+            key={`${s.intent}-${i}`}
             onClick={() => handleSuggestion(s.label, s.intent)}
             className="border border-border-soft rounded-chip px-3.5 py-2 text-text-secondary text-[12px] font-medium bg-card-nested"
           >

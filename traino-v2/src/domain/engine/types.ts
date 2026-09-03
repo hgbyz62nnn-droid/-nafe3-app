@@ -40,6 +40,11 @@ export interface AssessmentAnswers {
   dietaryPreference: DietaryPreference;
   allergyIds: string[];
   budgetTier: BudgetTier;
+  /** Athlete's preferred meal count (3/4/5) — optional so existing persisted
+   * profiles (pre-Nutrition-Engine-Expansion) remain valid without a migration;
+   * missing/invalid values fall back to 4 (see domain/nutrition — the
+   * MEAL_DISTRIBUTIONS default the app already used). */
+  mealsPerDay?: 3 | 4 | 5;
 }
 
 export interface UserProfile {
@@ -110,6 +115,12 @@ export interface SportModuleData {
   nutritionProfile: {
     proteinGPerKg: number;
     carbBias: 'low' | 'moderate' | 'high';
+    /** Short, pre-authored nutrition notes for this sport (training-day fueling,
+     * hydration awareness, recovery emphasis, etc.) — read generically by the
+     * Nutrition Engine/AI Coach (e.g. surfaced verbatim as "why these foods"
+     * context); never branched on by id. Optional — a sport with nothing
+     * specific to say here just omits it, never a fabricated placeholder. */
+    considerations?: string[];
   };
 }
 
@@ -121,8 +132,11 @@ export interface SportModuleData {
  * 'what_should_i_aim_for' surface the Progression Engine's decisions deterministically (see
  * exerciseProgressionEngine.ts); 'why_this_exercise'/'what_muscles_does_this_train'/
  * 'easier_version'/'harder_version'/'why_limited_alternatives' surface Exercise Intelligence
- * data deterministically (see domain/exercise/registry.ts + matchingEngine.ts) — every one of
- * them still resolves to pre-templated text over structured data, never a generated explanation. */
+ * data deterministically (see domain/exercise/registry.ts + matchingEngine.ts);
+ * 'what_should_i_eat_today'/'what_are_my_calories'/'why_these_foods'/'replace_food'/
+ * 'how_is_my_nutrition_this_week' surface the Nutrition Engine deterministically (see
+ * domain/nutrition/registry.ts + matchingEngine.ts + adherence.ts) — every one of them still
+ * resolves to pre-templated text over structured data, never a generated explanation. */
 export type AiCoachIntent =
   | 'feeling_tired'
   | 'adjust_todays_workout'
@@ -144,7 +158,12 @@ export type AiCoachIntent =
   | 'what_muscles_does_this_train'
   | 'easier_version'
   | 'harder_version'
-  | 'why_limited_alternatives';
+  | 'why_limited_alternatives'
+  | 'what_should_i_eat_today'
+  | 'what_are_my_calories'
+  | 'why_these_foods'
+  | 'replace_food'
+  | 'how_is_my_nutrition_this_week';
 
 export interface AiCoachAdjustment {
   /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */

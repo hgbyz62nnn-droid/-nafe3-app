@@ -5,6 +5,9 @@ import type { AiCoachIntent } from './types';
 import type { WeeklyCoachingRecord } from '../coaching/types';
 import type { DailyReadinessInputs, DailyReadinessRecord } from '../readiness/types';
 import type { ExerciseProgressionDecision } from '../progression/types';
+import { buildDailyPlan } from '../nutrition/mealBuilder';
+import type { NutritionProfile } from '../nutrition/types';
+import type { DetailedNutritionAdherence } from '../nutrition/adherence';
 
 const ALL_INTENTS: AiCoachIntent[] = [
   'feeling_tired',
@@ -28,6 +31,11 @@ const ALL_INTENTS: AiCoachIntent[] = [
   'easier_version',
   'harder_version',
   'why_limited_alternatives',
+  'what_should_i_eat_today',
+  'what_are_my_calories',
+  'why_these_foods',
+  'replace_food',
+  'how_is_my_nutrition_this_week',
 ];
 
 function progressionDecision(overrides: Partial<ExerciseProgressionDecision> = {}): ExerciseProgressionDecision {
@@ -396,6 +404,121 @@ describe('getAiCoachReply — Exercise Intelligence intents (Y)', () => {
       'why_limited_alternatives',
       'replace_exercise',
     ];
+    for (const intent of intents) {
+      expect(() => getAiCoachReply(intent, context)).not.toThrow();
+      expect(getAiCoachReply(intent, context)).toEqual(getAiCoachReply(intent, context));
+    }
+  });
+});
+
+// AD: AI Coach nutrition intents (spec §33)
+describe('getAiCoachReply — Nutrition Engine intents (AD)', () => {
+  function nutritionProfile(overrides: Partial<NutritionProfile> = {}): NutritionProfile {
+    return {
+      goal: 'general_fitness',
+      sex: 'male',
+      weightKg: 80,
+      heightCm: 180,
+      age: 28,
+      daysAvailablePerWeek: 4,
+      sport: 'football',
+      dietaryPreference: 'no_restriction',
+      allergyIds: ['none'],
+      budgetTier: 'medium',
+      mealsPerDay: 4,
+      dislikedFoodIds: [],
+      likedFoodIds: [],
+      isTrainingDay: true,
+      ...overrides,
+    };
+  }
+  const TARGETS = { calories: 2800, proteinG: 160, carbsG: 350, fatG: 80 };
+  const plan = buildDailyPlan(nutritionProfile(), TARGETS);
+  const foodConstraints = { dietaryPreference: 'no_restriction' as const, allergyIds: ['none'], budgetTier: 'medium' as const };
+  const focusedFoodId = plan.meals.find((m) => m.items.length > 0)!.items[0].foodId;
+
+  it('what_should_i_eat_today summarizes the real generated plan', () => {
+    const reply = getAiCoachReply('what_should_i_eat_today', { latestRecord: null, dailyPlan: plan });
+    expect(reply.message).toContain(String(plan.totals.calories));
+    expect(reply.ctaLabel).toBe('OPEN NUTRITION');
+  });
+
+  it('what_should_i_eat_today is honest when no plan has been generated yet', () => {
+    const reply = getAiCoachReply('what_should_i_eat_today', { latestRecord: null });
+    expect(reply.message).toMatch(/don't have today's plan/i);
+  });
+
+  it('what_are_my_calories reports the real nutrition targets', () => {
+    const reply = getAiCoachReply('what_are_my_calories', { latestRecord: null, nutritionTargets: TARGETS });
+    expect(reply.message).toContain('2800');
+    expect(reply.message).toContain('160');
+  });
+
+  it('what_are_my_calories is honest when targets are not yet calculated', () => {
+    const reply = getAiCoachReply('what_are_my_calories', { latestRecord: null });
+    expect(reply.message).toMatch(/don't have your nutrition targets/i);
+  });
+
+  it('why_these_foods explains the focused food from real FoodDefinition data', () => {
+    const reply = getAiCoachReply('why_these_foods', { latestRecord: null, focusedFoodId });
+    expect(reply.message).not.toContain('undefined');
+  });
+
+  it('why_these_foods is honest when no food is in focus and no plan fallback exists', () => {
+    const reply = getAiCoachReply('why_these_foods', { latestRecord: null });
+    expect(reply.message).toMatch(/don't have a specific food/i);
+  });
+
+  it('replace_food recommends a real, safe alternative when a focused food + constraints are given', () => {
+    const reply = getAiCoachReply('replace_food', {
+      latestRecord: null,
+      focusedFoodId,
+      foodAthleteConstraints: foodConstraints,
+    });
+    expect(reply.ctaLabel).toBe('OPEN NUTRITION');
+    expect(reply.message).not.toContain('undefined');
+  });
+
+  it('replace_food falls back to the generic dead-end message with no focus/constraints', () => {
+    const reply = getAiCoachReply('replace_food', { latestRecord: null });
+    expect(reply.message).toMatch(/tell me which food/i);
+  });
+
+  it('replace_food never recommends an unsafe food even under an allergy constraint', () => {
+    const reply = getAiCoachReply('replace_food', {
+      latestRecord: null,
+      focusedFoodId,
+      foodAthleteConstraints: { dietaryPreference: 'no_restriction', allergyIds: ['gluten'], budgetTier: 'medium' },
+    });
+    expect(reply.message).not.toContain('undefined');
+  });
+
+  it('how_is_my_nutrition_this_week reports real adherence data when available', () => {
+    const adherence: DetailedNutritionAdherence = {
+      caloriesAdherencePct: 85,
+      proteinAdherencePct: 92,
+      mealCompletionPct: 70,
+      daysWithDetailedLogs: 4,
+      isIncomplete: false,
+    };
+    const reply = getAiCoachReply('how_is_my_nutrition_this_week', { latestRecord: null, nutritionAdherence: adherence });
+    expect(reply.message).toContain('85');
+    expect(reply.message).toContain('92');
+    expect(reply.ctaLabel).toBe('VIEW WEEKLY REPORT');
+  });
+
+  it('how_is_my_nutrition_this_week is honest when logging is incomplete rather than presenting 0% adherence', () => {
+    const reply = getAiCoachReply('how_is_my_nutrition_this_week', {
+      latestRecord: null,
+      nutritionAdherence: { caloriesAdherencePct: null, proteinAdherencePct: null, mealCompletionPct: 10, daysWithDetailedLogs: 0, isIncomplete: true },
+    });
+    expect(reply.message).toMatch(/don't have enough detailed food logging/i);
+    expect(reply.message).not.toContain('0%');
+  });
+
+  it('all five nutrition intents never throw and are deterministic', () => {
+    const context = { latestRecord: null, dailyPlan: plan, nutritionTargets: TARGETS, focusedFoodId, foodAthleteConstraints: foodConstraints };
+    const intents: AiCoachIntent[] = ['what_should_i_eat_today', 'what_are_my_calories', 'why_these_foods', 'replace_food', 'how_is_my_nutrition_this_week'];
     for (const intent of intents) {
       expect(() => getAiCoachReply(intent, context)).not.toThrow();
       expect(getAiCoachReply(intent, context)).toEqual(getAiCoachReply(intent, context));

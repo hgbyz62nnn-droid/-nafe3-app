@@ -486,5 +486,9 @@ export const swimmingModule: SportModuleData = {
     // demand, and a high carb bias to fuel long aerobic volume.
     proteinGPerKg: 1.6,
     carbBias: 'high',
+    considerations: [
+      'High training volume in the pool raises carbohydrate needs for endurance fueling and recovery.',
+      'Pool immersion can mask sweat loss — fluid intake is easy to under-track on heavy training days.',
+    ],
   },
 };

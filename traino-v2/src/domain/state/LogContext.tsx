@@ -1,8 +1,9 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { MealSlot, PerformanceCategory } from '../engine/types';
 import type { ExercisePerformanceLog } from '../progression/types';
+import type { NutritionLogEntry } from '../nutrition/types';
 import { addDays, daysBetween, localDateKey, parseLocalDateKey } from '../engine/dateUtils';
-import { isValidWeightKg, sanitizeExercisePerformanceLog } from '../engine/validation';
+import { isValidWeightKg, sanitizeExercisePerformanceLog, sanitizeNutritionLogEntry } from '../engine/validation';
 import { loadVersioned, saveVersioned, type Migration } from './persistence';
 
 const STORAGE_KEY = 'traino.logs';
@@ -26,6 +27,11 @@ export interface DayLog {
    * evidence logged that day", never treated as a failure or a success). One entry per
    * exercise name per day; logging the same exercise again the same day replaces its entry. */
   exerciseLogs?: ExercisePerformanceLog[];
+  /** Real logged food entries this day (spec §21) — optional and additive, same
+   * "absent means no evidence, never a failure" contract as `exerciseLogs`. One entry
+   * per (slotId, foodId) pair per day; logging the same food in the same slot again
+   * the same day replaces that entry rather than duplicating it. */
+  nutritionLogs?: NutritionLogEntry[];
 }
 
 function emptyDayLog(date: string): DayLog {
@@ -44,7 +50,8 @@ function isDayLog(value: unknown, dateKey: string): value is DayLog {
     typeof v.mealOverrides === 'object' &&
     v.mealOverrides !== null &&
     typeof v.workoutCompleted === 'boolean' &&
-    (v.exerciseLogs === undefined || Array.isArray(v.exerciseLogs))
+    (v.exerciseLogs === undefined || Array.isArray(v.exerciseLogs)) &&
+    (v.nutritionLogs === undefined || Array.isArray(v.nutritionLogs))
   );
 }
 
@@ -123,6 +130,17 @@ interface LogContextValue {
   /** Every distinct exercise name with at least one logged exposure, across all
    * persisted history — the index the Progress screen's Training tab lists from. */
   getAllLoggedExerciseNames: () => string[];
+  /** Upserts one logged food entry for `date` — idempotent per (slotId, foodId) per
+   * day (resubmitting the same food in the same slot the same date replaces that
+   * entry). `calories`/`proteinG`/`carbsG`/`fatG` are snapshotted as given — never
+   * re-derived from the current Food Registry, so later food-data edits can't rewrite
+   * history. */
+  logNutritionEntry: (date: string, entry: Omit<NutritionLogEntry, 'date' | 'submittedAt'>) => void;
+  /** All logged food entries for one date, in log order — [] if nothing was logged. */
+  getNutritionLogsForDate: (date: string) => NutritionLogEntry[];
+  /** All logged food entries across every persisted day-log, oldest first — the
+   * Nutrition Adherence / preference-derivation input. */
+  getAllNutritionLogs: () => NutritionLogEntry[];
 }
 
 const LogContext = createContext<LogContextValue | null>(null);
@@ -205,6 +223,26 @@ export function LogProvider({ children }: { children: ReactNode }) {
     return Array.from(names).sort();
   }
 
+  function logNutritionEntry(date: string, entry: Omit<NutritionLogEntry, 'date' | 'submittedAt'>) {
+    updateDay(date, (day) => {
+      const existing = day.nutritionLogs ?? [];
+      const raw: NutritionLogEntry = { ...entry, date, submittedAt: new Date().toISOString() };
+      const { value: record } = sanitizeNutritionLogEntry(raw);
+      const withoutSameSlotFood = existing.filter((e) => !(e.slotId === record.slotId && e.foodId === record.foodId));
+      return { ...day, nutritionLogs: [...withoutSameSlotFood, record] };
+    });
+  }
+
+  function getNutritionLogsForDate(date: string): NutritionLogEntry[] {
+    return getDayLog(date).nutritionLogs ?? [];
+  }
+
+  function getAllNutritionLogs(): NutritionLogEntry[] {
+    return Object.values(logs)
+      .flatMap((day) => day.nutritionLogs ?? [])
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   function getRecentLogs(days: number): DayLog[] {
     const result: DayLog[] = [];
     const cursor = new Date();
@@ -243,6 +281,9 @@ export function LogProvider({ children }: { children: ReactNode }) {
       logExercisePerformance,
       getExerciseHistory,
       getAllLoggedExerciseNames,
+      logNutritionEntry,
+      getNutritionLogsForDate,
+      getAllNutritionLogs,
     }),
     [logs, today]
   );

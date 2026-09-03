@@ -30,14 +30,27 @@ const GOAL_CALORIE_FACTOR: Record<Goal, number> = {
 
 /** Floor under which a calorie target is not a safe recommendation regardless of the formula's output. */
 const MIN_SAFE_CALORIES = 1200;
+/** A sanity ceiling for the app's own UI/plan-building — not a physiological claim.
+ * Mifflin-St Jeor x a high activity multiplier x a muscle-gain factor can produce a
+ * very large number for an athlete near the top of the app's accepted weight range;
+ * this bound keeps the DISPLAYED target and the Meal Builder's math sane without
+ * pretending to know an individual's true upper limit. */
+const MAX_SAFE_CALORIES = 6000;
 
+/**
+ * Deterministic energy target. This is an ESTIMATE from a documented
+ * formula (Mifflin-St Jeor + a fixed activity table + a fixed goal
+ * factor) — never presented as the athlete's exact physiological
+ * maintenance. UI copy referencing this value should say "Estimated daily
+ * target", not "Your exact maintenance calories".
+ */
 export function calculateNutritionTargets(
   answers: AssessmentAnswers,
   sportProfile: SportModuleData['nutritionProfile']
 ): NutritionTargets {
   const tdee = bmr(answers) * activityMultiplier(answers.daysAvailablePerWeek);
   const goalFactor = GOAL_CALORIE_FACTOR[answers.goal] ?? 1.0;
-  const calories = Math.max(Math.round(tdee * goalFactor), MIN_SAFE_CALORIES);
+  const calories = Math.min(Math.max(Math.round(tdee * goalFactor), MIN_SAFE_CALORIES), MAX_SAFE_CALORIES);
 
   const proteinG = Math.round(answers.weightKg * sportProfile.proteinGPerKg);
   const proteinKcal = proteinG * 4;

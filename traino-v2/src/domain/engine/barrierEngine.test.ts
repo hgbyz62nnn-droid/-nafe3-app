@@ -153,6 +153,35 @@ describe('detectBarriers', () => {
   });
 });
 
+// AB: weekly coaching integration with the Nutrition Engine (spec §33/§23) — the
+// existing nutrition_difficulty/budget barrier detection (driven by
+// computeNutritionAdherence's loggedMealSlots-based percentage) is untouched by the
+// new, additive `nutritionLogs` field; both can coexist on the same DayLog.
+describe('detectBarriers — AB: nutrition_difficulty/budget barriers coexist with the new detailed nutritionLogs field', () => {
+  it('nutrition_difficulty is still detected from real loggedMealSlots completion, unaffected by an also-present nutritionLogs entry', () => {
+    const logs = [
+      log('2026-01-01', {
+        loggedMealSlots: ['breakfast'],
+        nutritionLogs: [
+          { date: '2026-01-01', slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 200, proteinG: 4, carbsG: 44, fatG: 0.5, wasModified: false, submittedAt: '2026-01-01T08:00:00.000Z' },
+        ],
+      }),
+      log('2026-01-02'),
+      log('2026-01-03'),
+    ];
+    const summary = computeWeekSummary(logs, [], 5);
+    const detected = detectBarriers(checkIn(['nutrition_difficulty']), summary);
+    expect(detected[0].barrier).toBe('nutrition_difficulty');
+  });
+
+  it('budget barrier detection is unaffected by the new nutritionLogs field being entirely absent (backward compatible)', () => {
+    const logs = [log('2026-01-01'), log('2026-01-02'), log('2026-01-03')];
+    const summary = computeWeekSummary(logs, [], 5);
+    const detected = detectBarriers(checkIn(['budget']), summary);
+    expect(detected[0].barrier).toBe('budget');
+  });
+});
+
 describe('detectRecurringPattern (D: repeated time barrier)', () => {
   function record(week: number, barrier: string | null): WeeklyCoachingRecord {
     return {

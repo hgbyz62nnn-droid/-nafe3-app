@@ -1,21 +1,31 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
 import { AssetSlot } from '../components/ui/AssetSlot';
 import { BottomNav } from '../components/ui/BottomNav';
+import FoodDetailPanel from '../components/FoodDetailPanel';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
-import { generateMealPlan, getMealAlternative } from '../domain/engine/nutritionPlanEngine';
-import { MEAL_LIBRARY } from '../domain/nutrition/meals';
+import { useFoodPreferences } from '../domain/state/FoodPreferenceContext';
+import { deriveNutritionProfile } from '../domain/nutrition/profile';
+import { buildDailyPlan } from '../domain/nutrition/mealBuilder';
+import { deriveFoodPreferenceSignals, deriveRecentlyUsedFoodIds } from '../domain/nutrition/preferences';
+import { getFood } from '../domain/nutrition/registry';
+import type { FoodAthleteConstraints } from '../domain/nutrition/matchingEngine';
+import type { FoodDefinition } from '../domain/nutrition/types';
 import type { MealSlot } from '../domain/engine/types';
 
-const SLOT_LABEL: Record<MealSlot, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  snack: 'Snack',
-  dinner: 'Dinner',
-};
+/** The 4-slot legacy MealSlot ids the pre-Nutrition-Engine-Expansion barrier detection
+ * (`computeNutritionAdherence` / `nutrition_difficulty` / `budget`) still reads from
+ * `DayLog.loggedMealSlots`. Any new-plan slotId that happens to match one of these
+ * still updates it too, so that existing signal stays fed for the common 3/4-meal
+ * case, without requiring `MealSlot` to grow 5-meal-only ids like 'snack_1'. */
+const LEGACY_MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'snack', 'dinner'];
+function asLegacySlot(slotId: string): MealSlot | undefined {
+  return LEGACY_MEAL_SLOTS.find((s) => s === slotId);
+}
 
 function CalorieRing({ value, total }: { value: number; total: number }) {
   const size = 168;
@@ -69,52 +79,80 @@ function CalorieRing({ value, total }: { value: number; total: number }) {
 export default function Nutrition() {
   const { answers, profile } = useProfile();
   const targets = profile.nutrition;
-  const { today, getDayLog, toggleMealLogged, setMealOverride } = useLogs();
+  const { today, getDayLog, toggleMealLogged, logNutritionEntry, getNutritionLogsForDate, getAllNutritionLogs } = useLogs();
+  const { replacementCounts, explicitSignals, recordReplacement } = useFoodPreferences();
+  const [swaps, setSwaps] = useState<Record<string, FoodDefinition>>({});
+  const [detailKey, setDetailKey] = useState<string | null>(null);
+
   const dayLog = getDayLog(today);
+  const todayNutritionLogs = getNutritionLogsForDate(today);
 
-  const plan = generateMealPlan(answers, targets).map((entry) => {
-    const overrideId = dayLog.mealOverrides[entry.slot];
-    const meal = overrideId ? (MEAL_LIBRARY.find((m) => m.id === overrideId) ?? entry.meal) : entry.meal;
-    return { slot: entry.slot, meal };
+  const allNutritionLogs = getAllNutritionLogs();
+  const nutritionProfile = deriveNutritionProfile(answers, {
+    dislikedFoodIds: [],
+    likedFoodIds: Object.entries(explicitSignals)
+      .filter(([, s]) => s === 'liked')
+      .map(([id]) => id),
+    isTrainingDay: true,
   });
+  const plan = buildDailyPlan(nutritionProfile, targets);
+  const foodConstraints: FoodAthleteConstraints = {
+    dietaryPreference: answers.dietaryPreference,
+    allergyIds: answers.allergyIds,
+    budgetTier: answers.budgetTier,
+    preferenceByFoodId: deriveFoodPreferenceSignals(allNutritionLogs, replacementCounts, explicitSignals),
+    recentlyUsedFoodIds: deriveRecentlyUsedFoodIds(allNutritionLogs),
+  };
 
-  function toggleLogged(slot: MealSlot) {
-    toggleMealLogged(today, slot);
-  }
-
-  function swapMeal(slot: MealSlot, currentMealId: string) {
-    const next = getMealAlternative(slot, currentMealId, answers);
-    if (next) setMealOverride(today, slot, next.id);
-  }
-
-  const loggedKcal = plan
-    .filter((entry) => entry.meal && dayLog.loggedMealSlots.includes(entry.slot))
-    .reduce((sum, entry) => sum + (entry.meal?.kcal ?? 0), 0);
-  const consumedRatio = targets.calories > 0 ? Math.min(loggedKcal / targets.calories, 1) : 0;
+  const loggedKcal = todayNutritionLogs.reduce((sum, entry) => sum + entry.calories, 0);
+  const loggedProteinG = todayNutritionLogs.reduce((sum, entry) => sum + entry.proteinG, 0);
+  const loggedCarbsG = todayNutritionLogs.reduce((sum, entry) => sum + entry.carbsG, 0);
+  const loggedFatG = todayNutritionLogs.reduce((sum, entry) => sum + entry.fatG, 0);
 
   const MACROS = [
-    {
-      label: 'Protein',
-      value: Math.round(targets.proteinG * consumedRatio),
-      total: targets.proteinG,
-      unit: 'g',
-      color: '#3DDC84',
-    },
-    {
-      label: 'Carbs',
-      value: Math.round(targets.carbsG * consumedRatio),
-      total: targets.carbsG,
-      unit: 'g',
-      color: '#3B82F6',
-    },
-    {
-      label: 'Fat',
-      value: Math.round(targets.fatG * consumedRatio),
-      total: targets.fatG,
-      unit: 'g',
-      color: '#F5A623',
-    },
+    { label: 'Protein', value: Math.round(loggedProteinG), total: targets.proteinG, unit: 'g', color: '#3DDC84' },
+    { label: 'Carbs', value: Math.round(loggedCarbsG), total: targets.carbsG, unit: 'g', color: '#3B82F6' },
+    { label: 'Fat', value: Math.round(loggedFatG), total: targets.fatG, unit: 'g', color: '#F5A623' },
   ];
+
+  function itemKey(slotId: string, index: number): string {
+    return `${slotId}:${index}`;
+  }
+
+  function markMealEaten(slotId: string) {
+    const meal = plan.meals.find((m) => m.slotId === slotId);
+    if (!meal) return;
+    meal.items.forEach((item, index) => {
+      const key = itemKey(slotId, index);
+      const swap = swaps[key];
+      const food = swap ?? getFood(item.foodId);
+      if (!food) return;
+      logNutritionEntry(today, {
+        slotId,
+        foodId: food.id,
+        quantity: item.quantity,
+        calories: Math.round(food.calories * item.quantity),
+        proteinG: Math.round(food.proteinG * item.quantity * 10) / 10,
+        carbsG: Math.round(food.carbsG * item.quantity * 10) / 10,
+        fatG: Math.round(food.fatG * item.quantity * 10) / 10,
+        wasModified: !!swap,
+      });
+    });
+    const legacySlot = asLegacySlot(slotId);
+    if (legacySlot && !dayLog.loggedMealSlots.includes(legacySlot)) {
+      toggleMealLogged(today, legacySlot);
+    }
+  }
+
+  function isMealLogged(slotId: string): boolean {
+    return todayNutritionLogs.some((entry) => entry.slotId === slotId);
+  }
+
+  function handleSelectReplacement(slotId: string, index: number, replacement: FoodDefinition, originalFoodId: string) {
+    recordReplacement(originalFoodId);
+    setSwaps((prev) => ({ ...prev, [itemKey(slotId, index)]: replacement }));
+    setDetailKey(null);
+  }
 
   return (
     <Screen>
@@ -133,6 +171,7 @@ export default function Nutrition() {
       <p className="text-text-secondary text-[13px] px-4 mt-3">
         Today, {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}
       </p>
+      <p className="text-text-muted text-[11px] px-4 mt-1">Estimated daily target</p>
 
       <div className="flex items-center gap-4 px-4 mt-3">
         <CalorieRing value={loggedKcal} total={targets.calories} />
@@ -155,66 +194,90 @@ export default function Nutrition() {
         </div>
       </div>
 
-      <p className="text-text-secondary text-[12px] font-bold tracking-wide px-4 mt-5">MEALS</p>
+      {!plan.reconciliation.withinTolerance && (
+        <p className="text-text-muted text-[10.5px] px-4 mt-3">
+          Today's plan totals {plan.totals.calories} kcal ({plan.reconciliation.caloriesDiff > 0 ? '+' : ''}
+          {plan.reconciliation.caloriesDiff} vs target).
+        </p>
+      )}
 
-      <div className="px-4 mt-2 flex flex-col gap-2.5">
-        {plan.map(({ slot, meal }) => {
-          const logged = dayLog.loggedMealSlots.includes(slot);
-
-          if (!meal) {
-            return (
-              <div
-                key={slot}
-                className="flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-2.5 py-2.5"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-[13.5px] font-bold">{SLOT_LABEL[slot]}</p>
-                  <p className="text-text-muted text-[11.5px] mt-0.5">
-                    No meal matches your preferences for this slot
-                  </p>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div
-              key={slot}
-              className="flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-2.5 py-2"
-            >
-              <AssetSlot className="w-11 h-11 rounded-[12px] shrink-0" fit="cover" compact />
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-[13.5px] font-bold">{SLOT_LABEL[slot]}</p>
-                <p className="text-text-secondary text-[11.5px] mt-0.5 truncate">{meal.description}</p>
-              </div>
-              <button
-                onClick={() => swapMeal(slot, meal.id)}
-                aria-label="Swap meal"
-                className="w-7 h-7 min-w-[28px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
-              >
-                <Icon name="swap" size={12} className="text-text-secondary" strokeWidth={2} />
-              </button>
-              <button
-                onClick={() => toggleLogged(slot)}
-                className="flex items-center gap-1.5 shrink-0"
-                aria-label={logged ? 'Mark meal not eaten' : 'Mark meal eaten'}
-              >
-                {logged ? (
-                  <Icon name="checkPlain" size={12} className="text-success" strokeWidth={2.8} />
-                ) : (
-                  <span className="w-3 h-3 rounded-full border border-border-soft" />
-                )}
-                <span className="text-white text-[12.5px] font-bold">{meal.kcal} kcal</span>
-              </button>
+      {plan.meals.map((meal) => {
+        const logged = isMealLogged(meal.slotId);
+        return (
+          <div key={meal.slotId} className="px-4 mt-5">
+            <div className="flex items-center justify-between">
+              <p className="text-text-secondary text-[12px] font-bold tracking-wide">{meal.slotLabel.toUpperCase()}</p>
+              <span className="text-text-muted text-[11px]">{meal.totals.calories} kcal</span>
             </div>
-          );
-        })}
-      </div>
 
-      <div className="px-4 mt-4">
-        <button className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button">
-          ADD MEAL
-        </button>
+            <div className="mt-2 flex flex-col gap-2.5">
+              {meal.items.map((item, index) => {
+                const key = itemKey(meal.slotId, index);
+                const swap = swaps[key];
+                const food = swap ?? getFood(item.foodId);
+                if (!food) return null;
+
+                return (
+                  <div key={key}>
+                    <div className="flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-2.5 py-2">
+                      <AssetSlot className="w-11 h-11 rounded-[12px] shrink-0" fit="cover" compact />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-[13.5px] font-bold truncate">{food.displayName}</p>
+                        <p className="text-text-secondary text-[11.5px] mt-0.5">
+                          {item.quantity} x {food.servingSize}
+                          {food.servingUnit} — {Math.round(food.calories * item.quantity)} kcal
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setDetailKey((prev) => (prev === key ? null : key))}
+                        aria-label="View food details / replace"
+                        className="w-7 h-7 min-w-[28px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
+                      >
+                        <Icon name="swap" size={12} className="text-text-secondary" strokeWidth={2} />
+                      </button>
+                    </div>
+                    {detailKey === key && (
+                      <FoodDetailPanel
+                        foodId={food.id}
+                        role={item.role}
+                        quantity={item.quantity}
+                        constraints={foodConstraints}
+                        onClose={() => setDetailKey(null)}
+                        onSelectReplacement={(replacement) => handleSelectReplacement(meal.slotId, index, replacement, item.foodId)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => markMealEaten(meal.slotId)}
+              disabled={logged}
+              className={`w-full mt-2 rounded-card-sm py-2 text-[12px] font-bold flex items-center justify-center gap-1.5 ${
+                logged ? 'bg-success/15 text-success' : 'border border-border-soft text-text-secondary'
+              }`}
+            >
+              {logged ? (
+                <>
+                  <Icon name="checkPlain" size={11} strokeWidth={2.8} />
+                  Logged
+                </>
+              ) : (
+                'Mark as eaten'
+              )}
+            </button>
+          </div>
+        );
+      })}
+
+      <div className="px-4 mt-5 mb-4">
+        <Link
+          to="/ai-coach"
+          className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button flex items-center justify-center"
+        >
+          ASK AI COACH
+        </Link>
       </div>
 
       <BottomNav />

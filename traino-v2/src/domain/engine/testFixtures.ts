@@ -23,6 +23,7 @@ export function baseAnswers(overrides: Partial<AssessmentAnswers> = {}): Assessm
     dietaryPreference: 'no_restriction',
     allergyIds: [],
     budgetTier: 'medium',
+    mealsPerDay: 4,
     ...overrides,
   };
 }

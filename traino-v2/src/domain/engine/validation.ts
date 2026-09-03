@@ -2,6 +2,7 @@ import type { AssessmentAnswers, BudgetTier, DietaryPreference, Goal, Sex } from
 import { SPORTS, type SportId } from '../sports/sports';
 import type { DailyReadinessInputs, ReadinessScale } from '../readiness/types';
 import type { ExercisePerformanceLog } from '../progression/types';
+import type { NutritionLogEntry } from '../nutrition/types';
 
 /**
  * Boundary validation/sanitization for the deterministic engine. Persisted
@@ -53,6 +54,19 @@ function clampNumber(
   return n;
 }
 
+/** `mealsPerDay` is a numeric enum (3/4/5), not a string one — omitted entirely for
+ * every profile persisted before the Nutrition Engine Expansion, so `undefined` is
+ * the expected common case and is defaulted silently, without recording a violation
+ * (violations are for genuinely corrupt/unexpected values, not "field didn't exist
+ * yet" backward compatibility). */
+function sanitizeMealsPerDay(value: unknown, violations: string[]): 3 | 4 | 5 {
+  if (value === 3 || value === 4 || value === 5) return value;
+  if (value !== undefined) {
+    violations.push(`mealsPerDay: invalid value ${JSON.stringify(value)}, defaulted to 4`);
+  }
+  return 4;
+}
+
 function sanitizeEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -101,6 +115,7 @@ export function sanitizeAssessmentAnswers(answers: AssessmentAnswers): SanitizeR
     dietaryPreference: sanitizeEnum(answers.dietaryPreference, DIETARY_PREFERENCES, 'no_restriction', 'dietaryPreference', violations),
     allergyIds: sanitizeStringArray(answers.allergyIds, 'allergyIds', violations),
     budgetTier: sanitizeEnum(answers.budgetTier, BUDGET_TIERS, 'medium', 'budgetTier', violations),
+    mealsPerDay: sanitizeMealsPerDay(answers.mealsPerDay, violations),
   };
 
   return { value, violations };
@@ -231,6 +246,39 @@ export function sanitizeExercisePerformanceLog(
     rir,
     wasModified: typeof log.wasModified === 'boolean' ? log.wasModified : false,
     submittedAt: typeof log.submittedAt === 'string' ? log.submittedAt : new Date().toISOString(),
+  };
+
+  return { value, violations };
+}
+
+/**
+ * Sanitizes one logged food entry before it ever reaches nutrition adherence
+ * calculations — quantity/calories/macros must never be NaN/Infinity/negative. The
+ * calorie/macro fields are a SNAPSHOT of the FoodDefinition's values at logging time
+ * (spec §21) — this function never re-derives them from the current Food Registry, so
+ * a later edit to a food's macros can never silently rewrite historical logs.
+ */
+export function sanitizeNutritionLogEntry(entry: NutritionLogEntry): SanitizeResult<NutritionLogEntry> {
+  const violations: string[] = [];
+
+  function sanitizeNonNegative(value: unknown, label: string): number {
+    const n = typeof value === 'number' ? value : NaN;
+    if (Number.isFinite(n) && n >= 0) return Math.round(n * 10) / 10;
+    violations.push(`${label}: invalid (${JSON.stringify(value)}), defaulted to 0`);
+    return 0;
+  }
+
+  const value: NutritionLogEntry = {
+    date: typeof entry.date === 'string' ? entry.date : '',
+    slotId: typeof entry.slotId === 'string' && entry.slotId.length > 0 ? entry.slotId : 'unknown',
+    foodId: typeof entry.foodId === 'string' && entry.foodId.length > 0 ? entry.foodId : 'unknown',
+    quantity: sanitizeNonNegative(entry.quantity, 'quantity'),
+    calories: sanitizeNonNegative(entry.calories, 'calories'),
+    proteinG: sanitizeNonNegative(entry.proteinG, 'proteinG'),
+    carbsG: sanitizeNonNegative(entry.carbsG, 'carbsG'),
+    fatG: sanitizeNonNegative(entry.fatG, 'fatG'),
+    wasModified: typeof entry.wasModified === 'boolean' ? entry.wasModified : false,
+    submittedAt: typeof entry.submittedAt === 'string' ? entry.submittedAt : new Date().toISOString(),
   };
 
   return { value, violations };

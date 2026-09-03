@@ -14,7 +14,8 @@ import { generateWeeklyReport } from './engine/weeklyReportEngine';
 import { getSportModule } from './sports/registry';
 import { addDays, localDateKey } from './engine/dateUtils';
 import { footballModule } from './sports/football/program';
-import type { AssessmentAnswers, FitnessLevel, MealSlot, UserProfile } from './engine/types';
+import type { AssessmentAnswers, FitnessLevel, MealSlot, NutritionTargets, UserProfile } from './engine/types';
+import type { NutritionProfile } from './nutrition/types';
 import { buildWeeklyCoachingReview } from './engine/weeklyCoachingEngine';
 import { computeWeekSummary } from './engine/barrierEngine';
 import { computeReadiness } from './engine/readinessEngine';
@@ -29,6 +30,12 @@ import { swimmingModule } from './sports/swimming/program';
 import { getExerciseByName } from './exercise/registry';
 import { suggestReplacements, type AthleteConstraints } from './exercise/matchingEngine';
 import { derivePreferenceSignals, deriveRecentlyUsedIds } from './exercise/preferences';
+import { buildDailyPlan } from './nutrition/mealBuilder';
+import { deriveNutritionProfile } from './nutrition/profile';
+import { getFood } from './nutrition/registry';
+import { computeDetailedNutritionAdherence, recommendNutritionTargetReview } from './nutrition/adherence';
+import { computeWeightTrend } from './engine/progressEngine';
+import type { NutritionLogEntry } from './nutrition/types';
 
 /**
  * Multi-athlete, multi-week simulation. Not a UI test — this drives the
@@ -1153,5 +1160,245 @@ describe('Exercise Intelligence multi-athlete simulation (spec §26)', () => {
     // frequently_replaced is a negative ranking signal — front-squat should rank no higher
     // with that history than without it.
     expect(frontSquat!.score).toBeLessThanOrEqual(withoutHistory!.score);
+  });
+});
+
+describe('Nutrition Engine multi-athlete simulation (spec §35)', () => {
+  /** Builds a real Daily Nutrition Plan for a profile+targets pair and checks every
+   * cross-athlete invariant: real foods, allergy/diet safety, finite non-negative
+   * totals, and an always-reported (never-hidden) reconciliation — run against the
+   * real generated plan rather than synthetic queries, mirroring the Exercise
+   * Intelligence simulation's approach above. */
+  function assertValidPlan(profile: NutritionProfile, targets: NutritionTargets) {
+    const plan = buildDailyPlan(profile, targets);
+    expect(plan.meals.length).toBeGreaterThan(0);
+
+    for (const meal of plan.meals) {
+      for (const item of meal.items) {
+        const food = getFood(item.foodId);
+        expect(food, `"${item.foodId}" should resolve to a real Food Library entry`).toBeDefined();
+        if (!food) continue;
+
+        for (const allergen of profile.allergyIds) {
+          if (allergen === 'none') continue;
+          expect(food.allergens, `"${food.id}" must never contain allergen "${allergen}"`).not.toContain(allergen);
+        }
+        if (profile.dietaryPreference === 'vegan' || profile.dietaryPreference === 'vegetarian') {
+          expect(food.dietaryTags, `"${food.id}" must respect ${profile.dietaryPreference}`).toContain(profile.dietaryPreference);
+        }
+      }
+    }
+
+    for (const value of [plan.totals.calories, plan.totals.proteinG, plan.totals.carbsG, plan.totals.fatG]) {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+    }
+    expect(typeof plan.reconciliation.withinTolerance).toBe('boolean');
+    expect(Number.isFinite(plan.reconciliation.caloriesDiff)).toBe(true);
+    return plan;
+  }
+
+  function nutritionProfileFor(
+    answers: AssessmentAnswers,
+    signals: { dislikedFoodIds?: string[]; likedFoodIds?: string[]; isTrainingDay?: boolean } = {}
+  ): NutritionProfile {
+    return deriveNutritionProfile(answers, {
+      dislikedFoodIds: signals.dislikedFoodIds ?? [],
+      likedFoodIds: signals.likedFoodIds ?? [],
+      isTrainingDay: signals.isTrainingDay ?? true,
+    });
+  }
+
+  function targetsFor(answers: AssessmentAnswers): NutritionTargets {
+    return calculateNutritionTargets(answers, getSportModule(answers.sport).nutritionProfile);
+  }
+
+  it('1. Fat-loss goal — real plan, calories below a maintenance baseline', () => {
+    const sim = athlete({ name: 'nutrition-fat-loss', goal: 'fat_loss' });
+    const targets = targetsFor(sim.answers);
+    const maintenanceTargets = targetsFor({ ...sim.answers, goal: 'general_fitness' });
+    assertValidPlan(nutritionProfileFor(sim.answers), targets);
+    expect(targets.calories).toBeLessThan(maintenanceTargets.calories);
+  });
+
+  it('2. Maintenance (general_fitness) goal — real, valid plan', () => {
+    const sim = athlete({ name: 'nutrition-maintenance', goal: 'general_fitness' });
+    assertValidPlan(nutritionProfileFor(sim.answers), targetsFor(sim.answers));
+  });
+
+  it('3. Muscle-gain goal — real plan, calories above a maintenance baseline', () => {
+    const sim = athlete({ name: 'nutrition-muscle-gain', goal: 'muscle_gain' });
+    const targets = targetsFor(sim.answers);
+    const maintenanceTargets = targetsFor({ ...sim.answers, goal: 'general_fitness' });
+    assertValidPlan(nutritionProfileFor(sim.answers), targets);
+    expect(targets.calories).toBeGreaterThan(maintenanceTargets.calories);
+  });
+
+  it('4. Performance goal — real, valid plan with finite, non-negative macro targets', () => {
+    const sim = athlete({ name: 'nutrition-performance', goal: 'performance', sport: 'football' });
+    const targets = targetsFor(sim.answers);
+    assertValidPlan(nutritionProfileFor(sim.answers), targets);
+    for (const value of [targets.calories, targets.proteinG, targets.carbsG, targets.fatG]) {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('5. Low-budget athlete — every planned food is low or medium budget tier (never forced expensive)', () => {
+    const sim = athlete({ name: 'nutrition-low-budget', budgetTier: 'low' });
+    const profile = nutritionProfileFor(sim.answers);
+    const plan = assertValidPlan(profile, targetsFor(sim.answers));
+    for (const meal of plan.meals) {
+      for (const item of meal.items) {
+        const food = getFood(item.foodId)!;
+        expect(['low', 'medium']).toContain(food.budgetTier);
+      }
+    }
+  });
+
+  it('6. Flexible-budget (high tier) athlete — real, valid plan, no budget-driven exclusions', () => {
+    const sim = athlete({ name: 'nutrition-flexible-budget', budgetTier: 'high' });
+    assertValidPlan(nutritionProfileFor(sim.answers), targetsFor(sim.answers));
+  });
+
+  it('7. Vegetarian athlete — every planned food is vegetarian-tagged', () => {
+    const sim = athlete({ name: 'nutrition-vegetarian', dietaryPreference: 'vegetarian' });
+    assertValidPlan(nutritionProfileFor(sim.answers), targetsFor(sim.answers));
+  });
+
+  it('8. Vegan athlete — every planned food is vegan-tagged, across a full week of daily plans', () => {
+    const sim = athlete({ name: 'nutrition-vegan', dietaryPreference: 'vegan' });
+    const profile = nutritionProfileFor(sim.answers);
+    const targets = targetsFor(sim.answers);
+    for (let day = 0; day < 7; day++) {
+      assertValidPlan({ ...profile, isTrainingDay: day % 2 === 0 }, targets);
+    }
+  });
+
+  it('9. Athlete with allergies (dairy + nuts) — no planned food ever contains either allergen', () => {
+    const sim = athlete({ name: 'nutrition-allergies', allergyIds: ['dairy', 'nuts'] });
+    assertValidPlan(nutritionProfileFor(sim.answers), targetsFor(sim.answers));
+  });
+
+  it('10. Athlete with many disliked foods — plan still resolves and avoids every disliked id where a compatible alternative exists', () => {
+    const sim = athlete({ name: 'nutrition-disliked' });
+    const targets = targetsFor(sim.answers);
+    const baseline = buildDailyPlan(nutritionProfileFor(sim.answers), targets);
+    const dislikedFoodIds = Array.from(new Set(baseline.meals.flatMap((m) => m.items.map((i) => i.foodId))));
+    const profile = nutritionProfileFor(sim.answers, { dislikedFoodIds });
+    const plan = assertValidPlan(profile, targets);
+    const usedIds = plan.meals.flatMap((m) => m.items.map((i) => i.foodId));
+    // Every role has multiple real candidates in the library, so disliked foods should
+    // be avoidable rather than forced back in as a last resort.
+    expect(usedIds.some((id) => dislikedFoodIds.includes(id))).toBe(false);
+  });
+
+  it('11. 3 meals/day — configurable meal count produces exactly 3 meals', () => {
+    const sim = athlete({ name: 'nutrition-3-meals', mealsPerDay: 3 });
+    const plan = assertValidPlan(nutritionProfileFor(sim.answers), targetsFor(sim.answers));
+    expect(plan.meals.length).toBe(3);
+  });
+
+  it('12. 5 meals/day — configurable meal count produces exactly 5 meals', () => {
+    const sim = athlete({ name: 'nutrition-5-meals', mealsPerDay: 5 });
+    const plan = assertValidPlan(nutritionProfileFor(sim.answers), targetsFor(sim.answers));
+    expect(plan.meals.length).toBe(5);
+  });
+
+  it('13. Incomplete logging — a week with sparse detailed logs never reports adherence as 0% or false-complete', () => {
+    const sim = athlete({ name: 'nutrition-incomplete-logging' });
+    const targets = targetsFor(sim.answers);
+    const logs: DayLog[] = [
+      { date: '2026-03-01', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false },
+      { date: '2026-03-02', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false },
+      { date: '2026-03-03', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false },
+    ];
+    const result = computeDetailedNutritionAdherence(logs, { calories: targets.calories, proteinG: targets.proteinG });
+    expect(result.isIncomplete).toBe(true);
+    expect(result.caloriesAdherencePct).toBeNull();
+  });
+
+  it('14. Consistent adherence — a week of detailed logs near target reports high, deterministic adherence', () => {
+    const sim = athlete({ name: 'nutrition-consistent-adherence' });
+    const targets = targetsFor(sim.answers);
+    const entry = (date: string): NutritionLogEntry => ({
+      date, slotId: 'lunch', foodId: 'white-rice-cooked', quantity: 1,
+      calories: targets.calories, proteinG: targets.proteinG, carbsG: targets.carbsG, fatG: targets.fatG,
+      wasModified: false, submittedAt: `${date}T12:00:00.000Z`,
+    });
+    const logs: DayLog[] = ['2026-03-01', '2026-03-02', '2026-03-03', '2026-03-04'].map((date) => ({
+      date, loggedMealSlots: ['breakfast', 'lunch', 'snack', 'dinner'], mealOverrides: {}, workoutCompleted: true,
+      nutritionLogs: [entry(date)],
+    }));
+    const result = computeDetailedNutritionAdherence(logs, { calories: targets.calories, proteinG: targets.proteinG });
+    expect(result.isIncomplete).toBe(false);
+    expect(result.caloriesAdherencePct).toBe(100);
+    expect(result.mealCompletionPct).toBe(100);
+  });
+
+  it('15. Poor adherence — a week of consistently low intake reports low, honest (not fabricated) adherence', () => {
+    const sim = athlete({ name: 'nutrition-poor-adherence' });
+    const targets = targetsFor(sim.answers);
+    const entry = (date: string): NutritionLogEntry => ({
+      date, slotId: 'lunch', foodId: 'white-rice-cooked', quantity: 1,
+      calories: Math.round(targets.calories * 0.4), proteinG: Math.round(targets.proteinG * 0.4),
+      carbsG: 20, fatG: 5, wasModified: false, submittedAt: `${date}T12:00:00.000Z`,
+    });
+    const logs: DayLog[] = ['2026-03-01', '2026-03-02'].map((date) => ({
+      date, loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, nutritionLogs: [entry(date)],
+    }));
+    const result = computeDetailedNutritionAdherence(logs, { calories: targets.calories, proteinG: targets.proteinG });
+    expect(result.isIncomplete).toBe(false);
+    expect(result.caloriesAdherencePct).toBeLessThan(50);
+    // Weekly coaching visibility: the same real-adherence signal barrierEngine already
+    // reads (loggedMealSlots-based) also reflects the poor week, unaffected by the new field.
+    expect(computeNutritionAdherence(logs)).toBeLessThan(50);
+  });
+
+  it('16. Football athlete — real plan generated, sport nutrition considerations present, engine stays sport-agnostic', () => {
+    const sim = athlete({ name: 'nutrition-football', sport: 'football' });
+    const targets = targetsFor(sim.answers);
+    const plan = assertValidPlan(nutritionProfileFor(sim.answers), targets);
+    expect(footballModule.nutritionProfile.considerations!.length).toBeGreaterThan(0);
+    expect(plan.targetCalories).toBe(targets.calories);
+  });
+
+  it('17. Swimming athlete — real plan generated, sport nutrition considerations present, engine stays sport-agnostic', () => {
+    const sim = athlete({ name: 'nutrition-swimming', sport: 'swimming' });
+    const targets = targetsFor(sim.answers);
+    const plan = assertValidPlan(nutritionProfileFor(sim.answers), targets);
+    expect(swimmingModule.nutritionProfile.considerations!.length).toBeGreaterThan(0);
+    expect(plan.targetCalories).toBe(targets.calories);
+  });
+
+  it('18. Changing weight trend — a fat-loss athlete trending the wrong way surfaces a conservative, non-automatic target-review recommendation', () => {
+    const sim = athlete({ name: 'nutrition-weight-trend', goal: 'fat_loss' });
+    const logs: DayLog[] = [
+      { date: '2026-03-01', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, weightKg: 80 },
+      { date: '2026-03-05', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, weightKg: 80.8 },
+    ];
+    const trend = computeWeightTrend(logs, sim.answers.weightKg);
+    const recommendation = recommendNutritionTargetReview(sim.answers.goal, trend);
+    expect(recommendation?.shouldReview).toBe(true);
+    // Never a medical/eating-disorder framing, never an auto-adjustment field.
+    expect(recommendation).not.toHaveProperty('newCalorieTarget');
+    expect(recommendation?.reason).not.toMatch(/eating disorder|medical/i);
+
+    // A small, noisy fluctuation in the supportive direction never fires the same recommendation.
+    const noisyLogs: DayLog[] = [
+      { date: '2026-03-01', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, weightKg: 80 },
+      { date: '2026-03-05', loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, weightKg: 79.7 },
+    ];
+    expect(recommendNutritionTargetReview(sim.answers.goal, computeWeightTrend(noisyLogs, sim.answers.weightKg))).toBeNull();
+  });
+
+  it('deterministic invariant: the same profile + targets always builds the same plan across every scenario athlete', () => {
+    for (const sim of ATHLETES) {
+      const profile = nutritionProfileFor(sim.answers);
+      const targets = targetsFor(sim.answers);
+      const p1 = buildDailyPlan(profile, targets);
+      const p2 = buildDailyPlan(profile, targets);
+      expect(p1).toEqual(p2);
+    }
   });
 });

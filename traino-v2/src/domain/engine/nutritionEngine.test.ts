@@ -67,4 +67,41 @@ describe('calculateNutritionTargets — macro calculation', () => {
     const lowCarb = calculateNutritionTargets(baseAnswers(), { proteinGPerKg: 2.0, carbBias: 'low' });
     expect(highCarb.fatG).toBeLessThan(lowCarb.fatG);
   });
+
+  it('E: protein + carb + fat calories reconcile with the stated calorie target within a documented tolerance', () => {
+    const targets = calculateNutritionTargets(baseAnswers(), sportProfile);
+    const macroKcal = targets.proteinG * 4 + targets.carbsG * 4 + targets.fatG * 9;
+    // Rounding each macro to whole grams can drift the reconstructed total a few
+    // kcal from the calorie target — bounded, documented, never hidden.
+    expect(Math.abs(macroKcal - targets.calories)).toBeLessThanOrEqual(10);
+  });
+
+  it('never produces negative macros for any goal', () => {
+    for (const goal of ['fat_loss', 'muscle_gain', 'performance', 'general_fitness', 'recovery'] as const) {
+      const targets = calculateNutritionTargets(baseAnswers({ goal }), sportProfile);
+      expect(targets.proteinG).toBeGreaterThanOrEqual(0);
+      expect(targets.carbsG).toBeGreaterThanOrEqual(0);
+      expect(targets.fatG).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe('calculateNutritionTargets — bounded output', () => {
+  it('never exceeds the documented sanity ceiling even for an extreme-but-valid athlete', () => {
+    const targets = calculateNutritionTargets(
+      baseAnswers({ weightKg: 300, heightCm: 220, age: 22, sex: 'male', goal: 'muscle_gain', daysAvailablePerWeek: 7 }),
+      { proteinGPerKg: 2.5, carbBias: 'high' }
+    );
+    expect(targets.calories).toBeLessThanOrEqual(6000);
+    expect(Number.isFinite(targets.calories)).toBe(true);
+  });
+
+  it('never returns Infinity or NaN for any goal x activity combination', () => {
+    for (const goal of ['fat_loss', 'muscle_gain', 'performance', 'general_fitness', 'recovery'] as const) {
+      for (const days of [0, 1, 3, 5, 6, 7, 14]) {
+        const targets = calculateNutritionTargets(baseAnswers({ goal, daysAvailablePerWeek: days }), sportProfile);
+        expect(Number.isFinite(targets.calories)).toBe(true);
+      }
+    }
+  });
 });

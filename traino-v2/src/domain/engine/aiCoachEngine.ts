@@ -1,12 +1,17 @@
-import type { AiCoachIntent, AiCoachReply } from './types';
+import type { AiCoachIntent, AiCoachReply, NutritionTargets } from './types';
 import type { WeeklyCoachingRecord } from '../coaching/types';
 import type { DailyReadinessRecord } from '../readiness/types';
 import type { ExerciseProgressionDecision } from '../progression/types';
 import type { ExerciseDefinition } from '../exercise/types';
+import type { DailyNutritionPlan, FoodDefinition, MealRole } from '../nutrition/types';
+import type { DetailedNutritionAdherence } from '../nutrition/adherence';
 import { READINESS_STATUS_LABEL } from '../readiness/scales';
 import { getExerciseByName, getProgressions, getRegressions } from '../exercise/registry';
 import { suggestReplacements, type AthleteConstraints } from '../exercise/matchingEngine';
 import { formatEnumLabel, MATCH_REASON_LABELS } from '../exercise/labels';
+import { getFood } from '../nutrition/registry';
+import { suggestFoodAlternatives, type FoodAthleteConstraints } from '../nutrition/matchingEngine';
+import { FOOD_MATCH_REASON_LABELS } from '../nutrition/labels';
 
 /** Structured context the Weekly Coaching / Daily Readiness / Progression / Exercise
  * Intelligence intents below read from — the most recently reviewed week's record,
@@ -31,6 +36,22 @@ export interface AiCoachReplyContext {
    * replacement-ranking exercise-intelligence intents (replace_exercise,
    * why_limited_alternatives). */
   athleteConstraints?: AthleteConstraints;
+  /** Today's generated Daily Nutrition Plan, if one has been built — the raw material
+   * for 'what_should_i_eat_today' and the fallback focused-food pick below. */
+  dailyPlan?: DailyNutritionPlan;
+  /** The athlete's estimated daily calorie/macro targets (domain/engine/nutritionEngine.ts). */
+  nutritionTargets?: NutritionTargets;
+  /** The food a nutrition-intelligence intent is about — set when the athlete reached
+   * AI Coach from a specific food's detail view. Omitted falls back to the first food
+   * in today's plan, the same "notable pick" pattern the exercise intents use. */
+  focusedFoodId?: string;
+  /** Which meal role the focused food fills — required to rank real replacement
+   * candidates (a carb alternative, not a random food). Falls back to the food's own
+   * first mealRole when omitted. */
+  focusedFoodRole?: MealRole;
+  foodAthleteConstraints?: FoodAthleteConstraints;
+  /** This week's detailed nutrition adherence (domain/nutrition/adherence.ts). */
+  nutritionAdherence?: DetailedNutritionAdherence;
 }
 
 /** Resolves which exercise an exercise-intelligence intent is about: the explicitly
@@ -50,6 +71,26 @@ function resolveFocusedExercise(context?: AiCoachReplyContext): ExerciseDefiniti
 
 const NO_FOCUSED_EXERCISE_REPLY: AiCoachReply = {
   message: "I don't have a specific exercise in view right now — open an exercise's details and ask me from there.",
+};
+
+/** Resolves which food a nutrition-intelligence intent is about: the explicitly
+ * focused one if it's in the library, else the first food in today's plan — never
+ * guessed from free text. */
+function resolveFocusedFood(context?: AiCoachReplyContext): FoodDefinition | null {
+  if (context?.focusedFoodId) {
+    const def = getFood(context.focusedFoodId);
+    if (def) return def;
+  }
+  const firstItem = context?.dailyPlan?.meals.find((m) => m.items.length > 0)?.items[0];
+  if (firstItem) {
+    const def = getFood(firstItem.foodId);
+    if (def) return def;
+  }
+  return null;
+}
+
+const NO_FOCUSED_FOOD_REPLY: AiCoachReply = {
+  message: "I don't have a specific food in view right now — open a food's details and ask me from there.",
 };
 
 function barrierLabel(id: string): string {
@@ -380,6 +421,70 @@ export function getAiCoachReply(intent: AiCoachIntent, context?: AiCoachReplyCon
         return { message: 'Every safe, equipment-compatible alternative is already shown — nothing is being held back.' };
       }
       return { message: `Some alternatives aren't shown because ${reasons.join(', and ')}.` };
+    }
+
+    case 'what_should_i_eat_today': {
+      const plan = context?.dailyPlan;
+      if (!plan || plan.meals.length === 0) {
+        return { message: "I don't have today's plan ready yet — open Nutrition to generate it.", ctaLabel: 'OPEN NUTRITION' };
+      }
+      const mealSummaries = plan.meals
+        .filter((m) => m.items.length > 0)
+        .map((m) => `${m.slotLabel}: ${m.items.map((i) => getFood(i.foodId)?.displayName ?? i.foodId).join(', ')}`)
+        .join('. ');
+      return { message: `Today's plan is about ${plan.totals.calories} kcal. ${mealSummaries}.`, ctaLabel: 'OPEN NUTRITION' };
+    }
+
+    case 'what_are_my_calories': {
+      const targets = context?.nutritionTargets;
+      if (!targets) {
+        return { message: "I don't have your nutrition targets calculated yet — complete your assessment first." };
+      }
+      return {
+        message: `Your estimated daily target is ${targets.calories} kcal — ${targets.proteinG}g protein, ${targets.carbsG}g carbs, ${targets.fatG}g fat.`,
+        ctaLabel: 'OPEN NUTRITION',
+      };
+    }
+
+    case 'why_these_foods': {
+      const food = resolveFocusedFood(context);
+      if (!food) return NO_FOCUSED_FOOD_REPLY;
+      const roles = food.mealRoles.map(formatEnumLabel).join('/');
+      const diet = formatEnumLabel(food.dietaryTags[0] ?? 'no_restriction');
+      return {
+        message: `${food.displayName} is in your plan as a ${roles} source that fits your ${diet} preference and your calorie/macro target for that meal.`,
+      };
+    }
+
+    case 'replace_food': {
+      const food = resolveFocusedFood(context);
+      const constraints = context?.foodAthleteConstraints;
+      if (!food || !constraints) {
+        return { message: "Tell me which food, and I'll suggest a practical alternative that fits your diet, budget, and today's target." };
+      }
+      const role = context?.focusedFoodRole ?? food.mealRoles[0];
+      const top = suggestFoodAlternatives(food.id, role, constraints, 1)[0];
+      if (!top) {
+        return { message: `I don't have a safe, compatible alternative for ${food.displayName} right now — check its details for what's ruling options out.` };
+      }
+      const reasons = top.reasons.slice(0, 2).map((r) => FOOD_MATCH_REASON_LABELS[r].toLowerCase());
+      return {
+        message: `For ${food.displayName}, try ${top.food.displayName} — ${reasons.join(' and ')}.`,
+        ctaLabel: 'OPEN NUTRITION',
+      };
+    }
+
+    case 'how_is_my_nutrition_this_week': {
+      const adherence = context?.nutritionAdherence;
+      if (!adherence || adherence.isIncomplete) {
+        return {
+          message: "I don't have enough detailed food logging this week to break it down — log a few meals with quantities and I'll be able to tell you more.",
+        };
+      }
+      return {
+        message: `This week: about ${adherence.caloriesAdherencePct}% of your calorie target and ${adherence.proteinAdherencePct}% of your protein target on average, with ${adherence.mealCompletionPct}% of meals logged.`,
+        ctaLabel: 'VIEW WEEKLY REPORT',
+      };
     }
   }
 }

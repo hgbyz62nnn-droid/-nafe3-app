@@ -512,5 +512,9 @@ export const footballModule: SportModuleData = {
   nutritionProfile: {
     proteinGPerKg: 2.0,
     carbBias: 'high',
+    considerations: [
+      'Prioritize carbohydrate intake around training/match days to fuel repeated high-intensity efforts.',
+      'High sweat losses from field training make consistent fluid intake worth tracking, especially in heat.',
+    ],
   },
 };

@@ -178,6 +178,133 @@ describe('LogContext — logExercisePerformance / getExerciseHistory', () => {
   });
 });
 
+// Nutrition Engine test matrix (spec §33): Y — food logging normalized correctly;
+// Z — historical log integrity (snapshot, never rewritten later).
+describe('LogContext — Y: logNutritionEntry / getNutritionLogsForDate', () => {
+  it('records one nutrition log entry and returns it via getNutritionLogsForDate', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast',
+        foodId: 'white-rice-cooked',
+        quantity: 1.5,
+        calories: 200,
+        proteinG: 4,
+        carbsG: 44,
+        fatG: 0.5,
+        wasModified: false,
+      })
+    );
+    const logs = result.current.getNutritionLogsForDate('2026-02-01');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1.5, calories: 200 });
+  });
+
+  it('re-logging the same slot+food on the same date replaces, not duplicates (idempotent)', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      });
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 2, calories: 260, proteinG: 6, carbsG: 56, fatG: 0.6, wasModified: true,
+      });
+    });
+    const logs = result.current.getNutritionLogsForDate('2026-02-01');
+    expect(logs).toHaveLength(1);
+    expect(logs[0].quantity).toBe(2);
+    expect(logs[0].calories).toBe(260);
+  });
+
+  it('a different food in the same slot, and the same food in a different slot, are separate entries', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      });
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'eggs-whole-cooked', quantity: 2, calories: 140, proteinG: 12, carbsG: 1, fatG: 10, wasModified: false,
+      });
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'lunch', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      });
+    });
+    expect(result.current.getNutritionLogsForDate('2026-02-01')).toHaveLength(3);
+  });
+
+  it('sanitizes a corrupted nutrition log (NaN/negative) before persisting rather than storing garbage', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast',
+        foodId: 'white-rice-cooked',
+        quantity: NaN as unknown as number,
+        calories: -50,
+        proteinG: 3,
+        carbsG: 28,
+        fatG: 0.3,
+        wasModified: false,
+      })
+    );
+    const [entry] = result.current.getNutritionLogsForDate('2026-02-01');
+    expect(Number.isNaN(entry.quantity)).toBe(false);
+    expect(entry.calories).toBeGreaterThanOrEqual(0);
+  });
+
+  it('getAllNutritionLogs returns entries across all dates, oldest first', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logNutritionEntry('2026-02-03', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      });
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      });
+    });
+    const all = result.current.getAllNutritionLogs();
+    expect(all.map((e) => e.date)).toEqual(['2026-02-01', '2026-02-03']);
+  });
+});
+
+describe('LogContext — Z: historical nutrition log integrity (snapshot, never rewritten)', () => {
+  it('a logged entry keeps its originally-snapshotted macros regardless of what is logged for other foods later', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      });
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'lunch', foodId: 'chicken-breast-cooked', quantity: 1, calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6, wasModified: false,
+      });
+    });
+    const [breakfast] = result.current.getNutritionLogsForDate('2026-02-01').filter((e) => e.slotId === 'breakfast');
+    expect(breakfast.calories).toBe(130);
+    expect(breakfast.proteinG).toBe(3);
+  });
+
+  it('persists nutrition logs across a remount without altering their snapshotted values', () => {
+    const first = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      first.result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1.5, calories: 195, proteinG: 4.5, carbsG: 42, fatG: 0.5, wasModified: false,
+      })
+    );
+    const second = renderHook(() => useLogs(), { wrapper: LogProvider });
+    const [entry] = second.result.current.getNutritionLogsForDate('2026-02-01');
+    expect(entry).toMatchObject({ quantity: 1.5, calories: 195, proteinG: 4.5, carbsG: 42, fatG: 0.5 });
+  });
+
+  it('never invents nutrition log entries for a date nothing was logged on', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logNutritionEntry('2026-02-01', {
+        slotId: 'breakfast', foodId: 'white-rice-cooked', quantity: 1, calories: 130, proteinG: 3, carbsG: 28, fatG: 0.3, wasModified: false,
+      })
+    );
+    expect(result.current.getNutritionLogsForDate('2026-02-02')).toEqual([]);
+  });
+});
+
 describe('LogContext — getLogsSince (calendar-aware progression input)', () => {
   it('returns one entry per calendar day from the start date through today, inclusive', () => {
     const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
