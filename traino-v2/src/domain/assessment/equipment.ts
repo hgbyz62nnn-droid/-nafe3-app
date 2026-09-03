@@ -21,5 +21,9 @@ export const EQUIPMENT_OPTIONS: EquipmentOption[] = [
   { id: 'rowing_machine', name: 'Rowing Machine', icon: 'rowingMachine' },
   { id: 'medicine_ball', name: 'Medicine Ball', icon: 'medicineBall' },
   { id: 'plyo_box', name: 'Plyo Box', icon: 'plyoBox' },
+  { id: 'kickboard', name: 'Kickboard', icon: 'kickboard' },
+  { id: 'pull_buoy', name: 'Pull Buoy', icon: 'pullBuoy' },
+  { id: 'fins', name: 'Swim Fins', icon: 'fins' },
+  { id: 'paddles', name: 'Swim Paddles', icon: 'paddles' },
   { id: 'other', name: 'Other', icon: 'otherEquipment' },
 ];

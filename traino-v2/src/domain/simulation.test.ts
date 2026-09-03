@@ -110,6 +110,26 @@ const ATHLETES: SimAthlete[] = [
     trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, goal: 'general_fitness',
     completionRate: 0.8,
   }),
+  // -- Swimming (second Sport Module) — same simulation harness, zero code changes --
+  athlete({
+    name: 'Swimming: beginner, 3 days, no injury, pool access, general fitness',
+    sport: 'swimming', experienceYears: 0, currentTrainingFrequency: 0, daysAvailablePerWeek: 3,
+    injuryIds: ['none'], trainingLocationIds: ['pool'], equipmentIds: [], goal: 'general_fitness',
+    completionRate: 0.85,
+  }),
+  athlete({
+    name: 'Swimming: advanced, 6 days, shoulder limitation, full swim kit, muscle gain',
+    sport: 'swimming', experienceYears: 6, currentTrainingFrequency: 6, daysAvailablePerWeek: 6,
+    injuryIds: ['shoulder'], trainingLocationIds: ['pool'],
+    equipmentIds: ['kickboard', 'pull_buoy', 'fins', 'paddles', 'dumbbells', 'resistance_bands', 'medicine_ball', 'pull_up_bar', 'cable_machine'],
+    goal: 'muscle_gain', completionRate: 0.6,
+  }),
+  athlete({
+    name: 'Swimming: intermediate, 4 days, no pool access, knee limitation, fat loss',
+    sport: 'swimming', experienceYears: 2, currentTrainingFrequency: 3, daysAvailablePerWeek: 4,
+    injuryIds: ['knee'], trainingLocationIds: ['home'], equipmentIds: [], goal: 'fat_loss',
+    completionRate: 1,
+  }),
 ];
 
 const WEEKS_TO_SIMULATE = 6;
@@ -162,17 +182,17 @@ describe('multi-athlete, multi-week simulation', () => {
         }
 
         // Regression: no exercise contraindicated for this athlete's injuries should
-        // ever appear unchanged by name in the resolved plan.
-        if (sim.answers.sport === 'football') {
-          const rawDays = footballModule.program[profile.level];
-          for (const rawDay of rawDays) {
-            const resolvedDay = weekProgram.find((d) => d.id === rawDay.id);
-            if (!resolvedDay) continue;
-            for (const slot of rawDay.exercises) {
-              const flagged = slot.contraindications?.some((tag) => sim.answers.injuryIds.includes(tag));
-              if (!flagged) continue;
-              expect(resolvedDay.exercises.some((e) => e.name === slot.name)).toBe(false);
-            }
+        // ever appear unchanged by name in the resolved plan — checked generically
+        // against whichever sport module this athlete actually uses (registered or
+        // generic-fallback), not hardcoded to one sport.
+        const rawDays = getSportModule(sim.answers.sport).program[profile.level];
+        for (const rawDay of rawDays) {
+          const resolvedDay = weekProgram.find((d) => d.id === rawDay.id);
+          if (!resolvedDay) continue;
+          for (const slot of rawDay.exercises) {
+            const flagged = slot.contraindications?.some((tag) => sim.answers.injuryIds.includes(tag));
+            if (!flagged) continue;
+            expect(resolvedDay.exercises.some((e) => e.name === slot.name)).toBe(false);
           }
         }
 

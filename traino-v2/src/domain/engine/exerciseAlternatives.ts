@@ -53,6 +53,28 @@ const EXERCISE_ALTERNATIVES: Record<string, AlternativeExercise[]> = {
     { name: 'Dead Bug', reps: '10 / side' },
     { name: 'Side Plank', reps: '30 sec / side' },
   ],
+
+  // -- Swimming --
+  'Freestyle Catch-Up Drill': [
+    { name: 'Freestyle Sculling Drill', reps: '25m' },
+    { name: 'Single-Arm Freestyle Drill', reps: '25m / arm' },
+  ],
+  'Kickboard Flutter Kick': [
+    { name: 'Fins Flutter Kick Sprint', reps: '25m' },
+    { name: 'Vertical Kicking (no board)', reps: '30 sec' },
+  ],
+  'Sprint Intervals 50m': [
+    { name: 'Sprint Intervals 100m', reps: '100m @ 1:40' },
+    { name: 'Descending 100s', reps: '100m descending pace' },
+  ],
+  'Continuous Freestyle Swim': [
+    { name: 'Pull Buoy Freestyle', reps: '50m' },
+    { name: 'Descending 100s', reps: '100m descending pace' },
+  ],
+  'Pull Buoy Freestyle': [
+    { name: 'Pull Buoy + Paddles Freestyle', reps: '75m' },
+    { name: 'Continuous Freestyle Swim', reps: '200m easy pace' },
+  ],
 };
 
 export function getExerciseAlternatives(name: string): AlternativeExercise[] {

@@ -55,7 +55,11 @@ export interface NutritionTargets {
   fatG: number;
 }
 
-export type ExerciseCategory = 'warmup' | 'strength' | 'power' | 'conditioning' | 'cooldown';
+/** 'technique' is for skill/drill work that is neither loaded strength/power nor pure
+ * conditioning volume (e.g. a swim stroke drill, a footwork drill) — introduced for the
+ * Swimming module rather than overloading 'conditioning' for it, and available to any
+ * future sport with the same kind of skill-focused work. */
+export type ExerciseCategory = 'warmup' | 'strength' | 'power' | 'conditioning' | 'technique' | 'cooldown';
 
 export interface ExerciseSlot {
   name: string;

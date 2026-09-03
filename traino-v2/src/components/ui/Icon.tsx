@@ -66,6 +66,14 @@ export const ICONS = {
   plyoBox: '<path d="M4 9.5 12 5l8 4.5v9L12 23l-8-4.5Z"/><path d="M4 9.5 12 14l8-4.5M12 14v9"/>',
   otherEquipment: '<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
 
+  // -- Swimming extensions, same 24x24 / 1.8px-stroke / round-cap language as the
+  // training-location + equipment pictograms above (added for the Swimming Sport Module).
+  pool: '<rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M4.5 10c1.4-1 2.8-1 4.2 0s2.8 1 4.2 0 2.8-1 4.2 0 2.8 1 4.2 0M4.5 14c1.4-1 2.8-1 4.2 0s2.8 1 4.2 0 2.8-1 4.2 0 2.8 1 4.2 0"/>',
+  kickboard: '<rect x="4" y="7.5" width="16" height="9" rx="4.5"/>',
+  pullBuoy: '<ellipse cx="9" cy="12" rx="4" ry="5"/><ellipse cx="15" cy="12" rx="4" ry="5"/>',
+  fins: '<path d="M12 3c2.6 2.2 4 5.9 4 9.5 0 3-1.3 5.7-4 7.5-2.7-1.8-4-4.5-4-7.5C8 8.9 9.4 5.2 12 3Z"/><path d="M12 6v14"/>',
+  paddles: '<rect x="7" y="3" width="10" height="10" rx="2"/><path d="M9.5 13v8M14.5 13v8M8.5 17.5h7"/>',
+
   // -- AI Coach chat screen extensions, same 24x24 / 1.8px-stroke language
   send: '<path d="M4 12l16-8-6 16-2.5-6.5L4 12Z" fill="currentColor" stroke="none"/>',
   checkPlain: 'm5 12.5 4.3 4.3L19.5 7.3',

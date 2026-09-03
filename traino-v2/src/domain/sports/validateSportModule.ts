@@ -18,7 +18,7 @@ export interface SportModuleValidationResult {
 
 const FITNESS_LEVELS: FitnessLevel[] = ['beginner', 'intermediate', 'advanced'];
 const STAT_CATEGORIES: PerformanceCategory[] = ['speed', 'strength', 'stamina'];
-const EXERCISE_CATEGORIES: ExerciseCategory[] = ['warmup', 'strength', 'power', 'conditioning', 'cooldown'];
+const EXERCISE_CATEGORIES: ExerciseCategory[] = ['warmup', 'strength', 'power', 'conditioning', 'technique', 'cooldown'];
 const CARB_BIASES = ['low', 'moderate', 'high'];
 
 function validateExerciseSlot(slot: ExerciseSlot, path: string, errors: string[]): void {

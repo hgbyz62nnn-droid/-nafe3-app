@@ -75,4 +75,28 @@ describe('ProfileContext — Assessment -> AthleteProfile', () => {
     expect(Number.isNaN(result.current.profile.answers.age)).toBe(false);
     expect(Number.isFinite(result.current.profile.nutrition.calories)).toBe(true);
   });
+
+  it('21. persistence/reload: a Swimming athlete profile survives a full save -> remount cycle', () => {
+    const first = renderHook(() => useProfile(), { wrapper: ProfileProvider });
+    act(() => {
+      first.result.current.updateAnswers({
+        firstName: 'Riley',
+        sport: 'swimming',
+        experienceYears: 4,
+        currentTrainingFrequency: 5,
+        daysAvailablePerWeek: 4,
+        trainingLocationIds: ['pool'],
+        equipmentIds: ['fins', 'pull_buoy'],
+      });
+      first.result.current.completeAssessment();
+    });
+    expect(first.result.current.profile.level).toBe('advanced');
+
+    const second = renderHook(() => useProfile(), { wrapper: ProfileProvider });
+    expect(second.result.current.answers.sport).toBe('swimming');
+    expect(second.result.current.answers.firstName).toBe('Riley');
+    expect(second.result.current.profile.level).toBe('advanced');
+    expect(second.result.current.hasCompletedAssessment).toBe(true);
+    expect(Number.isFinite(second.result.current.profile.nutrition.calories)).toBe(true);
+  });
 });
