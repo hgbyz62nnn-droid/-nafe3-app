@@ -8,6 +8,7 @@ import type { ExerciseProgressionDecision } from '../progression/types';
 import { buildDailyPlan } from '../nutrition/mealBuilder';
 import type { NutritionProfile } from '../nutrition/types';
 import type { DetailedNutritionAdherence } from '../nutrition/adherence';
+import type { PerformanceSummary, ExercisePerformanceMetrics, TrendResult } from '../performance/types';
 
 const ALL_INTENTS: AiCoachIntent[] = [
   'feeling_tired',
@@ -43,6 +44,13 @@ const ALL_INTENTS: AiCoachIntent[] = [
   'why_workout_adjusted_for_context',
   'after_competition',
   'when_normal_plan_returns',
+  'am_i_improving',
+  'whats_improved_this_week',
+  'whats_declined',
+  'strongest_exercise',
+  'did_i_set_a_pr',
+  'how_is_my_recovery_trend',
+  'how_is_my_goal_progress',
 ];
 
 function progressionDecision(overrides: Partial<ExerciseProgressionDecision> = {}): ExerciseProgressionDecision {
@@ -670,5 +678,172 @@ describe('getFallbackReply', () => {
     const reply = getFallbackReply();
     expect(reply.adjustment).toBeUndefined();
     expect(reply.message.length).toBeGreaterThan(0);
+  });
+});
+
+const INSUFFICIENT: TrendResult = { state: 'insufficient_data', confidence: 'insufficient', sampleSize: 0 };
+
+function exerciseMetrics(overrides: Partial<ExercisePerformanceMetrics> = {}): ExercisePerformanceMetrics {
+  return {
+    exerciseName: 'Back Squat',
+    model: 'load',
+    totalExposures: 4,
+    successfulExposures: 4,
+    failedOrPartialExposures: 0,
+    contextualExposureCount: 0,
+    previous: { date: '2026-01-01', value: 60, label: '60kg' },
+    current: { date: '2026-01-08', value: 65, label: '65kg' },
+    best: { date: '2026-01-08', value: 65, label: '65kg' },
+    trend: INSUFFICIENT,
+    personalRecords: [],
+    latestProgressionDecision: null,
+    ...overrides,
+  };
+}
+
+function performanceSummary(overrides: Partial<PerformanceSummary> = {}): PerformanceSummary {
+  return {
+    exercises: [],
+    trainingConsistency: { hasData: false, plannedSessions: 0, completedSessions: 0, adjustedSessions: 0, travelAdjustedSessions: 0, intentionallySkippedCompetitionSessions: 0, completionPct: 0 },
+    nutrition: { hasDetailedData: false, caloriesAdherencePct: null, proteinAdherencePct: null, mealCompletionPct: 0, daysWithDetailedLogs: 0, trend: INSUFFICIENT },
+    readiness: { hasData: false, checkInsCount: 0, averageScore: null, lowReadinessDaysCount: 0, scoreTrend: INSUFFICIENT, sleepTrend: INSUFFICIENT, energyTrend: INSUFFICIENT, sorenessTrend: INSUFFICIENT, stressTrend: INSUFFICIENT },
+    weight: { hasData: false, points: [], deltaKg: 0, trend: INSUFFICIENT, goalAlignment: 'insufficient_data' },
+    goalProgress: { goal: 'general_fitness', overallScore: null, components: [] },
+    weekComparison: { metrics: [] },
+    milestones: [],
+    ...overrides,
+  };
+}
+
+describe('getAiCoachReply — progress/performance intents (spec §23)', () => {
+  it('am_i_improving is honest when there is no comparable exercise history yet', () => {
+    const reply = getAiCoachReply('am_i_improving', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/don't have enough comparable/i);
+  });
+
+  it('am_i_improving reports real improving-vs-declining counts', () => {
+    const summary = performanceSummary({
+      exercises: [
+        exerciseMetrics({ exerciseName: 'Back Squat', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 4 } }),
+        exerciseMetrics({ exerciseName: 'Bench Press', trend: { state: 'declining', confidence: 'sufficient', sampleSize: 4 } }),
+        exerciseMetrics({ exerciseName: 'Deadlift', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 4 } }),
+      ],
+    });
+    const reply = getAiCoachReply('am_i_improving', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('2 of 3');
+  });
+
+  it('whats_improved_this_week lists real improving exercises and up metrics', () => {
+    const summary = performanceSummary({
+      exercises: [exerciseMetrics({ exerciseName: 'Back Squat', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 4 } })],
+      weekComparison: { metrics: [{ label: 'Nutrition adherence', thisWeek: 82, lastWeek: 74, direction: 'up' }] },
+    });
+    const reply = getAiCoachReply('whats_improved_this_week', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('Back Squat');
+    expect(reply.message).toContain('Nutrition adherence');
+  });
+
+  it('whats_improved_this_week is honest when nothing improved', () => {
+    const reply = getAiCoachReply('whats_improved_this_week', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/nothing stands out/i);
+  });
+
+  it('whats_declined lists real declining exercises and down metrics', () => {
+    const summary = performanceSummary({
+      exercises: [exerciseMetrics({ exerciseName: 'Bench Press', trend: { state: 'declining', confidence: 'sufficient', sampleSize: 4 } })],
+    });
+    const reply = getAiCoachReply('whats_declined', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('Bench Press');
+  });
+
+  it('whats_declined is honest when nothing is trending down', () => {
+    const reply = getAiCoachReply('whats_declined', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/nothing is trending down/i);
+  });
+
+  it('strongest_exercise picks the improving exercise with the most evidence', () => {
+    const summary = performanceSummary({
+      exercises: [
+        exerciseMetrics({ exerciseName: 'Back Squat', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 3 } }),
+        exerciseMetrics({ exerciseName: 'Deadlift', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 6 } }),
+      ],
+    });
+    const reply = getAiCoachReply('strongest_exercise', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('Deadlift');
+  });
+
+  it('strongest_exercise is honest when nothing has enough history', () => {
+    const reply = getAiCoachReply('strongest_exercise', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/don't have enough comparable/i);
+  });
+
+  it('did_i_set_a_pr reports a real recent PR when one exists', () => {
+    const summary = performanceSummary({
+      exercises: [
+        exerciseMetrics({
+          exerciseName: 'Back Squat',
+          personalRecords: [{ exerciseName: 'Back Squat', model: 'load', bracketLabel: '8 reps', value: 65, label: '8 reps @ 65kg', achievedOn: '2026-01-08', isRecent: true }],
+        }),
+      ],
+    });
+    const reply = getAiCoachReply('did_i_set_a_pr', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('Back Squat');
+  });
+
+  it('did_i_set_a_pr is honest when no recent PR exists', () => {
+    const reply = getAiCoachReply('did_i_set_a_pr', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/not yet/i);
+  });
+
+  it('how_is_my_recovery_trend reports real average score, trend, and low-readiness days', () => {
+    const summary = performanceSummary({
+      readiness: {
+        hasData: true,
+        checkInsCount: 5,
+        averageScore: 72,
+        lowReadinessDaysCount: 1,
+        scoreTrend: { state: 'improving', confidence: 'sufficient', sampleSize: 5 },
+        sleepTrend: INSUFFICIENT,
+        energyTrend: INSUFFICIENT,
+        sorenessTrend: INSUFFICIENT,
+        stressTrend: INSUFFICIENT,
+      },
+    });
+    const reply = getAiCoachReply('how_is_my_recovery_trend', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('72%');
+    expect(reply.message).toMatch(/trending up/i);
+  });
+
+  it('how_is_my_recovery_trend is honest when there is no readiness history', () => {
+    const reply = getAiCoachReply('how_is_my_recovery_trend', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/daily check-ins/i);
+  });
+
+  it('how_is_my_goal_progress reports the real weighted score', () => {
+    const summary = performanceSummary({ goalProgress: { goal: 'fat_loss', overallScore: 68, components: [] } });
+    const reply = getAiCoachReply('how_is_my_goal_progress', { latestRecord: null, performanceSummary: summary });
+    expect(reply.message).toContain('68%');
+    expect(reply.message).toMatch(/fat loss/i);
+  });
+
+  it('how_is_my_goal_progress is honest when there is not enough data yet', () => {
+    const reply = getAiCoachReply('how_is_my_goal_progress', { latestRecord: null, performanceSummary: performanceSummary() });
+    expect(reply.message).toMatch(/don't have enough logged data/i);
+  });
+
+  it('all seven progress/performance intents never throw and are deterministic even with no performanceSummary at all', () => {
+    const intents: AiCoachIntent[] = [
+      'am_i_improving',
+      'whats_improved_this_week',
+      'whats_declined',
+      'strongest_exercise',
+      'did_i_set_a_pr',
+      'how_is_my_recovery_trend',
+      'how_is_my_goal_progress',
+    ];
+    for (const intent of intents) {
+      expect(() => getAiCoachReply(intent, { latestRecord: null })).not.toThrow();
+      expect(getAiCoachReply(intent, { latestRecord: null })).toEqual(getAiCoachReply(intent, { latestRecord: null }));
+    }
   });
 });

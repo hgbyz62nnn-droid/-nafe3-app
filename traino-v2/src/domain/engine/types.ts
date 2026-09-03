@@ -170,7 +170,14 @@ export type AiCoachIntent =
   | 'i_have_competition'
   | 'why_workout_adjusted_for_context'
   | 'after_competition'
-  | 'when_normal_plan_returns';
+  | 'when_normal_plan_returns'
+  | 'am_i_improving'
+  | 'whats_improved_this_week'
+  | 'whats_declined'
+  | 'strongest_exercise'
+  | 'did_i_set_a_pr'
+  | 'how_is_my_recovery_trend'
+  | 'how_is_my_goal_progress';
 
 export interface AiCoachAdjustment {
   /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */

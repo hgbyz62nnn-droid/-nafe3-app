@@ -26,6 +26,7 @@ import type { MealRole } from '../domain/nutrition/types';
 import { getFood } from '../domain/nutrition/registry';
 import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { resolveCompetitionDayPlan } from '../domain/context/competitionEngine';
+import { buildPerformanceSummary } from '../domain/performance/performanceEngine';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'How ready am I today?', intent: 'how_ready_am_i' },
@@ -60,6 +61,13 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'Why did you adjust my workout?', intent: 'why_workout_adjusted_for_context' },
   { label: 'What happens after my competition?', intent: 'after_competition' },
   { label: 'When does my normal plan return?', intent: 'when_normal_plan_returns' },
+  { label: 'Am I improving?', intent: 'am_i_improving' },
+  { label: 'What improved this week?', intent: 'whats_improved_this_week' },
+  { label: 'What got worse?', intent: 'whats_declined' },
+  { label: 'What is my strongest exercise?', intent: 'strongest_exercise' },
+  { label: 'Did I set a PR?', intent: 'did_i_set_a_pr' },
+  { label: 'How is my recovery?', intent: 'how_is_my_recovery_trend' },
+  { label: 'How am I doing toward my goal?', intent: 'how_is_my_goal_progress' },
 ];
 
 /** Intents that read structured Weekly Coaching / Daily Readiness / Progression /
@@ -92,6 +100,13 @@ const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
   'why_workout_adjusted_for_context',
   'after_competition',
   'when_normal_plan_returns',
+  'am_i_improving',
+  'whats_improved_this_week',
+  'whats_declined',
+  'strongest_exercise',
+  'did_i_set_a_pr',
+  'how_is_my_recovery_trend',
+  'how_is_my_goal_progress',
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -106,9 +121,9 @@ export default function AiCoach() {
   const location = useLocation();
   const { profile, setActiveAdjustment, planStartDate } = useProfile();
   const { getLatestRecord } = useWeeklyCoaching();
-  const { getTodayRecord, getRecord } = useDailyReadiness();
-  const { getExerciseHistory, getLogsSince, getRecentLogs, getAllNutritionLogs, today } = useLogs();
-  const { getResolvedContext } = useTrainingContext();
+  const { getTodayRecord, getRecord, getRecordsInRange } = useDailyReadiness();
+  const { getExerciseHistory, getLogsSince, getRecentLogs, getAllNutritionLogs, getAllLoggedExerciseNames, today } = useLogs();
+  const { getResolvedContext, travelContexts, competitionEvents } = useTrainingContext();
   const { replacementCounts } = useExercisePreferences();
   const { replacementCounts: foodReplacementCounts, explicitSignals: foodExplicitSignals } = useFoodPreferences();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
@@ -157,6 +172,26 @@ export default function AiCoach() {
   const contextMessage =
     competitionDayPlan?.message ?? (resolvedContext.mode === 'travel' ? "Today's session is adjusted for Travel Mode." : null);
 
+  // The real Performance Analytics summary (spec: "ADVANCED PROGRESS &
+  // PERFORMANCE") — the same shared engine Progress and Weekly Report read
+  // from, so the AI Coach's answers here are never a second, independently
+  // computed opinion about "progress".
+  const recentLogs30 = getRecentLogs(30);
+  const performanceSummary = buildPerformanceSummary({
+    today,
+    goal: profile.answers.goal,
+    sportId: profile.answers.sport,
+    plannedPerWeek: profile.answers.daysAvailablePerWeek,
+    weightFallbackKg: profile.answers.weightKg,
+    nutritionTargets: profile.nutrition,
+    exerciseNames: getAllLoggedExerciseNames(),
+    getExerciseHistory,
+    recentLogs30,
+    readinessRecords30: getRecordsInRange(recentLogs30[0]?.date ?? today, today),
+    travelContexts,
+    competitionEvents,
+  });
+
   function todaysProgressionDecisions() {
     const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
     const { progressionWeek } = computeProgressionInfo(planStartDate, progressionLogs, profile.answers.daysAvailablePerWeek);
@@ -185,6 +220,7 @@ export default function AiCoach() {
           resolvedContext,
           today,
           contextMessage,
+          performanceSummary,
         })
       : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);

@@ -20,7 +20,7 @@ export interface ExerciseTrendResult {
  * metric that exercise's model actually reports, in a fixed preference order (a
  * loaded exercise is judged by load, not reps, once load is being tracked). Returns
  * null for a log with no comparable numeric evidence at all (e.g. technique-only). */
-function primaryMetric(log: ExercisePerformanceLog): { label: string; value: number } | null {
+export function primaryMetric(log: ExercisePerformanceLog): { label: string; value: number } | null {
   if (log.loadKg !== undefined) {
     return { label: log.repsAchieved !== undefined ? `${log.repsAchieved} reps @ ${log.loadKg}kg` : `${log.loadKg}kg`, value: log.loadKg };
   }

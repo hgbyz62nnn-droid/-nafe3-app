@@ -14,6 +14,7 @@ import { suggestFoodAlternatives, type FoodAthleteConstraints } from '../nutriti
 import { FOOD_MATCH_REASON_LABELS } from '../nutrition/labels';
 import type { ResolvedContext } from '../context/types';
 import { daysUntilEvent } from '../context/competitionEngine';
+import type { PerformanceSummary } from '../performance/types';
 
 /** Structured context the Weekly Coaching / Daily Readiness / Progression / Exercise
  * Intelligence intents below read from — the most recently reviewed week's record,
@@ -62,6 +63,10 @@ export interface AiCoachReplyContext {
    * same message composeContextualWorkout.ts already produces for the Home/
    * Today's Workout banner, reused here rather than re-derived. */
   contextMessage?: string | null;
+  /** The real Performance Analytics summary (domain/performance/performanceEngine.ts)
+   * — the single analytical source of truth the progress/performance intents
+   * below read from, never a second, independently recomputed answer. */
+  performanceSummary?: PerformanceSummary;
 }
 
 /** Resolves which exercise an exercise-intelligence intent is about: the explicitly
@@ -573,6 +578,90 @@ export function getAiCoachReply(intent: AiCoachIntent, context?: AiCoachReplyCon
         return { message: 'Your plan is temporarily adjusted for your upcoming competition and will resume automatically afterward.' };
       }
       return { message: "You're already on your normal plan." };
+    }
+
+    case 'am_i_improving': {
+      const withTrend = context?.performanceSummary?.exercises.filter((e) => e.trend.state !== 'insufficient_data') ?? [];
+      if (withTrend.length === 0) {
+        return { message: "I don't have enough comparable exercise history yet to tell — log a few more sessions and I'll be able to answer this." };
+      }
+      const improving = withTrend.filter((e) => e.trend.state === 'improving').length;
+      const declining = withTrend.filter((e) => e.trend.state === 'declining').length;
+      if (improving > declining) {
+        return { message: `Yes — ${improving} of ${withTrend.length} exercises with enough history are trending up.`, ctaLabel: 'VIEW PROGRESS' };
+      }
+      if (declining > improving) {
+        return { message: `${declining} of ${withTrend.length} exercises with enough history are trending down right now — worth a look.`, ctaLabel: 'VIEW PROGRESS' };
+      }
+      return { message: `Your logged exercises are holding steady — ${withTrend.length} with enough history to compare.`, ctaLabel: 'VIEW PROGRESS' };
+    }
+
+    case 'whats_improved_this_week': {
+      const summary = context?.performanceSummary;
+      if (!summary) return { message: "I don't have enough data yet to tell." };
+      const improvingExercises = summary.exercises.filter((e) => e.trend.state === 'improving').map((e) => e.exerciseName);
+      const upMetrics = summary.weekComparison.metrics.filter((m) => m.direction === 'up').map((m) => m.label);
+      const parts = [...improvingExercises, ...upMetrics];
+      if (parts.length === 0) {
+        return { message: "Nothing stands out as improved yet this week — keep logging and I'll track it." };
+      }
+      return { message: `Improving: ${parts.join(', ')}.`, ctaLabel: 'VIEW PROGRESS' };
+    }
+
+    case 'whats_declined': {
+      const summary = context?.performanceSummary;
+      if (!summary) return { message: "I don't have enough data yet to tell." };
+      const decliningExercises = summary.exercises.filter((e) => e.trend.state === 'declining').map((e) => e.exerciseName);
+      const downMetrics = summary.weekComparison.metrics.filter((m) => m.direction === 'down').map((m) => m.label);
+      const parts = [...decliningExercises, ...downMetrics];
+      if (parts.length === 0) {
+        return { message: 'Nothing is trending down right now.' };
+      }
+      return { message: `Declining: ${parts.join(', ')}.`, ctaLabel: 'VIEW PROGRESS' };
+    }
+
+    case 'strongest_exercise': {
+      const exercises = context?.performanceSummary?.exercises ?? [];
+      const improving = exercises.filter((e) => e.trend.state === 'improving').sort((a, b) => b.trend.sampleSize - a.trend.sampleSize);
+      if (improving.length === 0) {
+        return { message: "I don't have enough comparable history yet to call out a strongest exercise." };
+      }
+      const best = improving[0];
+      return { message: `${best.exerciseName} is your strongest right now — trending up over ${best.trend.sampleSize} comparable sessions.` };
+    }
+
+    case 'did_i_set_a_pr': {
+      const recentPrs = (context?.performanceSummary?.exercises ?? []).flatMap((e) => e.personalRecords.filter((r) => r.isRecent));
+      if (recentPrs.length === 0) {
+        return { message: "Not yet — keep logging and I'll flag it the moment you set a new one." };
+      }
+      return { message: `Yes — ${recentPrs.map((r) => `${r.exerciseName} (${r.label})`).join(', ')}.` };
+    }
+
+    case 'how_is_my_recovery_trend': {
+      const readiness = context?.performanceSummary?.readiness;
+      if (!readiness || !readiness.hasData) {
+        return { message: "Complete a few Daily Check-ins and I'll be able to show your recovery trend.", ctaLabel: 'CHECK IN' };
+      }
+      const trendLabel =
+        readiness.scoreTrend.state === 'improving'
+          ? 'trending up'
+          : readiness.scoreTrend.state === 'declining'
+            ? 'trending down'
+            : readiness.scoreTrend.state === 'stable'
+              ? 'holding steady'
+              : 'still building a trend';
+      return {
+        message: `Your average readiness is ${readiness.averageScore}%, ${trendLabel}, with ${readiness.lowReadinessDaysCount} low-readiness day${readiness.lowReadinessDaysCount === 1 ? '' : 's'} recently.`,
+      };
+    }
+
+    case 'how_is_my_goal_progress': {
+      const goalProgress = context?.performanceSummary?.goalProgress;
+      if (!goalProgress || goalProgress.overallScore === null) {
+        return { message: "I don't have enough logged data yet to score your goal progress." };
+      }
+      return { message: `You're at ${goalProgress.overallScore}% toward your ${goalProgress.goal.replace('_', ' ')} goal this week.`, ctaLabel: 'VIEW PROGRESS' };
     }
   }
 }

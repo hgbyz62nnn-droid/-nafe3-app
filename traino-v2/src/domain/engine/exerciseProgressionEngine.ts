@@ -50,7 +50,7 @@ function roundToStep(value: number, step: number): number {
 
 /** How much of a prescribed exposure was actually done — derived fresh every time
  * from the log's own set counts, never stored redundantly. */
-function classifyCompletion(log: ExercisePerformanceLog): 'full' | 'partial' | 'missed' {
+export function classifyCompletion(log: ExercisePerformanceLog): 'full' | 'partial' | 'missed' {
   if (log.prescribedSets <= 0) return log.completedSets > 0 ? 'full' : 'missed';
   const ratio = log.completedSets / log.prescribedSets;
   if (ratio <= 0) return 'missed';
