@@ -8,8 +8,11 @@ import { getAiCoachReply, getFallbackReply } from '../domain/engine/aiCoachEngin
 import type { AiCoachIntent, AiCoachReply } from '../domain/engine/types';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
+import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
+  { label: 'How ready am I today?', intent: 'how_ready_am_i' },
+  { label: 'Should I train today?', intent: 'should_i_train_today' },
   { label: "Adjust today's workout", intent: 'adjust_todays_workout' },
   { label: 'I have pain', intent: 'have_pain' },
   { label: "I'm traveling", intent: 'traveling' },
@@ -19,6 +22,16 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'Why did my consistency drop?', intent: 'why_consistency_dropped' },
   { label: "What's changing next week?", intent: 'whats_next_week_change' },
   { label: 'Why was my workout reduced?', intent: 'why_workout_reduced' },
+];
+
+/** Intents that read structured Weekly Coaching / Daily Readiness context — everything
+ * else resolves from a fixed reply table alone. */
+const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
+  'why_consistency_dropped',
+  'whats_next_week_change',
+  'why_workout_reduced',
+  'how_ready_am_i',
+  'should_i_train_today',
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -32,14 +45,13 @@ export default function AiCoach() {
   const navigate = useNavigate();
   const { setActiveAdjustment } = useProfile();
   const { getLatestRecord } = useWeeklyCoaching();
+  const { getTodayRecord } = useDailyReadiness();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [draft, setDraft] = useState('');
 
-  const WEEKLY_COACHING_INTENTS: AiCoachIntent[] = ['why_consistency_dropped', 'whats_next_week_change', 'why_workout_reduced'];
-
   function handleSuggestion(label: string, intent: AiCoachIntent) {
-    const reply = WEEKLY_COACHING_INTENTS.includes(intent)
-      ? getAiCoachReply(intent, { latestRecord: getLatestRecord() })
+    const reply = CONTEXTUAL_INTENTS.includes(intent)
+      ? getAiCoachReply(intent, { latestRecord: getLatestRecord(), todayReadiness: getTodayRecord() ?? null })
       : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
   }
@@ -59,6 +71,10 @@ export default function AiCoach() {
       navigate(msg.ctaLabel === 'OPEN NUTRITION' ? '/nutrition' : '/todays-workout');
     } else if (msg.ctaLabel === 'VIEW WEEKLY REPORT') {
       navigate('/weekly-report');
+    } else if (msg.ctaLabel === 'CHECK IN') {
+      navigate('/daily-check-in');
+    } else if (msg.ctaLabel === "VIEW TODAY'S WORKOUT") {
+      navigate('/todays-workout');
     }
   }
 

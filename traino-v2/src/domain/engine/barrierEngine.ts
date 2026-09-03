@@ -1,4 +1,5 @@
 import type { DayLog } from '../state/LogContext';
+import type { DailyReadinessRecord } from '../readiness/types';
 import type { BarrierId } from '../coaching/barriers';
 import type { Confidence, DetectedBarrier, Severity, WeekSummary, WeeklyCoachingRecord, WeeklyCheckIn } from '../coaching/types';
 import { computeNutritionAdherence, computeRecoveryScore, computeWorkoutCompletion, computeWeekOverWeekWeightDelta } from './progressEngine';
@@ -30,6 +31,16 @@ export const MIN_MISSED_FOR_SIGNAL = 2;
 /** Same primary barrier present in this many consecutive reviewed weeks (including the
  * current one) counts as a recurring pattern. */
 export const RECURRING_THRESHOLD_WEEKS = 3;
+/** At least this many low-readiness (reduced/recovery) days in a week corroborates a
+ * fatigue/stress barrier — the Daily Readiness System's own evidence, distinct from
+ * the completion-based recovery proxy above. */
+export const LOW_READINESS_DAYS_THRESHOLD = 3;
+/** At least this many poor/short-sleep days in a week corroborates the poor_sleep barrier. */
+export const POOR_SLEEP_DAYS_THRESHOLD = 3;
+/** A readiness scale value at or below this counts as "poor" for sleepQuality/sleepDurationBucket. */
+const POOR_SLEEP_SCALE_MAX = 2;
+/** Minimum average-score gain (0-100 scale) between two weeks to call it an improvement. */
+export const READINESS_IMPROVEMENT_THRESHOLD = 8;
 
 const SEVERITY_RANK: Record<Severity, number> = { low: 0, medium: 1, high: 2 };
 const CONFIDENCE_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
@@ -44,9 +55,25 @@ function severityFromCompletion(ratio: number): Severity {
   return 'low';
 }
 
+function isLowReadinessDay(record: DailyReadinessRecord): boolean {
+  return record.status === 'reduced' || record.status === 'recovery';
+}
+
+function isPoorSleepDay(record: DailyReadinessRecord): boolean {
+  return record.inputs.sleepQuality <= POOR_SLEEP_SCALE_MAX || record.inputs.sleepDurationBucket <= POOR_SLEEP_SCALE_MAX;
+}
+
 /** Builds the real, honestly-empty-when-absent weekly summary this whole layer runs on.
- * Reuses the existing generic progress calculations — nothing here is computed twice. */
-export function computeWeekSummary(currentWeekLogs: DayLog[], priorWeekLogs: DayLog[], plannedPerWeek: number): WeekSummary {
+ * Reuses the existing generic progress calculations — nothing here is computed twice.
+ * `weekReadiness` is the subset of Daily Check-in records whose date falls within this
+ * same week (pre-filtered by the caller, the same way `currentWeekLogs` already is);
+ * pass [] when readiness history isn't available for a caller. */
+export function computeWeekSummary(
+  currentWeekLogs: DayLog[],
+  priorWeekLogs: DayLog[],
+  plannedPerWeek: number,
+  weekReadiness: DailyReadinessRecord[] = []
+): WeekSummary {
   const { completed: workoutsCompleted } = computeWorkoutCompletion(currentWeekLogs);
   const workoutsPlanned = Math.max(plannedPerWeek, 0);
   const workoutsMissed = Math.max(workoutsPlanned - workoutsCompleted, 0);
@@ -59,6 +86,15 @@ export function computeWeekSummary(currentWeekLogs: DayLog[], priorWeekLogs: Day
     (d) => d.workoutCompleted || d.loggedMealSlots.length > 0 || typeof d.weightKg === 'number'
   );
 
+  const readinessCheckInsCount = weekReadiness.length;
+  const readinessAverageScore =
+    readinessCheckInsCount > 0
+      ? Math.round(weekReadiness.reduce((sum, r) => sum + r.score, 0) / readinessCheckInsCount)
+      : null;
+  const readinessLowDaysCount = weekReadiness.filter(isLowReadinessDay).length;
+  const poorSleepDaysCount = weekReadiness.filter(isPoorSleepDay).length;
+  const readinessLowAndPoorSleepOverlapDays = weekReadiness.filter((r) => isLowReadinessDay(r) && isPoorSleepDay(r)).length;
+
   return {
     hasData,
     workoutsPlanned,
@@ -69,7 +105,31 @@ export function computeWeekSummary(currentWeekLogs: DayLog[], priorWeekLogs: Day
     recoveryScore,
     weightDeltaKg: deltaKg,
     hasWeightData,
+    readinessCheckInsCount,
+    readinessAverageScore,
+    readinessLowDaysCount,
+    poorSleepDaysCount,
+    readinessLowAndPoorSleepOverlapDays,
   };
+}
+
+/**
+ * Deterministic, non-causal readiness-trend note for the weekly report — only ever
+ * describes a co-occurrence ("readiness was higher alongside a reduced load"), never
+ * asserts causation, per the same rule `evidenceFor` follows below. Returns null unless
+ * an approved training-load reduction was actually in effect this week AND both weeks
+ * have real check-in data AND the improvement clears a meaningful threshold.
+ */
+export function describeReadinessTrend(
+  currentSummary: WeekSummary,
+  priorSummary: WeekSummary,
+  reducedLoadAppliedThisWeek: boolean
+): string | null {
+  if (!reducedLoadAppliedThisWeek) return null;
+  if (currentSummary.readinessAverageScore === null || priorSummary.readinessAverageScore === null) return null;
+  const delta = currentSummary.readinessAverageScore - priorSummary.readinessAverageScore;
+  if (delta < READINESS_IMPROVEMENT_THRESHOLD) return null;
+  return `Your readiness was higher this week (${currentSummary.readinessAverageScore}% vs ${priorSummary.readinessAverageScore}%), alongside last week's reduced training load.`;
 }
 
 function evidenceFor(barrier: BarrierId, summary: WeekSummary, explicit: boolean): { objectiveSignal: boolean; evidence: string[] } {
@@ -88,12 +148,25 @@ function evidenceFor(barrier: BarrierId, summary: WeekSummary, explicit: boolean
       if (objectiveSignal) evidence.push(`${summary.workoutsMissed} of ${summary.workoutsPlanned} planned sessions missed`);
       return { objectiveSignal, evidence };
     }
-    case 'poor_sleep':
-    case 'fatigue':
-    case 'stress': {
-      const objectiveSignal = lowRecovery && objectiveMissed;
+    case 'poor_sleep': {
+      const lowReadinessSignal = summary.readinessLowDaysCount >= LOW_READINESS_DAYS_THRESHOLD;
+      const poorSleepSignal = summary.poorSleepDaysCount >= POOR_SLEEP_DAYS_THRESHOLD;
+      const objectiveSignal = (lowRecovery && objectiveMissed) || poorSleepSignal;
       if (lowRecovery) evidence.push(`recovery score ${summary.recoveryScore}% (below ${LOW_RECOVERY_THRESHOLD}%)`);
       if (objectiveMissed) evidence.push(`${summary.workoutsMissed} sessions missed`);
+      if (poorSleepSignal) evidence.push(`poor/short sleep reported on ${summary.poorSleepDaysCount} of ${summary.readinessCheckInsCount} check-in days`);
+      if (lowReadinessSignal && summary.readinessLowAndPoorSleepOverlapDays > 0) {
+        evidence.push(`low readiness occurred alongside poor sleep on ${summary.readinessLowAndPoorSleepOverlapDays} days this week`);
+      }
+      return { objectiveSignal, evidence };
+    }
+    case 'fatigue':
+    case 'stress': {
+      const lowReadinessSignal = summary.readinessLowDaysCount >= LOW_READINESS_DAYS_THRESHOLD;
+      const objectiveSignal = (lowRecovery && objectiveMissed) || lowReadinessSignal;
+      if (lowRecovery) evidence.push(`recovery score ${summary.recoveryScore}% (below ${LOW_RECOVERY_THRESHOLD}%)`);
+      if (objectiveMissed) evidence.push(`${summary.workoutsMissed} sessions missed`);
+      if (lowReadinessSignal) evidence.push(`low readiness reported on ${summary.readinessLowDaysCount} of ${summary.readinessCheckInsCount} check-in days`);
       return { objectiveSignal, evidence };
     }
     case 'nutrition_difficulty':

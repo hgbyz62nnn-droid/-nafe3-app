@@ -114,9 +114,11 @@ export interface SportModuleData {
 }
 
 /** The fixed set of quick-reply intents the AI Coach screen offers — a closed, enumerable list.
- * The last three surface Weekly Coaching Loop context deterministically (see
- * weeklyCoachingEngine.ts) — they still resolve to pre-templated text over structured
- * data, never a generated explanation. */
+ * 'why_consistency_dropped'/'whats_next_week_change'/'why_workout_reduced' surface Weekly
+ * Coaching Loop context deterministically (see weeklyCoachingEngine.ts); 'how_ready_am_i'/
+ * 'should_i_train_today' surface Daily Readiness System context deterministically (see
+ * readinessEngine.ts) — every one of them still resolves to pre-templated text over
+ * structured data, never a generated explanation. */
 export type AiCoachIntent =
   | 'feeling_tired'
   | 'adjust_todays_workout'
@@ -127,7 +129,9 @@ export type AiCoachIntent =
   | 'ask_about_nutrition'
   | 'why_consistency_dropped'
   | 'whats_next_week_change'
-  | 'why_workout_reduced';
+  | 'why_workout_reduced'
+  | 'how_ready_am_i'
+  | 'should_i_train_today';
 
 export interface AiCoachAdjustment {
   /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */

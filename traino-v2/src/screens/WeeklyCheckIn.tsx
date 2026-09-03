@@ -7,15 +7,17 @@ import { BARRIER_OPTIONS, type BarrierId } from '../domain/coaching/barriers';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
+import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { buildWeeklyCoachingReview } from '../domain/engine/weeklyCoachingEngine';
-import { localDateKey } from '../domain/engine/dateUtils';
+import { addDays, localDateKey } from '../domain/engine/dateUtils';
 
 export default function WeeklyCheckIn() {
   const navigate = useNavigate();
   const { profile, planStartDate } = useProfile();
   const { getRecentLogs, getLogsSince } = useLogs();
-  const { getHistoryBefore, saveReview } = useWeeklyCoaching();
+  const { getHistoryBefore, getApprovedAdjustmentForWeek, saveReview } = useWeeklyCoaching();
+  const { getRecordsInRange } = useDailyReadiness();
   const [selected, setSelected] = useState<Set<BarrierId>>(new Set());
   const [note, setNote] = useState('');
 
@@ -40,15 +42,25 @@ export default function WeeklyCheckIn() {
       submittedAt: localDateKey(new Date()),
     };
     const history = getHistoryBefore(currentPlanWeek);
-    const { decision } = buildWeeklyCoachingReview(
+
+    const today = new Date();
+    const currentWeekReadiness = getRecordsInRange(localDateKey(addDays(today, -6)), localDateKey(today));
+    const priorWeekReadiness = getRecordsInRange(localDateKey(addDays(today, -13)), localDateKey(addDays(today, -7)));
+    const reducedLoadAppliedThisWeek =
+      (getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment?.volumeMultiplier ?? 1) < 1;
+
+    const { decision, readinessNote } = buildWeeklyCoachingReview(
       currentWeekLogs,
       priorWeekLogs,
       profile.answers.daysAvailablePerWeek,
       checkIn,
       profile,
-      history
+      history,
+      currentWeekReadiness,
+      priorWeekReadiness,
+      reducedLoadAppliedThisWeek
     );
-    saveReview(currentPlanWeek, localDateKey(new Date()), checkIn, decision);
+    saveReview(currentPlanWeek, localDateKey(new Date()), checkIn, decision, readinessNote);
     navigate('/weekly-report');
   }
 

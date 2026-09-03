@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeWeekSummary,
+  describeReadinessTrend,
   detectBarriers,
   detectRecurringPattern,
   pickPrimaryBarrier,
   LOW_COMPLETION_THRESHOLD,
+  LOW_READINESS_DAYS_THRESHOLD,
+  POOR_SLEEP_DAYS_THRESHOLD,
+  READINESS_IMPROVEMENT_THRESHOLD,
   RECURRING_THRESHOLD_WEEKS,
 } from './barrierEngine';
 import type { DayLog } from '../state/LogContext';
 import type { WeeklyCheckIn, WeeklyCoachingRecord } from '../coaching/types';
+import type { DailyReadinessRecord, DailyReadinessInputs } from '../readiness/types';
+import { computeReadiness } from './readinessEngine';
 
 function log(date: string, overrides: Partial<DayLog> = {}): DayLog {
   return { date, loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, ...overrides };
@@ -16,6 +22,24 @@ function log(date: string, overrides: Partial<DayLog> = {}): DayLog {
 
 function checkIn(barrierIds: WeeklyCheckIn['barrierIds']): WeeklyCheckIn {
   return { barrierIds, submittedAt: '2026-01-01' };
+}
+
+function readinessInputs(overrides: Partial<DailyReadinessInputs> = {}): DailyReadinessInputs {
+  return { sleepQuality: 3, sleepDurationBucket: 3, energy: 3, stress: 3, soreness: 3, motivation: 3, painFlag: false, ...overrides };
+}
+
+function readinessRecord(date: string, overrides: Partial<DailyReadinessInputs> = {}): DailyReadinessRecord {
+  const inputs = readinessInputs(overrides);
+  const result = computeReadiness(inputs);
+  return {
+    date,
+    inputs: result.factors,
+    score: result.score,
+    status: result.status,
+    recommendation: result.recommendation,
+    recommendationApplied: result.recommendation.adjustmentApplied,
+    submittedAt: `${date}T08:00:00.000Z`,
+  };
 }
 
 describe('computeWeekSummary', () => {
@@ -187,5 +211,115 @@ describe('LOW_COMPLETION_THRESHOLD sanity', () => {
   it('is a fraction between 0 and 1', () => {
     expect(LOW_COMPLETION_THRESHOLD).toBeGreaterThan(0);
     expect(LOW_COMPLETION_THRESHOLD).toBeLessThan(1);
+  });
+});
+
+describe('computeWeekSummary — readiness integration', () => {
+  it('defaults readiness fields to empty/null when no readiness records are passed', () => {
+    const summary = computeWeekSummary([log('2026-01-01')], [], 3);
+    expect(summary.readinessCheckInsCount).toBe(0);
+    expect(summary.readinessAverageScore).toBeNull();
+    expect(summary.readinessLowDaysCount).toBe(0);
+    expect(summary.poorSleepDaysCount).toBe(0);
+  });
+
+  it('averages readiness scores and counts low-readiness/poor-sleep days from real check-ins', () => {
+    const week = [
+      readinessRecord('2026-01-01', { energy: 1, sleepQuality: 1, sleepDurationBucket: 1, stress: 5, soreness: 5 }), // recovery, poor sleep
+      readinessRecord('2026-01-02', { energy: 1, sleepQuality: 2, stress: 5, soreness: 5 }), // reduced/recovery, poor sleep
+      readinessRecord('2026-01-03'), // normal, not poor sleep
+    ];
+    const summary = computeWeekSummary([log('2026-01-01')], [], 3, week);
+    expect(summary.readinessCheckInsCount).toBe(3);
+    expect(summary.readinessAverageScore).not.toBeNull();
+    expect(summary.readinessLowDaysCount).toBeGreaterThanOrEqual(2);
+    expect(summary.poorSleepDaysCount).toBe(2);
+    expect(summary.readinessLowAndPoorSleepOverlapDays).toBeGreaterThanOrEqual(1);
+  });
+
+  it('never produces NaN for readiness fields regardless of input', () => {
+    const summary = computeWeekSummary([], [], 3, []);
+    expect(Number.isNaN(summary.readinessCheckInsCount)).toBe(false);
+    expect(Number.isNaN(summary.readinessLowDaysCount)).toBe(false);
+    expect(Number.isNaN(summary.poorSleepDaysCount)).toBe(false);
+  });
+});
+
+describe('evidenceFor via detectBarriers — readiness as supporting evidence (non-causal)', () => {
+  it('S: repeated low readiness corroborates a selected fatigue barrier even without objective completion signal', () => {
+    const lowReadinessWeek = Array.from({ length: LOW_READINESS_DAYS_THRESHOLD }, (_, i) =>
+      readinessRecord(`2026-01-0${i + 1}`, { energy: 1, sleepQuality: 2, stress: 4, soreness: 4 })
+    );
+    const summary = computeWeekSummary(
+      [log('2026-01-01', { workoutCompleted: true }), log('2026-01-02', { workoutCompleted: true }), log('2026-01-03', { workoutCompleted: true })],
+      [],
+      3,
+      lowReadinessWeek
+    );
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+    expect(detected[0].evidence).toMatch(/low readiness/);
+  });
+
+  it('T: repeated poor sleep corroborates a selected poor_sleep barrier, phrased as co-occurrence not causation', () => {
+    const poorSleepWeek = Array.from({ length: POOR_SLEEP_DAYS_THRESHOLD }, (_, i) =>
+      readinessRecord(`2026-01-0${i + 1}`, { sleepQuality: 1, sleepDurationBucket: 1, energy: 1, stress: 4, soreness: 4 })
+    );
+    const summary = computeWeekSummary(
+      [log('2026-01-01', { workoutCompleted: true }), log('2026-01-02', { workoutCompleted: true }), log('2026-01-03', { workoutCompleted: true })],
+      [],
+      3,
+      poorSleepWeek
+    );
+    const detected = detectBarriers(checkIn(['poor_sleep']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+    expect(detected[0].evidence).toMatch(/poor\/short sleep|alongside/);
+    expect(detected[0].evidence).not.toMatch(/caused/i);
+  });
+
+  it('U: a single off day of low readiness does not by itself corroborate a barrier', () => {
+    const summary = computeWeekSummary(
+      [log('2026-01-01', { workoutCompleted: true }), log('2026-01-02', { workoutCompleted: true }), log('2026-01-03', { workoutCompleted: true })],
+      [],
+      3,
+      [readinessRecord('2026-01-01', { energy: 1, sleepQuality: 1 })]
+    );
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(false);
+  });
+});
+
+describe('describeReadinessTrend — non-causal reporting', () => {
+  const lowWeek = computeWeekSummary([log('2026-01-01')], [], 3, [
+    readinessRecord('2026-01-01', { energy: 1, sleepQuality: 1 }),
+    readinessRecord('2026-01-02', { energy: 1, sleepQuality: 1 }),
+  ]);
+  const highWeek = computeWeekSummary([log('2026-01-08')], [], 3, [
+    readinessRecord('2026-01-08', { energy: 5, sleepQuality: 5, stress: 1, soreness: 1 }),
+    readinessRecord('2026-01-09', { energy: 5, sleepQuality: 5, stress: 1, soreness: 1 }),
+  ]);
+
+  it('V: reports an improvement only when a reduced load was actually applied this week', () => {
+    expect(describeReadinessTrend(highWeek, lowWeek, false)).toBeNull();
+    const note = describeReadinessTrend(highWeek, lowWeek, true);
+    expect(note).not.toBeNull();
+    expect(note).toMatch(/alongside/);
+    expect(note).not.toMatch(/caused/i);
+  });
+
+  it('returns null without readiness data for either week', () => {
+    const emptyWeek = computeWeekSummary([log('2026-01-01')], [], 3, []);
+    expect(describeReadinessTrend(emptyWeek, lowWeek, true)).toBeNull();
+    expect(describeReadinessTrend(highWeek, emptyWeek, true)).toBeNull();
+  });
+
+  it('returns null when the improvement does not clear the threshold', () => {
+    const summaryA = computeWeekSummary([log('2026-01-01')], [], 3, [readinessRecord('2026-01-01')]);
+    const summaryB = computeWeekSummary([log('2026-01-08')], [], 3, [readinessRecord('2026-01-08')]);
+    expect(describeReadinessTrend(summaryB, summaryA, true)).toBeNull();
+  });
+
+  it('READINESS_IMPROVEMENT_THRESHOLD is a positive score-point delta', () => {
+    expect(READINESS_IMPROVEMENT_THRESHOLD).toBeGreaterThan(0);
   });
 });

@@ -82,6 +82,10 @@ export interface WeeklyCoachingRecord {
   decision: CoachingDecision | null;
   approvalStatus: ApprovalStatus;
   decidedAt: string | null;
+  /** Non-causal readiness-trend observation computed at review time (see
+   * barrierEngine's `describeReadinessTrend`), or null/absent when nothing to report.
+   * Optional so pre-Phase-4 persisted records still pass the existing validator. */
+  readinessNote?: string | null;
 }
 
 /** Real, honestly-empty-when-absent weekly data — never fabricated. `hasData` is false
@@ -96,4 +100,17 @@ export interface WeekSummary {
   recoveryScore: number;
   weightDeltaKg: number;
   hasWeightData: boolean;
+  /** How many Daily Check-ins were submitted this week (0-7). */
+  readinessCheckInsCount: number;
+  /** Average readiness score (0-100) across this week's check-ins, or null if none. */
+  readinessAverageScore: number | null;
+  /** Days this week whose readiness status was 'reduced' or 'recovery'. */
+  readinessLowDaysCount: number;
+  /** Days this week whose check-in reported poor/short sleep (sleepQuality or
+   * sleepDurationBucket at or below 2). */
+  poorSleepDaysCount: number;
+  /** Days this week where BOTH a low readiness status AND poor sleep were reported
+   * on the same day — the actual data `evidenceFor` uses to surface poor sleep as
+   * supporting evidence for a fatigue/poor_sleep barrier, never as its cause. */
+  readinessLowAndPoorSleepOverlapDays: number;
 }

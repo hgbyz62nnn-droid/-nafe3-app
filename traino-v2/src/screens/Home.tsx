@@ -7,6 +7,7 @@ import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
+import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import {
@@ -16,6 +17,7 @@ import {
   computeRecoveryScore,
 } from '../domain/engine/progressEngine';
 import { barrierDisplayName } from '../domain/coaching/barriers';
+import { READINESS_STATUS_COLOR, READINESS_STATUS_LABEL } from '../domain/readiness/scales';
 import { SPORTS } from '../domain/sports/sports';
 
 function trendToPoints(trend: number[], width = 60, height = 20): string {
@@ -69,15 +71,21 @@ export default function Home() {
   const { profile, planStartDate } = useProfile();
   const { getRecentLogs, getLogsSince } = useLogs();
   const { getRecord, getApprovedAdjustmentForWeek } = useWeeklyCoaching();
+  const { getTodayRecord } = useDailyReadiness();
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
   const { progressionWeek, currentPlanWeek } = computeProgressionInfo(
     planStartDate,
     progressionLogs,
     profile.answers.daysAvailablePerWeek
   );
+  const readinessRecord = getTodayRecord();
+  const readinessAdjustment = readinessRecord?.recommendationApplied
+    ? (readinessRecord.recommendation.trainingAdjustment ?? null)
+    : null;
   const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
-  const workout = weeklyAdjustment
-    ? applyCoachAdjustment(profile, undefined, weeklyAdjustment, progressionWeek)
+  const effectiveAdjustment = readinessAdjustment ?? weeklyAdjustment;
+  const workout = effectiveAdjustment
+    ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek)
     : generateTodayWorkout(profile, undefined, progressionWeek);
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
 
@@ -186,6 +194,35 @@ export default function Home() {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="px-5 mt-3.5">
+        <Link
+          to="/daily-check-in"
+          className="flex items-center gap-3 bg-card rounded-card-sm border border-border-soft px-4 py-3"
+        >
+          <span className="w-9 h-9 min-w-[36px] rounded-[10px] bg-card-nested flex items-center justify-center shrink-0">
+            <Icon name="battery" size={16} className="text-white" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-text-secondary text-[11px] font-bold tracking-wider uppercase">
+              Today's Readiness
+            </span>
+            {readinessRecord ? (
+              <span className="block text-white text-[13px] mt-0.5">
+                <span className="font-extrabold">{readinessRecord.score}%</span>{' '}
+                <span className={`font-semibold ${READINESS_STATUS_COLOR[readinessRecord.status]}`}>
+                  {READINESS_STATUS_LABEL[readinessRecord.status]}
+                </span>
+              </span>
+            ) : (
+              <span className="block text-text-secondary text-[13px] mt-0.5">Not checked in yet</span>
+            )}
+          </span>
+          <span className="text-red text-[12.5px] font-bold shrink-0">
+            {readinessRecord ? 'View' : 'Check in'}
+          </span>
+        </Link>
       </div>
 
       <div className="px-5 mt-5 flex items-center justify-between">

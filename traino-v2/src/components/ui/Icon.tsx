@@ -88,6 +88,10 @@ export const ICONS = {
   suitcase: '<rect x="3.5" y="8" width="17" height="11" rx="2"/><path d="M9 8V6.5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2V8M3.5 13.5h17"/>',
   wallet: '<rect x="3.5" y="6.5" width="17" height="12" rx="2"/><path d="M3.5 10.5h17"/><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/>',
   stress: 'M13 3 6 13h5l-2 8 9-12h-6l2-6Z',
+
+  // -- Daily Readiness extension, same 24x24 / 1.8px-stroke language as the
+  // barrier icons above (added for the energy check-in question).
+  battery: '<rect x="3" y="8" width="16" height="8" rx="1.5"/><path d="M19 10.5h1.5v3H19"/><rect x="5.5" y="10" width="8" height="4" fill="currentColor" stroke="none"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

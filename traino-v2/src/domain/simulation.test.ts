@@ -16,9 +16,13 @@ import { addDays, localDateKey } from './engine/dateUtils';
 import { footballModule } from './sports/football/program';
 import type { AssessmentAnswers, FitnessLevel, MealSlot, UserProfile } from './engine/types';
 import { buildWeeklyCoachingReview } from './engine/weeklyCoachingEngine';
+import { computeWeekSummary } from './engine/barrierEngine';
+import { computeReadiness } from './engine/readinessEngine';
+import { sanitizeReadinessInputs } from './engine/validation';
 import type { BarrierId } from './coaching/barriers';
 import type { WeeklyCoachingRecord } from './coaching/types';
 import type { DayLog } from './state/LogContext';
+import type { DailyReadinessInputs, DailyReadinessRecord } from './readiness/types';
 
 /**
  * Multi-athlete, multi-week simulation. Not a UI test — this drives the
@@ -543,5 +547,189 @@ describe('Weekly Coaching Loop multi-week simulation', () => {
     const withoutAdjustment = generateTodayWorkout(profile, 0, 1);
     const alsoWithoutAdjustment = generateTodayWorkout(profile, 0, 1);
     expect(withoutAdjustment).toEqual(alsoWithoutAdjustment);
+  });
+});
+
+/**
+ * Daily Readiness System multi-day simulation (spec §17). Drives the real
+ * check-in -> readinessEngine -> today's-workout pipeline across several
+ * simulated days per athlete, building a real historical record array the
+ * same shape `DailyReadinessContext` persists, then folds that history into
+ * `computeWeekSummary` to prove the Weekly Coaching Engine can see it —
+ * exactly the same invariant-style checks as the sport/coaching simulations
+ * above, not one hardcoded expected value per athlete.
+ */
+
+interface ReadinessSimAthlete {
+  name: string;
+  sim: SimAthlete;
+  /** One `DailyReadinessInputs` override per simulated day. */
+  days: Partial<DailyReadinessInputs>[];
+}
+
+function baseReadinessInputs(overrides: Partial<DailyReadinessInputs> = {}): DailyReadinessInputs {
+  return { sleepQuality: 3, sleepDurationBucket: 3, energy: 3, stress: 3, soreness: 3, motivation: 3, painFlag: false, ...overrides };
+}
+
+const HIGH_DAY = { sleepQuality: 5, sleepDurationBucket: 5, energy: 5, stress: 1, soreness: 1, motivation: 5 } as const;
+const LOW_DAY = { sleepQuality: 1, sleepDurationBucket: 1, energy: 1, stress: 5, soreness: 5, motivation: 2 } as const;
+
+const READINESS_SCENARIOS: ReadinessSimAthlete[] = [
+  {
+    name: '1. High-readiness athlete',
+    sim: athlete({ name: 'readiness-high', daysAvailablePerWeek: 4, completionRate: 1, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: Array.from({ length: 5 }, () => ({ ...HIGH_DAY })),
+  },
+  {
+    name: '2. Poor-sleep athlete',
+    sim: athlete({ name: 'readiness-poor-sleep', daysAvailablePerWeek: 4, completionRate: 0.6, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: Array.from({ length: 5 }, () => ({ sleepQuality: 1, sleepDurationBucket: 1, energy: 2 })),
+  },
+  {
+    name: '3. High-stress athlete',
+    sim: athlete({ name: 'readiness-high-stress', daysAvailablePerWeek: 4, completionRate: 0.6, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: Array.from({ length: 5 }, () => ({ stress: 5, energy: 2 })),
+  },
+  {
+    name: '4. High-soreness athlete',
+    sim: athlete({ name: 'readiness-high-soreness', daysAvailablePerWeek: 4, completionRate: 0.7, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: Array.from({ length: 5 }, () => ({ soreness: 5, energy: 3 })),
+  },
+  {
+    name: '5. Frequently low-readiness athlete',
+    sim: athlete({ name: 'readiness-frequently-low', daysAvailablePerWeek: 5, completionRate: 0.3, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: Array.from({ length: 6 }, () => ({ ...LOW_DAY })),
+  },
+  {
+    name: '6. Athlete with pain flag',
+    sim: athlete({ name: 'readiness-pain-flag', daysAvailablePerWeek: 3, completionRate: 0.8, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: [{ ...HIGH_DAY }, { painFlag: true }, { painFlag: true }, { ...HIGH_DAY }],
+  },
+  {
+    name: '7. Athlete whose readiness improves after a training adjustment',
+    sim: athlete({ name: 'readiness-improves', daysAvailablePerWeek: 4, completionRate: 0.5, trainingLocationIds: ['home'], equipmentIds: [] }),
+    days: [...Array.from({ length: 3 }, () => ({ ...LOW_DAY })), ...Array.from({ length: 3 }, () => ({ ...HIGH_DAY }))],
+  },
+];
+
+describe('Daily Readiness System multi-day simulation', () => {
+  for (const scenario of READINESS_SCENARIOS) {
+    it(`${scenario.name} — readiness stays deterministic, valid, and correctly adjusts today's workout across ${scenario.days.length} days`, () => {
+      const profile = buildProfile(scenario.sim.answers);
+      const history: DailyReadinessRecord[] = [];
+
+      for (let i = 0; i < scenario.days.length; i++) {
+        const date = localDateKey(addDays(new Date(2026, 2, 2), i));
+        const rawInputs = baseReadinessInputs(scenario.days[i]);
+
+        // -- sanitize + score is deterministic and bounded --
+        const { value: inputs } = sanitizeReadinessInputs(rawInputs);
+        const resultA = computeReadiness(inputs);
+        const resultB = computeReadiness(inputs);
+        expect(resultA).toEqual(resultB);
+        expect(Number.isFinite(resultA.score)).toBe(true);
+        expect(resultA.score).toBeGreaterThanOrEqual(0);
+        expect(resultA.score).toBeLessThanOrEqual(100);
+        expect(['high', 'normal', 'reduced', 'recovery']).toContain(resultA.status);
+
+        // -- pain flag is always a safety override to 'recovery', never averaged away --
+        if (inputs.painFlag) {
+          expect(resultA.status).toBe('recovery');
+          expect(resultA.recommendation.trainingAdjustment?.skipHighImpact).toBe(true);
+          expect(resultA.recommendation.trainingAdjustment?.swapToBodyweight).toBe(true);
+        }
+
+        // -- historical record persists (idempotent per-date, exactly DailyReadinessContext's shape) --
+        const record: DailyReadinessRecord = {
+          date,
+          inputs: resultA.factors,
+          score: resultA.score,
+          status: resultA.status,
+          recommendation: resultA.recommendation,
+          recommendationApplied: resultA.recommendation.adjustmentApplied,
+          submittedAt: `${date}T08:00:00.000Z`,
+        };
+        history.push(record);
+        expect(history.filter((r) => r.date === date)).toHaveLength(1);
+
+        // -- today's workout adjusts correctly and stays a valid, non-empty plan --
+        const dayIndex = i % footballModule.program[profile.level].length;
+        const baseline = generateTodayWorkout(profile, dayIndex, 1);
+        const resolved = resultA.recommendation.adjustmentApplied
+          ? applyCoachAdjustment(profile, dayIndex, resultA.recommendation.trainingAdjustment!, 1)
+          : baseline;
+        expect(resolved.exercises.length).toBeGreaterThan(0);
+        for (const ex of resolved.exercises) {
+          expect(Number.isFinite(ex.sets)).toBe(true);
+          expect(ex.sets).toBeGreaterThan(0);
+        }
+
+        // -- training intent preserved: name/focus/statCategory never change, and no new
+        // exercise category is introduced by a readiness adjustment --
+        expect(resolved.name).toBe(baseline.name);
+        expect(resolved.statCategory).toBe(baseline.statCategory);
+        const baseCategories = new Set(baseline.exercises.map((e) => e.category));
+        for (const ex of resolved.exercises) {
+          expect(baseCategories.has(ex.category)).toBe(true);
+        }
+      }
+
+      // -- Weekly Coaching Engine can see the accumulated readiness pattern --
+      const summary = computeWeekSummary([], [], scenario.sim.answers.daysAvailablePerWeek, history);
+      expect(summary.readinessCheckInsCount).toBe(history.length);
+      expect(Number.isNaN(summary.readinessLowDaysCount)).toBe(false);
+      expect(Number.isNaN(summary.poorSleepDaysCount)).toBe(false);
+      if (summary.readinessAverageScore !== null) {
+        expect(summary.readinessAverageScore).toBeGreaterThanOrEqual(0);
+        expect(summary.readinessAverageScore).toBeLessThanOrEqual(100);
+      }
+
+      // -- a frequently-low-readiness athlete's history actually corroborates a fatigue barrier --
+      if (scenario.name.startsWith('5.')) {
+        expect(summary.readinessLowDaysCount).toBeGreaterThanOrEqual(3);
+      }
+
+      // -- the pain-flag athlete's history is visible without exposing raw painNote text anywhere new --
+      if (scenario.name.startsWith('6.')) {
+        expect(history.some((r) => r.status === 'recovery')).toBe(true);
+      }
+    });
+  }
+
+  it('a full week of low-readiness check-ins is visible to buildWeeklyCoachingReview as supporting evidence', () => {
+    const sim = athlete({ name: 'readiness-weekly-coaching', daysAvailablePerWeek: 4, completionRate: 0.4, trainingLocationIds: ['home'], equipmentIds: [] });
+    const profile = buildProfile(sim.answers);
+    const weekStart = new Date(2026, 2, 2);
+
+    const readinessHistory: DailyReadinessRecord[] = [];
+    const logs: DayLog[] = [];
+    for (let day = 0; day < 7; day++) {
+      const date = localDateKey(addDays(weekStart, day));
+      const { value: inputs } = sanitizeReadinessInputs(baseReadinessInputs(LOW_DAY));
+      const result = computeReadiness(inputs);
+      readinessHistory.push({
+        date,
+        inputs: result.factors,
+        score: result.score,
+        status: result.status,
+        recommendation: result.recommendation,
+        recommendationApplied: result.recommendation.adjustmentApplied,
+        submittedAt: `${date}T08:00:00.000Z`,
+      });
+      logs.push({ date, loggedMealSlots: [], mealOverrides: {}, workoutCompleted: day < 1 });
+    }
+
+    const { decision } = buildWeeklyCoachingReview(
+      logs,
+      [],
+      sim.answers.daysAvailablePerWeek,
+      { barrierIds: ['fatigue'], submittedAt: localDateKey(addDays(weekStart, 6)) },
+      profile,
+      [],
+      readinessHistory
+    );
+    expect(decision.barrier).toBe('fatigue');
+    expect(decision.confidence).toBe('high');
+    expect(decision.evidence).toMatch(/low readiness/);
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isValidWeekNumber, isValidWeightKg, sanitizeAssessmentAnswers } from './validation';
+import { isValidWeekNumber, isValidWeightKg, sanitizeAssessmentAnswers, sanitizeReadinessInputs } from './validation';
 import { baseAnswers } from './testFixtures';
+import type { DailyReadinessInputs } from '../readiness/types';
+
+function baseReadinessInputs(): DailyReadinessInputs {
+  return { sleepQuality: 3, sleepDurationBucket: 3, energy: 3, stress: 3, soreness: 3, motivation: 3, painFlag: false };
+}
 
 describe('sanitizeAssessmentAnswers', () => {
   it('passes already-clean answers through unchanged', () => {
@@ -82,5 +87,59 @@ describe('isValidWeekNumber', () => {
     expect(isValidWeekNumber(-1)).toBe(false);
     expect(isValidWeekNumber(2.5)).toBe(false);
     expect(isValidWeekNumber(Infinity)).toBe(false);
+  });
+});
+
+describe('sanitizeReadinessInputs', () => {
+  it('passes already-clean inputs through unchanged', () => {
+    const inputs = baseReadinessInputs();
+    const { value, violations } = sanitizeReadinessInputs(inputs);
+    expect(value).toEqual(inputs);
+    expect(violations).toEqual([]);
+  });
+
+  it('defaults NaN/missing scale values to 3 rather than propagating NaN', () => {
+    const corrupted = { ...baseReadinessInputs(), sleepQuality: NaN as unknown as 1, energy: undefined as unknown as 1 };
+    const { value, violations } = sanitizeReadinessInputs(corrupted);
+    expect(value.sleepQuality).toBe(3);
+    expect(value.energy).toBe(3);
+    expect(violations.length).toBeGreaterThan(0);
+  });
+
+  it('clamps out-of-range scale values (0, 6, -5, 100) to a safe default', () => {
+    const { value } = sanitizeReadinessInputs({ ...baseReadinessInputs(), stress: 0 as 1, soreness: 6 as 1, motivation: -5 as 1 });
+    expect(value.stress).toBe(3);
+    expect(value.soreness).toBe(3);
+    expect(value.motivation).toBe(3);
+  });
+
+  it('rejects an invalid enum-like value for a scale field', () => {
+    const { value, violations } = sanitizeReadinessInputs({ ...baseReadinessInputs(), sleepDurationBucket: 'high' as unknown as 1 });
+    expect(value.sleepDurationBucket).toBe(3);
+    expect(violations.length).toBeGreaterThan(0);
+  });
+
+  it('defaults a non-boolean painFlag to false', () => {
+    const { value, violations } = sanitizeReadinessInputs({ ...baseReadinessInputs(), painFlag: 'yes' as unknown as boolean });
+    expect(value.painFlag).toBe(false);
+    expect(violations.length).toBeGreaterThan(0);
+  });
+
+  it('never produces NaN for any field regardless of corrupted input', () => {
+    const corrupted = {
+      sleepQuality: NaN as unknown as 1,
+      sleepDurationBucket: undefined as unknown as 1,
+      energy: 'x' as unknown as 1,
+      stress: null as unknown as 1,
+      soreness: Infinity as unknown as 1,
+      motivation: -Infinity as unknown as 1,
+      painFlag: 1 as unknown as boolean,
+    };
+    const { value } = sanitizeReadinessInputs(corrupted);
+    for (const key of ['sleepQuality', 'sleepDurationBucket', 'energy', 'stress', 'soreness', 'motivation'] as const) {
+      expect(Number.isNaN(value[key])).toBe(false);
+      expect(value[key]).toBeGreaterThanOrEqual(1);
+      expect(value[key]).toBeLessThanOrEqual(5);
+    }
   });
 });

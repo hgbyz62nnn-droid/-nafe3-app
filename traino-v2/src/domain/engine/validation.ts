@@ -1,5 +1,6 @@
 import type { AssessmentAnswers, BudgetTier, DietaryPreference, Goal, Sex } from './types';
 import { SPORTS, type SportId } from '../sports/sports';
+import type { DailyReadinessInputs, ReadinessScale } from '../readiness/types';
 
 /**
  * Boundary validation/sanitization for the deterministic engine. Persisted
@@ -109,6 +110,45 @@ export function sanitizeAssessmentAnswers(answers: AssessmentAnswers): SanitizeR
  * rather than corrupting the weight-trend history Progress/WeeklyReport read from. */
 export function isValidWeightKg(value: number): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value >= 20 && value <= 300;
+}
+
+const READINESS_SCALES: ReadinessScale[] = [1, 2, 3, 4, 5];
+
+function sanitizeReadinessScale(value: unknown, label: string, violations: string[]): ReadinessScale {
+  const n = typeof value === 'number' ? Math.round(value) : NaN;
+  if (Number.isNaN(n) || !READINESS_SCALES.includes(n as ReadinessScale)) {
+    violations.push(`${label}: invalid value (${JSON.stringify(value)}), defaulted to 3`);
+    return 3;
+  }
+  return n as ReadinessScale;
+}
+
+/**
+ * Sanitizes one day's readiness check-in inputs before they ever reach
+ * `computeReadiness` — a corrupted/hand-edited localStorage entry or a bad
+ * form parse must never produce NaN, an out-of-range scale value, or an
+ * invalid enum, per the same "sanitize once at the boundary" architecture
+ * `sanitizeAssessmentAnswers` already uses above.
+ */
+export function sanitizeReadinessInputs(inputs: DailyReadinessInputs): SanitizeResult<DailyReadinessInputs> {
+  const violations: string[] = [];
+
+  const value: DailyReadinessInputs = {
+    sleepQuality: sanitizeReadinessScale(inputs.sleepQuality, 'sleepQuality', violations),
+    sleepDurationBucket: sanitizeReadinessScale(inputs.sleepDurationBucket, 'sleepDurationBucket', violations),
+    energy: sanitizeReadinessScale(inputs.energy, 'energy', violations),
+    stress: sanitizeReadinessScale(inputs.stress, 'stress', violations),
+    soreness: sanitizeReadinessScale(inputs.soreness, 'soreness', violations),
+    motivation: sanitizeReadinessScale(inputs.motivation, 'motivation', violations),
+    painFlag: typeof inputs.painFlag === 'boolean' ? inputs.painFlag : false,
+    painNote: typeof inputs.painNote === 'string' ? inputs.painNote : undefined,
+  };
+
+  if (typeof inputs.painFlag !== 'boolean') {
+    violations.push(`painFlag: not a boolean (${JSON.stringify(inputs.painFlag)}), defaulted to false`);
+  }
+
+  return { value, violations };
 }
 
 /** A plan-week/progression-week number the engine will index/multiply against — reject

@@ -7,6 +7,7 @@ import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
+import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
@@ -15,6 +16,7 @@ export default function TodaysWorkout() {
   const { profile, activeAdjustment, setActiveAdjustment, planStartDate } = useProfile();
   const { today, getDayLog, setWorkoutCompleted, getLogsSince } = useLogs();
   const { getApprovedAdjustmentForWeek } = useWeeklyCoaching();
+  const { getTodayRecord } = useDailyReadiness();
   const [swaps, setSwaps] = useState<Record<number, number>>({});
   const completed = getDayLog(today).workoutCompleted;
 
@@ -25,11 +27,16 @@ export default function TodaysWorkout() {
     profile.answers.daysAvailablePerWeek
   );
 
-  // A per-session AI Coach chat adjustment always wins over the standing weekly-coaching
-  // adjustment (more specific and more recent); the weekly one only applies while no
-  // session-level override is active, and only for the exact week it was approved for.
+  // Precedence (most specific/recent wins outright — never stacked/combined):
+  // an explicit per-session AI Coach chat adjustment > today's readiness check-in
+  // adjustment (day-level, automatic) > the standing weekly-coaching adjustment
+  // (week-level, only for the exact week it was approved for) > the base plan.
+  const readinessRecord = getTodayRecord();
+  const readinessAdjustment = readinessRecord?.recommendationApplied
+    ? (readinessRecord.recommendation.trainingAdjustment ?? null)
+    : null;
   const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
-  const effectiveAdjustment = activeAdjustment ?? weeklyAdjustment;
+  const effectiveAdjustment = activeAdjustment ?? readinessAdjustment ?? weeklyAdjustment;
 
   const workout = effectiveAdjustment
     ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek)
@@ -70,7 +77,19 @@ export default function TodaysWorkout() {
         </div>
       )}
 
-      {!activeAdjustment && weeklyAdjustment && (
+      {!activeAdjustment && readinessAdjustment && (
+        <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
+          <Icon name="battery" size={16} className="text-red shrink-0" />
+          <p className="flex-1 text-red text-[12px] font-semibold">
+            {readinessRecord?.status === 'recovery' ? "Adjusted for today's recovery" : "Reduced volume based on today's readiness"}
+          </p>
+          <Link to="/daily-check-in" className="text-text-secondary text-[11.5px] font-semibold underline shrink-0">
+            Why?
+          </Link>
+        </div>
+      )}
+
+      {!activeAdjustment && !readinessAdjustment && weeklyAdjustment && (
         <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
           <Icon name="aiMascot" size={16} className="text-red shrink-0" />
           <p className="flex-1 text-red text-[12px] font-semibold">Adjusted by this week's coaching recommendation</p>

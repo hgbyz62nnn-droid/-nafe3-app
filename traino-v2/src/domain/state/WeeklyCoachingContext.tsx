@@ -81,7 +81,13 @@ interface WeeklyCoachingContextValue {
   /** The most recently reviewed week's record, if any — what the AI Coach's weekly-
    * coaching intents ("why did my consistency drop?" etc.) read from. */
   getLatestRecord: () => WeeklyCoachingRecord | null;
-  saveReview: (reviewedPlanWeek: number, weekStartDateKey: string, checkIn: WeeklyCheckIn | null, decision: CoachingDecision) => void;
+  saveReview: (
+    reviewedPlanWeek: number,
+    weekStartDateKey: string,
+    checkIn: WeeklyCheckIn | null,
+    decision: CoachingDecision,
+    readinessNote?: string | null
+  ) => void;
   approve: (reviewedPlanWeek: number) => void;
   reject: (reviewedPlanWeek: number) => void;
 }
@@ -112,7 +118,13 @@ export function WeeklyCoachingProvider({ children }: { children: ReactNode }) {
     return all.reduce((latest, r) => (r.reviewedPlanWeek > latest.reviewedPlanWeek ? r : latest));
   }
 
-  function saveReview(reviewedPlanWeek: number, weekStartDateKey: string, checkIn: WeeklyCheckIn | null, decision: CoachingDecision) {
+  function saveReview(
+    reviewedPlanWeek: number,
+    weekStartDateKey: string,
+    checkIn: WeeklyCheckIn | null,
+    decision: CoachingDecision,
+    readinessNote: string | null = null
+  ) {
     setRecords((prev) => {
       const record: WeeklyCoachingRecord = {
         reviewedPlanWeek,
@@ -122,6 +134,7 @@ export function WeeklyCoachingProvider({ children }: { children: ReactNode }) {
         decision,
         approvalStatus: decision.requiresApproval ? 'pending' : 'not_applicable',
         decidedAt: null,
+        readinessNote,
       };
       const next = { ...prev, [reviewedPlanWeek]: record };
       saveVersioned(STORAGE_KEY, DATA_VERSION, next);

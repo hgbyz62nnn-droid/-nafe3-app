@@ -178,6 +178,15 @@ export default function WeeklyReport() {
             </div>
           )}
 
+          {record.readinessNote && (
+            <div className="px-4 mt-3">
+              <div className="bg-card border border-border-soft rounded-card p-4 flex items-start gap-2.5">
+                <Icon name="battery" size={15} className="text-red shrink-0 mt-0.5" />
+                <p className="text-text-secondary text-[13px] leading-relaxed">{record.readinessNote}</p>
+              </div>
+            </div>
+          )}
+
           <div className="px-4 mt-3">
             <div className="bg-card border border-red/40 rounded-card p-4">
               <p className="text-white text-[11px] font-extrabold tracking-wide">TRAINO'S RECOMMENDATION</p>
