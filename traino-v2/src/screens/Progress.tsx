@@ -6,7 +6,20 @@ import { Icon } from '../components/ui/Icon';
 import { BottomNav } from '../components/ui/BottomNav';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
-import { computePerformanceStats, computeWeightTrend, type PerformanceCategory } from '../domain/engine/progressEngine';
+import {
+  computeExerciseTrend,
+  computePerformanceStats,
+  computeWeightTrend,
+  type ExerciseTrendResult,
+  type PerformanceCategory,
+} from '../domain/engine/progressEngine';
+
+const TREND_META: Record<ExerciseTrendResult['trend'], { label: string; color: string }> = {
+  improving: { label: 'Improving', color: 'text-success' },
+  declining: { label: 'Declining', color: 'text-red' },
+  steady: { label: 'Steady', color: 'text-text-secondary' },
+  not_enough_data: { label: 'Building history', color: 'text-text-muted' },
+};
 
 const TABS = ['Overview', 'Training', 'Nutrition', 'Body'];
 
@@ -89,8 +102,12 @@ export default function Progress() {
   const [weightInput, setWeightInput] = useState('');
 
   const { answers } = useProfile();
-  const { today, getRecentLogs, logWeight } = useLogs();
+  const { today, getRecentLogs, logWeight, getAllLoggedExerciseNames, getExerciseHistory } = useLogs();
   const recentLogs = getRecentLogs(30);
+
+  const exerciseTrends = getAllLoggedExerciseNames()
+    .map((name) => computeExerciseTrend(name, getExerciseHistory(name)))
+    .filter((t): t is ExerciseTrendResult => t !== null);
 
   const stats = computePerformanceStats(recentLogs);
   const weightTrend = computeWeightTrend(recentLogs, answers.weightKg);
@@ -220,6 +237,39 @@ export default function Progress() {
           )}
         </div>
       </div>
+
+      {tab === 'Training' && (
+        <div className="px-4 mt-5">
+          <p className="text-text-secondary text-[12px] font-bold tracking-wide mb-2">EXERCISE PROGRESSION</p>
+          {exerciseTrends.length === 0 ? (
+            <div className="bg-card border border-border-soft rounded-card p-4">
+              <p className="text-text-muted text-[12.5px] text-center">
+                Log an exercise on Today's Workout to start tracking your progression here.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {exerciseTrends.map((trend) => (
+                <div key={trend.exerciseName} className="bg-card border border-border-soft rounded-card-sm p-3.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-white text-[13px] font-bold truncate">{trend.exerciseName}</p>
+                    <span className={`text-[11px] font-bold ${TREND_META[trend.trend].color}`}>{TREND_META[trend.trend].label}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5 text-[12px]">
+                    {trend.previousLabel && (
+                      <>
+                        <span className="text-text-muted">{trend.previousLabel}</span>
+                        <span className="text-text-muted">→</span>
+                      </>
+                    )}
+                    <span className="text-text-secondary font-semibold">{trend.currentLabel}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <BottomNav />
     </Screen>

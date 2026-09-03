@@ -90,6 +90,94 @@ describe('LogContext — regression: weight logging validation', () => {
   });
 });
 
+describe('LogContext — logExercisePerformance / getExerciseHistory', () => {
+  it('records one exercise log and returns it via getExerciseHistory', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logExercisePerformance('2026-02-01', {
+        exerciseName: 'Back Squat',
+        prescribedSets: 3,
+        completedSets: 3,
+        repsAchieved: 8,
+        loadKg: 70,
+        rir: 2,
+        wasModified: false,
+      })
+    );
+    const history = result.current.getExerciseHistory('Back Squat');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ date: '2026-02-01', exerciseName: 'Back Squat', loadKg: 70, rir: 2 });
+  });
+
+  it('resubmitting the same exercise on the same date replaces, not duplicates (idempotent)', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logExercisePerformance('2026-02-01', {
+        exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, repsAchieved: 6, loadKg: 70, wasModified: false,
+      });
+      result.current.logExercisePerformance('2026-02-01', {
+        exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, repsAchieved: 8, loadKg: 72.5, wasModified: false,
+      });
+    });
+    const history = result.current.getExerciseHistory('Back Squat');
+    expect(history).toHaveLength(1);
+    expect(history[0].repsAchieved).toBe(8);
+    expect(history[0].loadKg).toBe(72.5);
+  });
+
+  it('a different exercise the same day, and the same exercise on a different day, are separate entries', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logExercisePerformance('2026-02-01', { exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, wasModified: false });
+      result.current.logExercisePerformance('2026-02-01', { exerciseName: 'Bench Press', prescribedSets: 3, completedSets: 3, wasModified: false });
+      result.current.logExercisePerformance('2026-02-02', { exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, wasModified: false });
+    });
+    expect(result.current.getExerciseHistory('Back Squat')).toHaveLength(2);
+    expect(result.current.getExerciseHistory('Bench Press')).toHaveLength(1);
+  });
+
+  it('getExerciseHistory returns oldest first and never invents entries for unlogged days', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logExercisePerformance('2026-02-03', { exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, wasModified: false });
+      result.current.logExercisePerformance('2026-02-01', { exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, wasModified: false });
+    });
+    const history = result.current.getExerciseHistory('Back Squat');
+    expect(history.map((h) => h.date)).toEqual(['2026-02-01', '2026-02-03']);
+    expect(result.current.getExerciseHistory('Never Logged')).toEqual([]);
+  });
+
+  it('sanitizes a corrupted log (NaN/negative/out-of-range) before persisting rather than storing garbage', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logExercisePerformance('2026-02-01', {
+        exerciseName: 'Back Squat',
+        prescribedSets: NaN as unknown as number,
+        completedSets: -5 as number,
+        loadKg: -10,
+        rir: 99,
+        wasModified: false,
+      })
+    );
+    const [entry] = result.current.getExerciseHistory('Back Squat');
+    expect(Number.isNaN(entry.prescribedSets)).toBe(false);
+    expect(entry.completedSets).toBeGreaterThanOrEqual(0);
+    expect(entry.loadKg).toBeUndefined();
+    expect(entry.rir).toBeUndefined();
+  });
+
+  it('persists exercise logs across a remount', () => {
+    const first = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      first.result.current.logExercisePerformance('2026-02-01', {
+        exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, repsAchieved: 8, loadKg: 70, wasModified: false,
+      })
+    );
+    const second = renderHook(() => useLogs(), { wrapper: LogProvider });
+    expect(second.result.current.getExerciseHistory('Back Squat')).toHaveLength(1);
+  });
+});
+
 describe('LogContext — getLogsSince (calendar-aware progression input)', () => {
   it('returns one entry per calendar day from the start date through today, inclusive', () => {
     const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });

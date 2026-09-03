@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { isValidWeekNumber, isValidWeightKg, sanitizeAssessmentAnswers, sanitizeReadinessInputs } from './validation';
+import { isValidWeekNumber, isValidWeightKg, sanitizeAssessmentAnswers, sanitizeExercisePerformanceLog, sanitizeReadinessInputs } from './validation';
 import { baseAnswers } from './testFixtures';
 import type { DailyReadinessInputs } from '../readiness/types';
+import type { ExercisePerformanceLog } from '../progression/types';
+
+function baseExerciseLog(overrides: Partial<ExercisePerformanceLog> = {}): ExercisePerformanceLog {
+  return {
+    date: '2026-02-01',
+    exerciseName: 'Back Squat',
+    prescribedSets: 3,
+    completedSets: 3,
+    repsAchieved: 8,
+    loadKg: 70,
+    rir: 2,
+    wasModified: false,
+    submittedAt: '2026-02-01T18:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function baseReadinessInputs(): DailyReadinessInputs {
   return { sleepQuality: 3, sleepDurationBucket: 3, energy: 3, stress: 3, soreness: 3, motivation: 3, painFlag: false };
@@ -140,6 +156,75 @@ describe('sanitizeReadinessInputs', () => {
       expect(Number.isNaN(value[key])).toBe(false);
       expect(value[key]).toBeGreaterThanOrEqual(1);
       expect(value[key]).toBeLessThanOrEqual(5);
+    }
+  });
+});
+
+describe('sanitizeExercisePerformanceLog', () => {
+  it('passes already-clean data through unchanged', () => {
+    const log = baseExerciseLog();
+    const { value, violations } = sanitizeExercisePerformanceLog(log);
+    expect(value).toEqual(log);
+    expect(violations).toEqual([]);
+  });
+
+  it('defaults NaN prescribedSets/completedSets to 0 rather than propagating NaN', () => {
+    const { value, violations } = sanitizeExercisePerformanceLog(
+      baseExerciseLog({ prescribedSets: NaN, completedSets: NaN })
+    );
+    expect(Number.isNaN(value.prescribedSets)).toBe(false);
+    expect(Number.isNaN(value.completedSets)).toBe(false);
+    expect(violations.length).toBeGreaterThan(0);
+  });
+
+  it('rejects a negative completedSets rather than storing negative progress', () => {
+    const { value } = sanitizeExercisePerformanceLog(baseExerciseLog({ completedSets: -3 }));
+    expect(value.completedSets).toBeGreaterThanOrEqual(0);
+  });
+
+  it('drops (never fabricates) a negative or NaN loadKg/repsAchieved/durationSec/distanceM', () => {
+    const { value } = sanitizeExercisePerformanceLog(
+      baseExerciseLog({ loadKg: -10, repsAchieved: NaN, durationSec: -5, distanceM: Infinity })
+    );
+    expect(value.loadKg).toBeUndefined();
+    expect(value.repsAchieved).toBeUndefined();
+    expect(value.durationSec).toBeUndefined();
+    expect(value.distanceM).toBeUndefined();
+  });
+
+  it('drops an out-of-range RIR rather than clamping it into a misleading value', () => {
+    const { value: high } = sanitizeExercisePerformanceLog(baseExerciseLog({ rir: 99 }));
+    expect(high.rir).toBeUndefined();
+    const { value: negative } = sanitizeExercisePerformanceLog(baseExerciseLog({ rir: -1 }));
+    expect(negative.rir).toBeUndefined();
+  });
+
+  it('leaves genuinely absent optional fields as undefined, never defaulted to 0', () => {
+    const { value } = sanitizeExercisePerformanceLog(
+      baseExerciseLog({ repsAchieved: undefined, loadKg: undefined, rir: undefined })
+    );
+    expect(value.repsAchieved).toBeUndefined();
+    expect(value.loadKg).toBeUndefined();
+    expect(value.rir).toBeUndefined();
+  });
+
+  it('never produces NaN/Infinity for any numeric field regardless of corrupted input', () => {
+    const { value } = sanitizeExercisePerformanceLog(
+      baseExerciseLog({
+        prescribedSets: Infinity,
+        completedSets: NaN,
+        loadKg: NaN,
+        repsAchieved: Infinity,
+        durationSec: NaN,
+        distanceM: NaN,
+        rir: NaN,
+      })
+    );
+    for (const n of [value.prescribedSets, value.completedSets]) {
+      expect(Number.isFinite(n)).toBe(true);
+    }
+    for (const n of [value.loadKg, value.repsAchieved, value.durationSec, value.distanceM, value.rir]) {
+      expect(n === undefined || Number.isFinite(n)).toBe(true);
     }
   });
 });

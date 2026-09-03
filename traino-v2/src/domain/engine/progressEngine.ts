@@ -1,7 +1,65 @@
 import type { DayLog } from '../state/LogContext';
 import type { PerformanceCategory } from './types';
+import type { ExercisePerformanceLog } from '../progression/types';
 
 export type { PerformanceCategory };
+
+export type ExerciseTrendDirection = 'improving' | 'declining' | 'steady' | 'not_enough_data';
+
+export interface ExerciseTrendResult {
+  exerciseName: string;
+  /** Human-readable "what you did" for the two most recent FULLY-completed exposures —
+   * never built from a partial/missed session's numbers. Null when there's only one
+   * (or zero) qualifying exposure to compare. */
+  previousLabel: string | null;
+  currentLabel: string;
+  trend: ExerciseTrendDirection;
+}
+
+/** The one number that best represents a logged exposure's difficulty — whichever
+ * metric that exercise's model actually reports, in a fixed preference order (a
+ * loaded exercise is judged by load, not reps, once load is being tracked). Returns
+ * null for a log with no comparable numeric evidence at all (e.g. technique-only). */
+function primaryMetric(log: ExercisePerformanceLog): { label: string; value: number } | null {
+  if (log.loadKg !== undefined) {
+    return { label: log.repsAchieved !== undefined ? `${log.repsAchieved} reps @ ${log.loadKg}kg` : `${log.loadKg}kg`, value: log.loadKg };
+  }
+  if (log.distanceM !== undefined) return { label: `${log.distanceM}m`, value: log.distanceM };
+  if (log.durationSec !== undefined) return { label: `${log.durationSec} sec`, value: log.durationSec };
+  if (log.repsAchieved !== undefined) return { label: `${log.repsAchieved} reps`, value: log.repsAchieved };
+  return null;
+}
+
+/**
+ * Derives a real, honestly-empty-when-absent progress trend from an exercise's own
+ * logged history — never fabricated. Only fully-completed exposures are compared
+ * (a partial/missed session proves nothing about whether performance is improving).
+ */
+export function computeExerciseTrend(exerciseName: string, history: ExercisePerformanceLog[]): ExerciseTrendResult | null {
+  const fullyCompleted = history.filter((log) => log.prescribedSets > 0 && log.completedSets >= log.prescribedSets);
+  const withMetric = fullyCompleted
+    .map((log) => ({ log, metric: primaryMetric(log) }))
+    .filter((e): e is { log: ExercisePerformanceLog; metric: { label: string; value: number } } => e.metric !== null);
+
+  if (withMetric.length === 0) return null;
+
+  const current = withMetric[withMetric.length - 1];
+  const previous = withMetric.length > 1 ? withMetric[withMetric.length - 2] : null;
+
+  let trend: ExerciseTrendDirection = 'not_enough_data';
+  if (previous) {
+    if (current.metric.value > previous.metric.value) trend = 'improving';
+    else if (current.metric.value < previous.metric.value) trend = 'declining';
+    else trend = 'steady';
+  }
+
+  return {
+    exerciseName,
+    previousLabel: previous ? previous.metric.label : null,
+    currentLabel: current.metric.label,
+    trend,
+  };
+}
 
 /**
  * Derives Progress-screen stats from real logged history (LogContext) —

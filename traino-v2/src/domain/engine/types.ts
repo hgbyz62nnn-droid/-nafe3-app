@@ -117,7 +117,9 @@ export interface SportModuleData {
  * 'why_consistency_dropped'/'whats_next_week_change'/'why_workout_reduced' surface Weekly
  * Coaching Loop context deterministically (see weeklyCoachingEngine.ts); 'how_ready_am_i'/
  * 'should_i_train_today' surface Daily Readiness System context deterministically (see
- * readinessEngine.ts) — every one of them still resolves to pre-templated text over
+ * readinessEngine.ts); 'why_weight_increased'/'why_no_progression'/'whats_changed_from_last_week'/
+ * 'what_should_i_aim_for' surface the Progression Engine's decisions deterministically (see
+ * exerciseProgressionEngine.ts) — every one of them still resolves to pre-templated text over
  * structured data, never a generated explanation. */
 export type AiCoachIntent =
   | 'feeling_tired'
@@ -131,7 +133,11 @@ export type AiCoachIntent =
   | 'whats_next_week_change'
   | 'why_workout_reduced'
   | 'how_ready_am_i'
-  | 'should_i_train_today';
+  | 'should_i_train_today'
+  | 'why_weight_increased'
+  | 'why_no_progression'
+  | 'whats_changed_from_last_week'
+  | 'what_should_i_aim_for';
 
 export interface AiCoachAdjustment {
   /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */

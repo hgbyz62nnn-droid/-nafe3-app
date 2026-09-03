@@ -22,7 +22,10 @@ import { sanitizeReadinessInputs } from './engine/validation';
 import type { BarrierId } from './coaching/barriers';
 import type { WeeklyCoachingRecord } from './coaching/types';
 import type { DayLog } from './state/LogContext';
-import type { DailyReadinessInputs, DailyReadinessRecord } from './readiness/types';
+import type { DailyReadinessInputs, DailyReadinessRecord, ReadinessStatus } from './readiness/types';
+import type { ExerciseProgressionContext } from './engine/progressionIntegration';
+import type { ExercisePerformanceLog, ProgressionTarget } from './progression/types';
+import { swimmingModule } from './sports/swimming/program';
 
 /**
  * Multi-athlete, multi-week simulation. Not a UI test — this drives the
@@ -731,5 +734,240 @@ describe('Daily Readiness System multi-day simulation', () => {
     expect(decision.barrier).toBe('fatigue');
     expect(decision.confidence).toBe('high');
     expect(decision.evidence).toMatch(/low readiness/);
+  });
+});
+
+/**
+ * Progression Engine multi-week/day simulation (spec §20). Drives the real
+ * check-in -> resolve -> log -> re-resolve loop across several simulated days,
+ * building a real per-exercise history exactly as LogContext would persist it, and
+ * verifying every invariant the spec calls out: determinism, no runaway loads, no
+ * impossible targets, no progression from insufficient exposure, readiness protecting
+ * long-term targets, safety substitutions never contaminating history, and correct
+ * behavior on both Football and Swimming.
+ */
+
+interface ProgressionSimDay {
+  completedFraction: number; // 0..1
+  rir?: number;
+  readiness?: ReadinessStatus;
+}
+
+function simulateProgression(profile: UserProfile, days: ProgressionSimDay[], dayIndex = 0) {
+  const historyByExercise: Record<string, ExercisePerformanceLog[]> = {};
+  const readinessByDate: Record<string, ReadinessStatus> = {};
+  const decisions: NonNullable<ReturnType<typeof generateTodayWorkout>['exercises'][number]['progression']>[] = [];
+  const start = new Date(2026, 2, 2);
+
+  for (let i = 0; i < days.length; i++) {
+    const date = localDateKey(addDays(start, i));
+    const context: ExerciseProgressionContext = {
+      getHistory: (name) => historyByExercise[name] ?? [],
+      getReadinessStatus: (d) => readinessByDate[d] ?? null,
+    };
+    const resolved = generateTodayWorkout(profile, dayIndex, 1, context);
+    const target = resolved.exercises.find((ex) => ex.progression && ex.progression.model !== 'technique');
+    if (!target?.progression) continue;
+
+    // -- invariants that must hold on every single simulated day --
+    expect(Number.isFinite(target.sets)).toBe(true);
+    expect(target.sets).toBeGreaterThan(0);
+    const nextTarget = target.progression.nextTarget;
+    if (nextTarget?.reps !== undefined) {
+      expect(Number.isFinite(nextTarget.reps)).toBe(true);
+      expect(nextTarget.reps).toBeGreaterThanOrEqual(0);
+    }
+    if (nextTarget?.loadKg !== undefined) {
+      expect(Number.isFinite(nextTarget.loadKg)).toBe(true);
+      expect(nextTarget.loadKg).toBeGreaterThanOrEqual(0);
+    }
+    if (nextTarget?.distanceM !== undefined) expect(nextTarget.distanceM).toBeGreaterThanOrEqual(0);
+    if (nextTarget?.durationSec !== undefined) expect(nextTarget.durationSec).toBeGreaterThanOrEqual(0);
+
+    decisions.push(target.progression);
+
+    const spec = days[i];
+    const prescribedSets = target.sets;
+    const completedSets = Math.round(prescribedSets * spec.completedFraction);
+    const entry: ExercisePerformanceLog = {
+      date,
+      exerciseName: target.name,
+      prescribedSets,
+      completedSets,
+      repsAchieved: nextTarget?.reps,
+      loadKg: nextTarget?.loadKg,
+      durationSec: nextTarget?.durationSec,
+      distanceM: nextTarget?.distanceM,
+      rir: spec.rir,
+      wasModified: target.substitutionReason !== 'none',
+      submittedAt: `${date}T18:00:00.000Z`,
+    };
+    historyByExercise[target.name] = [...(historyByExercise[target.name] ?? []), entry];
+    if (spec.readiness) readinessByDate[date] = spec.readiness;
+  }
+
+  return decisions;
+}
+
+function metricOf(target: ProgressionTarget | null): number | undefined {
+  if (!target) return undefined;
+  return target.loadKg ?? target.reps ?? target.distanceM ?? target.durationSec;
+}
+
+const bodyweightFootballAthlete = athlete({ name: 'progression-sim', sport: 'football', daysAvailablePerWeek: 4, trainingLocationIds: ['home'], equipmentIds: [] }).answers;
+
+describe('Progression Engine multi-day simulation', () => {
+  it('1. Athlete consistently progressing — the target trends upward, never runs away, and stays deterministic', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = Array.from({ length: 6 }, () => ({ completedFraction: 1, rir: 3 }));
+    const decisions = simulateProgression(profile, days);
+    expect(decisions.length).toBe(6);
+    expect(decisions[0].decision).toBe('SKIP');
+    expect(decisions[decisions.length - 1].decision).toBe('PROGRESS');
+    const first = metricOf(decisions[0].nextTarget) ?? 0;
+    const last = metricOf(decisions[decisions.length - 1].nextTarget) ?? 0;
+    expect(last).toBeGreaterThanOrEqual(first);
+
+    // determinism: re-running the identical day sequence produces the identical final decision
+    const rerun = simulateProgression(buildProfile(bodyweightFootballAthlete), days);
+    expect(rerun[rerun.length - 1]).toEqual(decisions[decisions.length - 1]);
+  });
+
+  it('2. Athlete maintaining performance — target stays stable at the "around target" RIR band', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = Array.from({ length: 6 }, () => ({ completedFraction: 1, rir: 1 }));
+    const decisions = simulateProgression(profile, days);
+    for (const d of decisions.slice(1)) {
+      expect(d.decision).toBe('MAINTAIN');
+    }
+  });
+
+  it('3. Athlete repeatedly failing targets — never progresses, eventually regresses, never exceeds baseline', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = Array.from({ length: 6 }, () => ({ completedFraction: 1, rir: 0 }));
+    const decisions = simulateProgression(profile, days);
+    expect(decisions.some((d) => d.decision === 'PROGRESS')).toBe(false);
+    expect(decisions.some((d) => d.decision === 'REGRESS')).toBe(true);
+    const first = metricOf(decisions[0].nextTarget) ?? 0;
+    const last = metricOf(decisions[decisions.length - 1].nextTarget) ?? 0;
+    expect(last).toBeLessThanOrEqual(first);
+  });
+
+  it('4. Athlete with mixed performance — stays bounded near baseline, no runaway in either direction', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = Array.from({ length: 8 }, (_, i) => ({ completedFraction: 1, rir: i % 2 === 0 ? 3 : 0 }));
+    const decisions = simulateProgression(profile, days);
+    const metrics = decisions.map((d) => metricOf(d.nextTarget) ?? 0);
+    const spread = Math.max(...metrics) - Math.min(...metrics);
+    expect(spread).toBeLessThanOrEqual(3); // never swings wildly session to session
+  });
+
+  it('5. Athlete with low-readiness days — poor performance under reduced readiness never regresses the target', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = [
+      { completedFraction: 1, rir: 3 },
+      { completedFraction: 0.5, rir: 0, readiness: 'reduced' },
+      { completedFraction: 0.5, rir: 0, readiness: 'recovery' },
+    ];
+    const decisions = simulateProgression(profile, days);
+    expect(decisions.some((d) => d.decision === 'REGRESS')).toBe(false);
+    // decisions[1] reflects day0's good exposure (legitimately PROGRESS); decisions[2]
+    // reflects day1's low-readiness struggle, which must HOLD rather than regress.
+    expect(decisions[2].decision).toBe('HOLD');
+  });
+
+  it('6. Athlete with repeated low readiness — long-term target survives an extended low-readiness stretch intact', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = [
+      { completedFraction: 1, rir: 3 },
+      ...Array.from({ length: 6 }, () => ({ completedFraction: 0.4, rir: 0, readiness: 'recovery' as ReadinessStatus })),
+    ];
+    const decisions = simulateProgression(profile, days);
+    expect(decisions.some((d) => d.decision === 'REGRESS')).toBe(false);
+    const afterGoodDay = metricOf(decisions[0].nextTarget) ?? 0;
+    const finalTarget = metricOf(decisions[decisions.length - 1].nextTarget) ?? 0;
+    // the target earned on the one good day is preserved throughout the low-readiness stretch
+    expect(finalTarget).toBeGreaterThanOrEqual(afterGoodDay);
+  });
+
+  it('8. Athlete with incomplete workouts — repeated partial/missed sessions never progress, target stays put', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = Array.from({ length: 5 }, () => ({ completedFraction: 0.3 }));
+    const decisions = simulateProgression(profile, days);
+    expect(decisions.some((d) => d.decision === 'PROGRESS')).toBe(false);
+    for (const d of decisions.slice(1)) {
+      expect(d.decision).toBe('HOLD');
+    }
+  });
+
+  it('9. Football athlete — a full consistent-progression run resolves correctly against the football module', () => {
+    const profile = buildProfile(bodyweightFootballAthlete);
+    const days: ProgressionSimDay[] = Array.from({ length: 5 }, () => ({ completedFraction: 1, rir: 3 }));
+    const decisions = simulateProgression(profile, days);
+    expect(decisions.length).toBe(5);
+    expect(decisions[decisions.length - 1].decision).toBe('PROGRESS');
+  });
+
+  it('10. Swimming athlete — a full consistent-progression run advances distance/duration, never fabricates load', () => {
+    const swimAnswers = athlete({ name: 'progression-sim-swim', sport: 'swimming', daysAvailablePerWeek: 4, trainingLocationIds: ['pool'], equipmentIds: [] }).answers;
+    const profile = buildProfile(swimAnswers);
+    // find a day index whose progressable primary exercise is distance/duration, not technique
+    let dayIndex = 0;
+    for (let i = 0; i < swimmingModule.program[profile.level].length; i++) {
+      const resolved = generateTodayWorkout(profile, i, 1, { getHistory: () => [], getReadinessStatus: () => null });
+      if (resolved.exercises.some((ex) => ex.progression && (ex.progression.model === 'distance' || ex.progression.model === 'duration'))) {
+        dayIndex = i;
+        break;
+      }
+    }
+    const days: ProgressionSimDay[] = Array.from({ length: 5 }, () => ({ completedFraction: 1, rir: 3 }));
+    const decisions = simulateProgression(profile, days, dayIndex);
+    const distanceOrDuration = decisions.filter((d) => d.model === 'distance' || d.model === 'duration');
+    expect(distanceOrDuration.length).toBeGreaterThan(0);
+    for (const d of distanceOrDuration) {
+      expect(d.nextTarget?.loadKg).toBeUndefined();
+    }
+  });
+
+  it('7. Athlete with an injury/safety substitution — the substitute never inherits the original exercise\'s progression history', () => {
+    const baseAthlete = athlete({
+      name: 'progression-sim-injury', sport: 'football', daysAvailablePerWeek: 4,
+      trainingLocationIds: ['home'], equipmentIds: [], injuryIds: ['none'],
+    }).answers;
+
+    const historyByExercise: Record<string, ExercisePerformanceLog[]> = {};
+    const context: ExerciseProgressionContext = { getHistory: (name) => historyByExercise[name] ?? [], getReadinessStatus: () => null };
+
+    // Build up a strong PROGRESS streak on "Light Sprint Intervals" (day 0, contraindicated for 'ankle').
+    const healthyProfile = buildProfile(baseAthlete);
+    let lastName = '';
+    for (let i = 0; i < 3; i++) {
+      const resolved = generateTodayWorkout(healthyProfile, 0, 1, context);
+      const target = resolved.exercises.find((ex) => ex.name === 'Light Sprint Intervals');
+      expect(target).toBeDefined();
+      lastName = target!.name;
+      const date = localDateKey(addDays(new Date(2026, 2, 2), i));
+      historyByExercise[lastName] = [
+        ...(historyByExercise[lastName] ?? []),
+        {
+          date, exerciseName: lastName, prescribedSets: target!.sets, completedSets: target!.sets,
+          durationSec: target!.progression?.nextTarget?.durationSec, rir: 3, wasModified: false, submittedAt: `${date}T18:00:00.000Z`,
+        },
+      ];
+    }
+    expect(historyByExercise['Light Sprint Intervals'].length).toBe(3);
+
+    // Athlete now reports an ankle injury — the same slot must substitute away.
+    const injuredProfile = buildProfile({ ...baseAthlete, injuryIds: ['ankle'] });
+    const afterInjury = generateTodayWorkout(injuredProfile, 0, 1, context);
+    const stillSprintIntervals = afterInjury.exercises.find((ex) => ex.name === 'Light Sprint Intervals');
+    expect(stillSprintIntervals).toBeUndefined();
+
+    const substitute = afterInjury.exercises.find((ex) => ex.substitutionReason === 'injury');
+    expect(substitute).toBeDefined();
+    expect(substitute!.name).not.toBe('Light Sprint Intervals');
+    // The substitute has no logged history of its own yet — it must start fresh (SKIP),
+    // never inheriting "Light Sprint Intervals"'s 3-exposure PROGRESS streak.
+    expect(substitute!.progression?.decision).toBe('SKIP');
   });
 });

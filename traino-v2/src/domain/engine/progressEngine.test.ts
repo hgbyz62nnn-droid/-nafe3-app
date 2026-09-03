@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeExerciseTrend,
   computeNutritionAdherence,
   computePerformanceStats,
   computeRecoveryScore,
@@ -7,6 +8,21 @@ import {
   computeWorkoutCompletion,
 } from './progressEngine';
 import type { DayLog } from '../state/LogContext';
+import type { ExercisePerformanceLog } from '../progression/types';
+
+function exerciseLog(overrides: Partial<ExercisePerformanceLog> = {}): ExercisePerformanceLog {
+  return {
+    date: '2026-01-01',
+    exerciseName: 'Back Squat',
+    prescribedSets: 3,
+    completedSets: 3,
+    repsAchieved: 8,
+    loadKg: 70,
+    wasModified: false,
+    submittedAt: '2026-01-01T18:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function log(overrides: Partial<DayLog> = {}): DayLog {
   return {
@@ -101,5 +117,53 @@ describe('computePerformanceStats', () => {
     const logs = [log({ workoutCompleted: true, workoutName: 'Speed + Lower Body' })];
     const stats = computePerformanceStats(logs);
     expect(stats.speed.hasData).toBe(true);
+  });
+});
+
+describe('computeExerciseTrend — Progress screen data (Y)', () => {
+  it('returns null (honest empty state) with no history', () => {
+    expect(computeExerciseTrend('Back Squat', [])).toBeNull();
+  });
+
+  it('reports "not_enough_data" with only one fully-completed exposure', () => {
+    const result = computeExerciseTrend('Back Squat', [exerciseLog()]);
+    expect(result?.trend).toBe('not_enough_data');
+    expect(result?.previousLabel).toBeNull();
+    expect(result?.currentLabel).toContain('70kg');
+  });
+
+  it('reports "improving" when load increased between the two most recent full completions', () => {
+    const history = [exerciseLog({ date: '2026-01-01', loadKg: 70 }), exerciseLog({ date: '2026-01-08', loadKg: 72.5 })];
+    const result = computeExerciseTrend('Back Squat', history);
+    expect(result?.trend).toBe('improving');
+    expect(result?.previousLabel).toContain('70kg');
+    expect(result?.currentLabel).toContain('72.5kg');
+  });
+
+  it('reports "declining" when the metric decreased', () => {
+    const history = [exerciseLog({ date: '2026-01-01', loadKg: 72.5 }), exerciseLog({ date: '2026-01-08', loadKg: 70 })];
+    expect(computeExerciseTrend('Back Squat', history)?.trend).toBe('declining');
+  });
+
+  it('never uses a partial/missed exposure as evidence, only fully-completed ones', () => {
+    const history = [
+      exerciseLog({ date: '2026-01-01', loadKg: 70 }),
+      exerciseLog({ date: '2026-01-08', loadKg: 100, completedSets: 1, prescribedSets: 3 }), // partial — must be ignored
+    ];
+    const result = computeExerciseTrend('Back Squat', history);
+    expect(result?.currentLabel).toContain('70kg'); // still the last FULL completion, not the partial 100kg
+    expect(result?.trend).toBe('not_enough_data');
+  });
+
+  it('falls back through distance/duration/reps metrics for non-load exercises', () => {
+    const distance = computeExerciseTrend('Swim Endurance', [
+      exerciseLog({ exerciseName: 'Swim Endurance', loadKg: undefined, repsAchieved: undefined, distanceM: 300 }),
+    ]);
+    expect(distance?.currentLabel).toBe('300m');
+
+    const duration = computeExerciseTrend('Plank Hold', [
+      exerciseLog({ exerciseName: 'Plank Hold', loadKg: undefined, repsAchieved: undefined, durationSec: 45 }),
+    ]);
+    expect(duration?.currentLabel).toBe('45 sec');
   });
 });

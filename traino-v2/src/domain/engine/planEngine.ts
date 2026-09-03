@@ -1,6 +1,8 @@
 import { getSportModule } from '../sports/registry';
 import type { AiCoachAdjustment, ExerciseSlot, UserProfile, WorkoutDayTemplate } from './types';
+import type { ExerciseProgressionDecision } from '../progression/types';
 import { applyProgression } from './progressionEngine';
+import { applyExerciseProgression, type ExerciseProgressionContext } from './progressionIntegration';
 import { isValidWeekNumber } from './validation';
 
 export interface ResolvedExercise {
@@ -11,6 +13,11 @@ export interface ResolvedExercise {
   category: ExerciseSlot['category'];
   /** Why the displayed name/reps differ from the slot's primary movement, if at all. */
   substitutionReason: 'none' | 'equipment' | 'location' | 'injury' | 'adjustment';
+  /** Present only when a `ResolveContext.progression` was supplied and this block is
+   * progressable (not warmup/cooldown) — the structured decision behind `reps` above,
+   * for the AI Coach / Progress screen / "why" UI. Evidence is always attached to this
+   * exercise's own name (post-substitution), never the original contraindicated slot. */
+  progression?: ExerciseProgressionDecision;
 }
 
 export interface ResolvedWorkout {
@@ -32,6 +39,10 @@ interface ResolveContext {
   /** From an applied AI Coach adjustment — drop high-impact movements entirely. */
   skipHighImpact?: boolean;
   weekNumber?: number;
+  /** Optional: when supplied, each resolvable exercise's target reps/load/duration/distance
+   * is set by the Progression Engine (see progressionIntegration.ts) instead of the plan's
+   * raw authored value — the calendar-block `applyProgression` below still runs regardless. */
+  progression?: ExerciseProgressionContext;
 }
 
 function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExercise | null {
@@ -86,6 +97,19 @@ function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExerc
     };
   }
 
+  if (ctx.progression) {
+    // Model inference reads whatever's actually being resolved today — the substitute's
+    // own reps/category and its equipment (bodyweightAlternative is always equipment-free
+    // by contract), never the original slot when a substitution occurred. Evidence and the
+    // resulting target stay attached to `base.name`, so a knee-safe substitute's history
+    // can never be used to progress — or reintroduce — the original contraindicated move.
+    const equipmentForModel = shouldSubstitute && slot.bodyweightAlternative ? [] : slot.equipment;
+    const progressed = applyExerciseProgression(base, equipmentForModel, ctx.progression);
+    if (progressed) {
+      base = { ...base, reps: progressed.reps, progression: progressed.decision };
+    }
+  }
+
   return ctx.weekNumber ? applyProgression(base, ctx.weekNumber) : base;
 }
 
@@ -105,7 +129,7 @@ function resolveDay(day: WorkoutDayTemplate, ctx: ResolveContext): ResolvedWorko
   };
 }
 
-function baseContext(profile: UserProfile, weekNumber = 1): ResolveContext {
+function baseContext(profile: UserProfile, weekNumber = 1, progression?: ExerciseProgressionContext): ResolveContext {
   // A NaN/negative/non-integer week number (corrupt state, a bad progression calc) must
   // never reach applyProgression's arithmetic — it would propagate as a NaN set count.
   const safeWeekNumber = isValidWeekNumber(weekNumber) ? weekNumber : 1;
@@ -114,6 +138,7 @@ function baseContext(profile: UserProfile, weekNumber = 1): ResolveContext {
     locationIds: profile.answers.trainingLocationIds,
     injuryIds: profile.answers.injuryIds,
     weekNumber: safeWeekNumber,
+    progression,
   };
 }
 
@@ -149,8 +174,13 @@ export function generateWeekProgram(profile: UserProfile, weekNumber = 1): Resol
  * explicitly to look at a specific day of the cycle (e.g. for the
  * history behind Progress/Weekly Report); omit it to mean "today".
  */
-export function generateTodayWorkout(profile: UserProfile, dayIndex?: number, weekNumber = 1): ResolvedWorkout {
-  return resolveDay(dayForIndex(profile, dayIndex), baseContext(profile, weekNumber));
+export function generateTodayWorkout(
+  profile: UserProfile,
+  dayIndex?: number,
+  weekNumber = 1,
+  progression?: ExerciseProgressionContext
+): ResolvedWorkout {
+  return resolveDay(dayForIndex(profile, dayIndex), baseContext(profile, weekNumber, progression));
 }
 
 /**
@@ -163,12 +193,13 @@ export function applyCoachAdjustment(
   profile: UserProfile,
   dayIndex: number | undefined,
   adjustment: AiCoachAdjustment,
-  weekNumber = 1
+  weekNumber = 1,
+  progression?: ExerciseProgressionContext
 ): ResolvedWorkout {
   const day = dayForIndex(profile, dayIndex);
 
   const ctx: ResolveContext = {
-    ...baseContext(profile, weekNumber),
+    ...baseContext(profile, weekNumber, progression),
     forceBodyweight: adjustment.swapToBodyweight,
     skipHighImpact: adjustment.skipHighImpact,
   };

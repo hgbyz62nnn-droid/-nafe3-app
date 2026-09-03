@@ -4,6 +4,7 @@ import { computeReadiness } from './readinessEngine';
 import type { AiCoachIntent } from './types';
 import type { WeeklyCoachingRecord } from '../coaching/types';
 import type { DailyReadinessInputs, DailyReadinessRecord } from '../readiness/types';
+import type { ExerciseProgressionDecision } from '../progression/types';
 
 const ALL_INTENTS: AiCoachIntent[] = [
   'feeling_tired',
@@ -18,7 +19,25 @@ const ALL_INTENTS: AiCoachIntent[] = [
   'why_workout_reduced',
   'how_ready_am_i',
   'should_i_train_today',
+  'why_weight_increased',
+  'why_no_progression',
+  'whats_changed_from_last_week',
+  'what_should_i_aim_for',
 ];
+
+function progressionDecision(overrides: Partial<ExerciseProgressionDecision> = {}): ExerciseProgressionDecision {
+  return {
+    exerciseName: 'Back Squat',
+    decision: 'PROGRESS',
+    model: 'load',
+    nextTarget: { sets: 3, reps: 6, loadKg: 72.5 },
+    previousTarget: { sets: 3, reps: 8, loadKg: 70 },
+    reason: 'Progressed because you completed the target with 3 reps in reserve.',
+    exposureCount: 1,
+    confidence: 'medium',
+    ...overrides,
+  };
+}
 
 function readinessRecord(overrides: Partial<DailyReadinessInputs> = {}): DailyReadinessRecord {
   const inputs: DailyReadinessInputs = {
@@ -208,6 +227,74 @@ describe('getAiCoachReply — Daily Readiness intents (W)', () => {
       const b = getAiCoachReply(intent, { latestRecord: null, todayReadiness: readiness });
       expect(a).toEqual(b);
     }
+  });
+});
+
+describe('getAiCoachReply — Progression Engine intents (X)', () => {
+  it('why_weight_increased explains the real load bump when one exists', () => {
+    const reply = getAiCoachReply('why_weight_increased', {
+      latestRecord: null,
+      todaysProgressionDecisions: [progressionDecision()],
+    });
+    expect(reply.message).toContain('reserve');
+    expect(reply.message).toContain('72.5kg');
+  });
+
+  it('why_weight_increased gives an honest answer when no load actually increased', () => {
+    const reply = getAiCoachReply('why_weight_increased', {
+      latestRecord: null,
+      todaysProgressionDecisions: [progressionDecision({ decision: 'MAINTAIN', nextTarget: { sets: 3, reps: 8, loadKg: 70 } })],
+    });
+    expect(reply.message.toLowerCase()).toContain("hasn't increased");
+  });
+
+  it("why_no_progression explains a HOLD/MAINTAIN/REGRESS reason when one exists", () => {
+    const held = progressionDecision({ decision: 'HOLD', reason: 'Held because your last session for this exercise was missed.' });
+    const reply = getAiCoachReply('why_no_progression', { latestRecord: null, todaysProgressionDecisions: [held] });
+    expect(reply.message).toBe(held.reason);
+  });
+
+  it('why_no_progression is honest when everything actually progressed', () => {
+    const reply = getAiCoachReply('why_no_progression', { latestRecord: null, todaysProgressionDecisions: [progressionDecision()] });
+    expect(reply.message.toLowerCase()).toContain('progressing well');
+  });
+
+  it('why_no_progression is honest when there is no history at all', () => {
+    const reply = getAiCoachReply('why_no_progression', { latestRecord: null, todaysProgressionDecisions: [] });
+    expect(reply.message.toLowerCase()).toContain("don't have enough");
+  });
+
+  it('whats_changed_from_last_week describes the previous -> next target transition', () => {
+    const reply = getAiCoachReply('whats_changed_from_last_week', {
+      latestRecord: null,
+      todaysProgressionDecisions: [progressionDecision()],
+    });
+    expect(reply.message).toContain('70kg');
+    expect(reply.message).toContain('72.5kg');
+    expect(reply.message).toContain('->');
+  });
+
+  it('what_should_i_aim_for states the next target', () => {
+    const reply = getAiCoachReply('what_should_i_aim_for', {
+      latestRecord: null,
+      todaysProgressionDecisions: [progressionDecision()],
+    });
+    expect(reply.message).toContain('Back Squat');
+    expect(reply.message).toContain('72.5kg');
+  });
+
+  it('all four progression intents never throw with no context or empty decisions', () => {
+    for (const intent of ['why_weight_increased', 'why_no_progression', 'whats_changed_from_last_week', 'what_should_i_aim_for'] as AiCoachIntent[]) {
+      expect(() => getAiCoachReply(intent)).not.toThrow();
+      expect(() => getAiCoachReply(intent, { latestRecord: null, todaysProgressionDecisions: [] })).not.toThrow();
+    }
+  });
+
+  it('are deterministic — identical decisions always produce identical replies', () => {
+    const decisions = [progressionDecision()];
+    const a = getAiCoachReply('whats_changed_from_last_week', { latestRecord: null, todaysProgressionDecisions: decisions });
+    const b = getAiCoachReply('whats_changed_from_last_week', { latestRecord: null, todaysProgressionDecisions: decisions });
+    expect(a).toEqual(b);
   });
 });
 

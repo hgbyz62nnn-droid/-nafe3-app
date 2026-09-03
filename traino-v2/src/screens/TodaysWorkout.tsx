@@ -11,13 +11,16 @@ import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
+import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
+import ExerciseLogPanel from '../components/ExerciseLogPanel';
 
 export default function TodaysWorkout() {
   const { profile, activeAdjustment, setActiveAdjustment, planStartDate } = useProfile();
-  const { today, getDayLog, setWorkoutCompleted, getLogsSince } = useLogs();
+  const { today, getDayLog, setWorkoutCompleted, getLogsSince, getExerciseHistory, logExercisePerformance } = useLogs();
   const { getApprovedAdjustmentForWeek } = useWeeklyCoaching();
-  const { getTodayRecord } = useDailyReadiness();
+  const { getTodayRecord, getRecord } = useDailyReadiness();
   const [swaps, setSwaps] = useState<Record<number, number>>({});
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const completed = getDayLog(today).workoutCompleted;
 
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
@@ -38,9 +41,17 @@ export default function TodaysWorkout() {
   const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
   const effectiveAdjustment = activeAdjustment ?? readinessAdjustment ?? weeklyAdjustment;
 
+  // Performance evidence (Progression Engine) sits below safety/readiness/weekly
+  // adjustments in precedence — it decides today's target reps/load within whatever
+  // session those higher tiers already resolved, never overriding them.
+  const progressionContext: ExerciseProgressionContext = {
+    getHistory: getExerciseHistory,
+    getReadinessStatus: (date) => getRecord(date)?.status ?? null,
+  };
+
   const workout = effectiveAdjustment
-    ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek)
-    : generateTodayWorkout(profile, undefined, progressionWeek);
+    ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek, progressionContext)
+    : generateTodayWorkout(profile, undefined, progressionWeek, progressionContext);
 
   function cycleSwap(index: number, altCount: number) {
     setSwaps((prev) => {
@@ -48,6 +59,11 @@ export default function TodaysWorkout() {
       const next = current + 1 >= altCount ? -1 : current + 1;
       return { ...prev, [index]: next };
     });
+  }
+
+  function handleLogSave(entry: Parameters<typeof logExercisePerformance>[1]) {
+    logExercisePerformance(today, entry);
+    setExpandedIndex(null);
   }
 
   return (
@@ -116,45 +132,65 @@ export default function TodaysWorkout() {
             const isTimedBlock = ex.category === 'warmup' || ex.category === 'cooldown';
             const alternatives = getExerciseAlternatives(ex.name);
             const swapIndex = swaps[i] ?? -1;
-            const display = swapIndex >= 0 && alternatives[swapIndex] ? alternatives[swapIndex] : ex;
+            const manuallySwapped = swapIndex >= 0 && !!alternatives[swapIndex];
+            const display = manuallySwapped ? alternatives[swapIndex] : ex;
             const meta = isTimedBlock ? display.reps : `${ex.sets} x ${display.reps}`;
             const hasImage = !isTimedBlock;
+            // A manual (unpersisted) exercise swap changes what's displayed, so logging
+            // against `ex.progression` (computed for the original resolved exercise) would
+            // attach evidence to the wrong name — the log affordance only appears when the
+            // athlete hasn't swapped away from what the Progression Engine actually resolved.
+            const canLog = !manuallySwapped && !!ex.progression;
+            const showProgressionNote =
+              !manuallySwapped && ex.progression && (ex.progression.decision === 'PROGRESS' || ex.progression.decision === 'REGRESS');
 
             return (
-              <div
-                key={`${ex.name}-${i}`}
-                className={`flex items-center gap-3 py-4 ${
-                  i < workout.exercises.length - 1 ? 'border-b border-border-soft' : ''
-                }`}
-              >
-                <span className="text-text-muted text-[14px] font-bold w-4 shrink-0">{i + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-[14.5px] font-bold truncate">{display.name}</p>
-                  <p className="flex items-center gap-1.5 text-text-secondary text-[12.5px] mt-0.5">
-                    {meta}
-                    {ex.restSec && (
-                      <span className="flex items-center gap-1 text-text-muted">
-                        <Icon name="clock" size={11} className="text-text-muted" />
-                        {ex.restSec} sec
-                      </span>
+              <div key={`${ex.name}-${i}`} className={i < workout.exercises.length - 1 ? 'border-b border-border-soft' : ''}>
+                <div className="flex items-center gap-3 py-4">
+                  <span className="text-text-muted text-[14px] font-bold w-4 shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-[14.5px] font-bold truncate">{display.name}</p>
+                    <p className="flex items-center gap-1.5 text-text-secondary text-[12.5px] mt-0.5">
+                      {meta}
+                      {ex.restSec && (
+                        <span className="flex items-center gap-1 text-text-muted">
+                          <Icon name="clock" size={11} className="text-text-muted" />
+                          {ex.restSec} sec
+                        </span>
+                      )}
+                    </p>
+                    {showProgressionNote && (
+                      <p className={`text-[11px] font-semibold mt-1 ${ex.progression!.decision === 'PROGRESS' ? 'text-success' : 'text-red'}`}>
+                        {ex.progression!.decision === 'PROGRESS' ? '↑ Progressed' : '↓ Adjusted'} — {ex.progression!.reason}
+                      </p>
                     )}
-                  </p>
-                </div>
-                {!isTimedBlock && alternatives.length > 0 && (
+                  </div>
+                  {!isTimedBlock && alternatives.length > 0 && (
+                    <button
+                      onClick={() => cycleSwap(i, alternatives.length)}
+                      className="w-8 h-8 min-w-[32px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
+                      aria-label="Replace exercise"
+                    >
+                      <Icon name="swap" size={14} className="text-text-secondary" strokeWidth={2} />
+                    </button>
+                  )}
+                  {hasImage && (
+                    <AssetSlot className="w-14 h-11 rounded-lg shrink-0" fit="cover" compact />
+                  )}
                   <button
-                    onClick={() => cycleSwap(i, alternatives.length)}
-                    className="w-8 h-8 min-w-[32px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
-                    aria-label="Replace exercise"
+                    onClick={() => canLog && setExpandedIndex((prev) => (prev === i ? null : i))}
+                    disabled={!canLog}
+                    aria-label={canLog ? 'Log this exercise' : undefined}
+                    className={`w-8 h-8 min-w-[32px] rounded-full flex items-center justify-center shrink-0 ${
+                      expandedIndex === i ? 'bg-white' : 'bg-red'
+                    }`}
                   >
-                    <Icon name="swap" size={14} className="text-text-secondary" strokeWidth={2} />
+                    <Icon name="checkPlain" size={14} className={expandedIndex === i ? 'text-red' : 'text-white'} strokeWidth={2.8} />
                   </button>
+                </div>
+                {expandedIndex === i && canLog && (
+                  <ExerciseLogPanel exercise={ex} onSave={handleLogSave} onCancel={() => setExpandedIndex(null)} />
                 )}
-                {hasImage && (
-                  <AssetSlot className="w-14 h-11 rounded-lg shrink-0" fit="cover" compact />
-                )}
-                <span className="w-8 h-8 min-w-[32px] rounded-full bg-red flex items-center justify-center shrink-0">
-                  <Icon name="checkPlain" size={14} className="text-white" strokeWidth={2.8} />
-                </span>
               </div>
             );
           })}

@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { MealSlot, PerformanceCategory } from '../engine/types';
+import type { ExercisePerformanceLog } from '../progression/types';
 import { addDays, daysBetween, localDateKey, parseLocalDateKey } from '../engine/dateUtils';
-import { isValidWeightKg } from '../engine/validation';
+import { isValidWeightKg, sanitizeExercisePerformanceLog } from '../engine/validation';
 import { loadVersioned, saveVersioned, type Migration } from './persistence';
 
 const STORAGE_KEY = 'traino.logs';
@@ -19,6 +20,12 @@ export interface DayLog {
    * what Progress actually buckets by, not a guess from `workoutName`. */
   statCategory?: PerformanceCategory;
   weightKg?: number;
+  /** Real per-exercise performance evidence logged this day, keyed by exercise name (the
+   * Progression Engine's input — see domain/progression/types.ts). Optional and additive:
+   * every log written before this field existed is still valid (absent = "no exercise-level
+   * evidence logged that day", never treated as a failure or a success). One entry per
+   * exercise name per day; logging the same exercise again the same day replaces its entry. */
+  exerciseLogs?: ExercisePerformanceLog[];
 }
 
 function emptyDayLog(date: string): DayLog {
@@ -36,7 +43,8 @@ function isDayLog(value: unknown, dateKey: string): value is DayLog {
     Array.isArray(v.loggedMealSlots) &&
     typeof v.mealOverrides === 'object' &&
     v.mealOverrides !== null &&
-    typeof v.workoutCompleted === 'boolean'
+    typeof v.workoutCompleted === 'boolean' &&
+    (v.exerciseLogs === undefined || Array.isArray(v.exerciseLogs))
   );
 }
 
@@ -104,6 +112,17 @@ interface LogContextValue {
    * apart from one that just hasn't happened yet. Returns [] if `startDate` is malformed or
    * in the future. */
   getLogsSince: (startDate: string) => DayLog[];
+  /** Upserts one exercise's performance log for `date` — idempotent per exercise per day
+   * (resubmitting the same exercise the same date replaces that entry; a different
+   * exercise, or the same exercise on a different date, is a separate entry). */
+  logExercisePerformance: (date: string, log: Omit<ExercisePerformanceLog, 'date' | 'submittedAt'>) => void;
+  /** All logged exposures for one exercise name, oldest first, across every persisted
+   * day-log — the Progression Engine's evidence input. Only real entries, never
+   * synthesized ones for days with no log. */
+  getExerciseHistory: (exerciseName: string) => ExercisePerformanceLog[];
+  /** Every distinct exercise name with at least one logged exposure, across all
+   * persisted history — the index the Progress screen's Training tab lists from. */
+  getAllLoggedExerciseNames: () => string[];
 }
 
 const LogContext = createContext<LogContextValue | null>(null);
@@ -161,6 +180,31 @@ export function LogProvider({ children }: { children: ReactNode }) {
     updateDay(date, (day) => ({ ...day, weightKg }));
   }
 
+  function logExercisePerformance(date: string, entry: Omit<ExercisePerformanceLog, 'date' | 'submittedAt'>) {
+    updateDay(date, (day) => {
+      const existing = day.exerciseLogs ?? [];
+      const raw: ExercisePerformanceLog = { ...entry, date, submittedAt: new Date().toISOString() };
+      const { value: record } = sanitizeExercisePerformanceLog(raw);
+      const withoutSameExercise = existing.filter((e) => e.exerciseName !== record.exerciseName);
+      return { ...day, exerciseLogs: [...withoutSameExercise, record] };
+    });
+  }
+
+  function getExerciseHistory(exerciseName: string): ExercisePerformanceLog[] {
+    return Object.values(logs)
+      .flatMap((day) => day.exerciseLogs ?? [])
+      .filter((e) => e.exerciseName === exerciseName)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  function getAllLoggedExerciseNames(): string[] {
+    const names = new Set<string>();
+    for (const day of Object.values(logs)) {
+      for (const entry of day.exerciseLogs ?? []) names.add(entry.exerciseName);
+    }
+    return Array.from(names).sort();
+  }
+
   function getRecentLogs(days: number): DayLog[] {
     const result: DayLog[] = [];
     const cursor = new Date();
@@ -196,6 +240,9 @@ export function LogProvider({ children }: { children: ReactNode }) {
       logWeight,
       getRecentLogs,
       getLogsSince,
+      logExercisePerformance,
+      getExerciseHistory,
+      getAllLoggedExerciseNames,
     }),
     [logs, today]
   );

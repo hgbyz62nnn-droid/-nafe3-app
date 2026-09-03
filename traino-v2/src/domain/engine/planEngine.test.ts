@@ -4,6 +4,8 @@ import { getExerciseAlternatives } from './exerciseAlternatives';
 import { footballModule } from '../sports/football/program';
 import { baseAnswers } from './testFixtures';
 import type { AssessmentAnswers, FitnessLevel, UserProfile } from './types';
+import type { ExerciseProgressionContext } from './progressionIntegration';
+import type { ExercisePerformanceLog } from '../progression/types';
 
 function profileFor(answers: Partial<AssessmentAnswers>, level: FitnessLevel = 'intermediate'): UserProfile {
   return {
@@ -198,6 +200,100 @@ describe('regression: NaN-safe volume adjustment', () => {
       expect(Number.isFinite(ex.sets)).toBe(true);
       expect(ex.sets).toBeGreaterThan(0);
     }
+  });
+});
+
+function progressionLog(exerciseName: string, overrides: Partial<ExercisePerformanceLog> = {}): ExercisePerformanceLog {
+  return {
+    date: '2026-01-05',
+    exerciseName,
+    prescribedSets: 3,
+    completedSets: 3,
+    repsAchieved: 8,
+    loadKg: 70,
+    rir: 3,
+    wasModified: false,
+    submittedAt: '2026-01-05T18:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function progressionContext(historyByExercise: Record<string, ExercisePerformanceLog[]>): ExerciseProgressionContext {
+  return {
+    getHistory: (name) => historyByExercise[name] ?? [],
+    getReadinessStatus: () => null,
+  };
+}
+
+describe('planEngine — Progression Engine integration (workout-level, spec §10)', () => {
+  it('with no progression context, resolved exercises carry no progression decision (fully backward compatible)', () => {
+    const profile = profileFor({ sport: 'football' }, 'intermediate');
+    const resolved = generateTodayWorkout(profile, 0, 1);
+    for (const ex of resolved.exercises) {
+      expect(ex.progression).toBeUndefined();
+    }
+  });
+
+  it('attaches a SKIP decision (base target) on a first exposure once a progression context is supplied', () => {
+    const profile = profileFor({ sport: 'football', equipmentIds: ['barbell', 'squat_rack', 'bench', 'dumbbells', 'pull_up_bar', 'cable_machine'] }, 'advanced');
+    const resolved = generateTodayWorkout(profile, undefined, 1, progressionContext({}));
+    const progressable = resolved.exercises.filter((ex) => ex.progression && ex.progression.model !== 'technique');
+    expect(progressable.length).toBeGreaterThan(0);
+    for (const ex of progressable) {
+      expect(ex.progression!.decision).toBe('SKIP');
+    }
+  });
+
+  it('a fully-completed, high-RIR logged exposure concretely changes the displayed reps for the next session', () => {
+    const profile = profileFor({ sport: 'football' }, 'intermediate');
+    const baseline = generateTodayWorkout(profile, 0, 1);
+    const bodyweightStrength = baseline.exercises.find((ex) => ex.category === 'strength');
+    expect(bodyweightStrength).toBeDefined();
+
+    const context = progressionContext({ [bodyweightStrength!.name]: [progressionLog(bodyweightStrength!.name, { loadKg: undefined, repsAchieved: bodyweightStrength!.sets > 0 ? 8 : 8 })] });
+    const progressed = generateTodayWorkout(profile, 0, 1, context);
+    const target = progressed.exercises.find((ex) => ex.name === bodyweightStrength!.name);
+    expect(target?.progression?.decision).toBe('PROGRESS');
+    expect(target?.reps).not.toBe(bodyweightStrength!.reps);
+  });
+
+  it('a missed exposure holds — never progresses the displayed target from insufficient evidence', () => {
+    const profile = profileFor({ sport: 'football' }, 'intermediate');
+    const baseline = generateTodayWorkout(profile, 0, 1);
+    const bodyweightStrength = baseline.exercises.find((ex) => ex.category === 'strength')!;
+
+    const context = progressionContext({ [bodyweightStrength.name]: [progressionLog(bodyweightStrength.name, { completedSets: 0 })] });
+    const progressed = generateTodayWorkout(profile, 0, 1, context);
+    const target = progressed.exercises.find((ex) => ex.name === bodyweightStrength.name);
+    expect(target?.progression?.decision).toBe('HOLD');
+    expect(target?.progression?.nextTarget).toEqual(target?.progression?.previousTarget);
+  });
+
+  it('progression evidence stays attached to a safety substitute, never the original contraindicated exercise', () => {
+    // Advanced football: Back Squat is contraindicated for 'knee' and substitutes to Glute Bridge.
+    const injured = profileFor({ sport: 'football', injuryIds: ['knee'], equipmentIds: ['barbell', 'squat_rack'] }, 'advanced');
+    const resolved = generateTodayWorkout(injured, undefined, 1, progressionContext({ 'Back Squat': [progressionLog('Back Squat', { rir: 5 })] }));
+    // Whatever exercise actually appears (the safe substitute) must not show a PROGRESS
+    // decision built from "Back Squat"'s history — its own history is empty (SKIP), or
+    // it's not the same name at all.
+    const substituted = resolved.exercises.find((ex) => ex.substitutionReason === 'injury');
+    if (substituted) {
+      expect(substituted.name).not.toBe('Back Squat');
+      if (substituted.progression) expect(substituted.progression.decision).not.toBe('PROGRESS');
+    }
+  });
+
+  it('applyCoachAdjustment composes progression targets with the existing volume-multiplier reduction', () => {
+    const profile = profileFor({ sport: 'football' }, 'intermediate');
+    const baseline = generateTodayWorkout(profile, 0, 1);
+    const bodyweightStrength = baseline.exercises.find((ex) => ex.category === 'strength')!;
+    const context = progressionContext({ [bodyweightStrength.name]: [progressionLog(bodyweightStrength.name, { loadKg: undefined })] });
+
+    const adjusted = applyCoachAdjustment(profile, 0, { volumeMultiplier: 0.7, note: 'test' }, 1, context);
+    const target = adjusted.exercises.find((ex) => ex.name === bodyweightStrength.name);
+    expect(target?.progression?.decision).toBe('PROGRESS');
+    // Volume-multiplier still reduces sets on top of the progression-derived reps.
+    expect(target!.sets).toBeLessThanOrEqual(bodyweightStrength.sets);
   });
 });
 

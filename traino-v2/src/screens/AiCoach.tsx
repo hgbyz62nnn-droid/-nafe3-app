@@ -9,6 +9,10 @@ import type { AiCoachIntent, AiCoachReply } from '../domain/engine/types';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
+import { useLogs } from '../domain/state/LogContext';
+import { generateTodayWorkout } from '../domain/engine/planEngine';
+import { computeProgressionInfo } from '../domain/engine/progressionEngine';
+import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'How ready am I today?', intent: 'how_ready_am_i' },
@@ -22,16 +26,24 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'Why did my consistency drop?', intent: 'why_consistency_dropped' },
   { label: "What's changing next week?", intent: 'whats_next_week_change' },
   { label: 'Why was my workout reduced?', intent: 'why_workout_reduced' },
+  { label: 'Why did my weight increase?', intent: 'why_weight_increased' },
+  { label: "Why didn't I progress?", intent: 'why_no_progression' },
+  { label: "What's changed from last week?", intent: 'whats_changed_from_last_week' },
+  { label: 'What should I aim for next time?', intent: 'what_should_i_aim_for' },
 ];
 
-/** Intents that read structured Weekly Coaching / Daily Readiness context — everything
- * else resolves from a fixed reply table alone. */
+/** Intents that read structured Weekly Coaching / Daily Readiness / Progression
+ * context — everything else resolves from a fixed reply table alone. */
 const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
   'why_consistency_dropped',
   'whats_next_week_change',
   'why_workout_reduced',
   'how_ready_am_i',
   'should_i_train_today',
+  'why_weight_increased',
+  'why_no_progression',
+  'whats_changed_from_last_week',
+  'what_should_i_aim_for',
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -43,15 +55,31 @@ const INITIAL_MESSAGES: Message[] = [
 
 export default function AiCoach() {
   const navigate = useNavigate();
-  const { setActiveAdjustment } = useProfile();
+  const { profile, setActiveAdjustment, planStartDate } = useProfile();
   const { getLatestRecord } = useWeeklyCoaching();
-  const { getTodayRecord } = useDailyReadiness();
+  const { getTodayRecord, getRecord } = useDailyReadiness();
+  const { getExerciseHistory, getLogsSince } = useLogs();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [draft, setDraft] = useState('');
 
+  function todaysProgressionDecisions() {
+    const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
+    const { progressionWeek } = computeProgressionInfo(planStartDate, progressionLogs, profile.answers.daysAvailablePerWeek);
+    const progressionContext: ExerciseProgressionContext = {
+      getHistory: getExerciseHistory,
+      getReadinessStatus: (date) => getRecord(date)?.status ?? null,
+    };
+    const workout = generateTodayWorkout(profile, undefined, progressionWeek, progressionContext);
+    return workout.exercises.map((ex) => ex.progression).filter((d): d is NonNullable<typeof d> => !!d);
+  }
+
   function handleSuggestion(label: string, intent: AiCoachIntent) {
     const reply = CONTEXTUAL_INTENTS.includes(intent)
-      ? getAiCoachReply(intent, { latestRecord: getLatestRecord(), todayReadiness: getTodayRecord() ?? null })
+      ? getAiCoachReply(intent, {
+          latestRecord: getLatestRecord(),
+          todayReadiness: getTodayRecord() ?? null,
+          todaysProgressionDecisions: todaysProgressionDecisions(),
+        })
       : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
   }

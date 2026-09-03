@@ -1,15 +1,20 @@
 import type { AiCoachIntent, AiCoachReply } from './types';
 import type { WeeklyCoachingRecord } from '../coaching/types';
 import type { DailyReadinessRecord } from '../readiness/types';
+import type { ExerciseProgressionDecision } from '../progression/types';
 import { READINESS_STATUS_LABEL } from '../readiness/scales';
 
-/** Structured context the Weekly Coaching / Daily Readiness intents below read from —
- * the most recently reviewed week's record and today's readiness check-in, if either
- * exists. Every reply built from these is a pre-templated string over already-
- * deterministic fields; nothing here generates or infers new text. */
+/** Structured context the Weekly Coaching / Daily Readiness / Progression intents below
+ * read from — the most recently reviewed week's record, today's readiness check-in, and
+ * today's resolved workout's per-exercise progression decisions, if any exist. Every
+ * reply built from these is a pre-templated string over already-deterministic fields;
+ * nothing here generates or infers new text. */
 export interface AiCoachReplyContext {
   latestRecord: WeeklyCoachingRecord | null;
   todayReadiness?: DailyReadinessRecord | null;
+  /** `ResolvedExercise.progression` for every progressable exercise in today's workout,
+   * in plan order — the raw material the progression intents below pick from. */
+  todaysProgressionDecisions?: ExerciseProgressionDecision[];
 }
 
 function barrierLabel(id: string): string {
@@ -19,6 +24,31 @@ function barrierLabel(id: string): string {
 function factorSummary(record: DailyReadinessRecord): string {
   const { sleepQuality, energy, stress, soreness } = record.inputs;
   return `sleep ${sleepQuality}/5, energy ${energy}/5, stress ${stress}/5, soreness ${soreness}/5`;
+}
+
+function describeTarget(decision: ExerciseProgressionDecision, target: ExerciseProgressionDecision['nextTarget']): string {
+  if (!target) return 'no target set yet';
+  switch (decision.model) {
+    case 'load':
+      return target.loadKg !== undefined ? `${target.reps} reps @ ${target.loadKg}kg` : `${target.reps} reps`;
+    case 'rep_range':
+      return `${target.reps} reps`;
+    case 'distance':
+      return `${target.distanceM}m`;
+    case 'duration':
+      return `${target.durationSec} sec`;
+    case 'technique':
+      return `${target.sets} sets (consistency-based)`;
+  }
+}
+
+/** The single most notable progression decision from today's workout to explain, when
+ * an intent doesn't ask about one specific exercise: a real PROGRESS/REGRESS change if
+ * one exists, otherwise the first progressable exercise at all. Deterministic — always
+ * the same pick for the same decisions array (plan order). */
+function notableDecision(decisions: ExerciseProgressionDecision[] | undefined): ExerciseProgressionDecision | null {
+  if (!decisions || decisions.length === 0) return null;
+  return decisions.find((d) => d.decision === 'PROGRESS' || d.decision === 'REGRESS') ?? decisions[0];
 }
 
 /**
@@ -192,6 +222,57 @@ export function getAiCoachReply(intent: AiCoachIntent, context?: AiCoachReplyCon
             ctaLabel: 'VIEW TODAY\'S WORKOUT',
           };
       }
+    }
+
+    case 'why_weight_increased': {
+      const loadBump = context?.todaysProgressionDecisions?.find(
+        (d) => d.model === 'load' && d.decision === 'PROGRESS' && d.nextTarget?.loadKg !== undefined && d.nextTarget.loadKg !== d.previousTarget?.loadKg
+      );
+      if (!loadBump) {
+        return { message: "Your load hasn't increased recently — ask me why after your next logged session if you're expecting a change." };
+      }
+      return {
+        message: `${loadBump.reason} Next target: ${describeTarget(loadBump, loadBump.nextTarget)}.`,
+        ctaLabel: 'VIEW TODAY\'S WORKOUT',
+      };
+    }
+
+    case 'why_no_progression': {
+      const held = context?.todaysProgressionDecisions?.find(
+        (d) => d.decision === 'MAINTAIN' || d.decision === 'HOLD' || d.decision === 'REGRESS'
+      );
+      if (!held) {
+        const decisions = context?.todaysProgressionDecisions ?? [];
+        if (decisions.length === 0) {
+          return { message: "I don't have enough logged history yet to tell — log a few sessions and I'll be able to explain your progression." };
+        }
+        return { message: "Everything's actually progressing well right now — nothing is being held back." };
+      }
+      return { message: held.reason };
+    }
+
+    case 'whats_changed_from_last_week': {
+      const decision = notableDecision(context?.todaysProgressionDecisions);
+      if (!decision || decision.decision === 'SKIP') {
+        return { message: "Nothing's changed from your last logged session — keep logging and I'll track it for you." };
+      }
+      if (decision.decision === 'HOLD' || decision.decision === 'MAINTAIN') {
+        return { message: `${decision.exerciseName} is unchanged from last time — ${decision.reason.toLowerCase()}` };
+      }
+      const from = decision.previousTarget ? describeTarget(decision, decision.previousTarget) : 'your last target';
+      const to = describeTarget(decision, decision.nextTarget);
+      return { message: `${decision.exerciseName}: ${from} -> ${to}. ${decision.reason}`, ctaLabel: 'VIEW TODAY\'S WORKOUT' };
+    }
+
+    case 'what_should_i_aim_for': {
+      const decision = notableDecision(context?.todaysProgressionDecisions);
+      if (!decision || !decision.nextTarget) {
+        return { message: "I don't have a target for you yet — log today's session and I'll set one for next time." };
+      }
+      return {
+        message: `For ${decision.exerciseName}, aim for ${describeTarget(decision, decision.nextTarget)} next time.`,
+        ctaLabel: 'VIEW TODAY\'S WORKOUT',
+      };
     }
   }
 }

@@ -6,6 +6,16 @@ import { addDays, daysBetween, localDateKey, parseLocalDateKey } from './dateUti
  * learned or generated adjustment. Every 4-week block adds one set to
  * strength/power work, capped at +2 sets total (weeks 9+). Conditioning,
  * warmup, and cooldown blocks are left as authored.
+ *
+ * Precedence with the exercise-level Progression Engine (see
+ * exerciseProgressionEngine.ts / progressionIntegration.ts): planEngine.resolveExercise
+ * applies real performance evidence to `reps`/`loadKg`/`durationSec`/`distanceM` FIRST,
+ * then this calendar-block rule runs on the result and only ever touches `sets` — the
+ * two never fight over the same field, so calendar time can add planned volume without
+ * ever silently overriding what actual logged performance earned on intensity, and vice
+ * versa. Safety substitution and the Daily Readiness volume multiplier both run around
+ * this in planEngine, per the documented precedence: SAFETY > READINESS > PERFORMANCE
+ * EVIDENCE > this calendar template.
  */
 const WEEKS_PER_BLOCK = 4;
 const MAX_BONUS_SETS = 2;

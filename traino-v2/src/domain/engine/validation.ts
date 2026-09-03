@@ -1,6 +1,7 @@
 import type { AssessmentAnswers, BudgetTier, DietaryPreference, Goal, Sex } from './types';
 import { SPORTS, type SportId } from '../sports/sports';
 import type { DailyReadinessInputs, ReadinessScale } from '../readiness/types';
+import type { ExercisePerformanceLog } from '../progression/types';
 
 /**
  * Boundary validation/sanitization for the deterministic engine. Persisted
@@ -156,4 +157,81 @@ export function sanitizeReadinessInputs(inputs: DailyReadinessInputs): SanitizeR
  * value corrupt `applyProgression`'s arithmetic or an array index derived from it. */
 export function isValidWeekNumber(value: number): boolean {
   return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+}
+
+/** Reps-in-reserve realistically ranges 0 (failure) to about 10 (very easy) — anything
+ * outside that is almost certainly a bad input, not a real report. */
+const RIR_MIN = 0;
+const RIR_MAX = 10;
+
+function sanitizePositiveInt(value: unknown, label: string, violations: string[]): number | undefined {
+  if (value === undefined) return undefined;
+  const n = typeof value === 'number' ? Math.round(value) : NaN;
+  if (!Number.isFinite(n) || n < 0) {
+    violations.push(`${label}: invalid (${JSON.stringify(value)}), dropped`);
+    return undefined;
+  }
+  return n;
+}
+
+function sanitizePositiveFinite(value: unknown, label: string, violations: string[]): number | undefined {
+  if (value === undefined) return undefined;
+  const n = typeof value === 'number' ? value : NaN;
+  if (!Number.isFinite(n) || n < 0) {
+    violations.push(`${label}: invalid (${JSON.stringify(value)}), dropped`);
+    return undefined;
+  }
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * Sanitizes one exercise's logged performance before it ever reaches the Progression
+ * Engine — a bad form parse or corrupted localStorage entry must never hand the engine
+ * NaN/Infinity/negative sets, reps, load, duration, or distance, and RIR must never
+ * silently smuggle in an out-of-range value. Missing optional fields (load/reps/
+ * duration/distance/RIR not applicable to this exercise's model, or just not logged)
+ * are left `undefined` — "unknown", never coerced into a value that reads as good or bad.
+ */
+export function sanitizeExercisePerformanceLog(
+  log: ExercisePerformanceLog
+): SanitizeResult<ExercisePerformanceLog> {
+  const violations: string[] = [];
+
+  const prescribedSetsRaw = typeof log.prescribedSets === 'number' ? Math.round(log.prescribedSets) : NaN;
+  const prescribedSets = Number.isFinite(prescribedSetsRaw) && prescribedSetsRaw >= 0 ? prescribedSetsRaw : 0;
+  if (prescribedSets !== log.prescribedSets) {
+    violations.push(`prescribedSets: invalid (${JSON.stringify(log.prescribedSets)}), defaulted to ${prescribedSets}`);
+  }
+
+  const completedSetsRaw = typeof log.completedSets === 'number' ? Math.round(log.completedSets) : NaN;
+  const completedSets = Number.isFinite(completedSetsRaw) && completedSetsRaw >= 0 ? completedSetsRaw : 0;
+  if (completedSets !== log.completedSets) {
+    violations.push(`completedSets: invalid (${JSON.stringify(log.completedSets)}), defaulted to ${completedSets}`);
+  }
+
+  let rir: number | undefined;
+  if (log.rir !== undefined) {
+    const n = typeof log.rir === 'number' ? Math.round(log.rir) : NaN;
+    if (Number.isFinite(n) && n >= RIR_MIN && n <= RIR_MAX) {
+      rir = n;
+    } else {
+      violations.push(`rir: out of range (${JSON.stringify(log.rir)}), dropped`);
+    }
+  }
+
+  const value: ExercisePerformanceLog = {
+    date: typeof log.date === 'string' ? log.date : '',
+    exerciseName: typeof log.exerciseName === 'string' && log.exerciseName.length > 0 ? log.exerciseName : 'Unknown exercise',
+    prescribedSets,
+    completedSets,
+    repsAchieved: sanitizePositiveInt(log.repsAchieved, 'repsAchieved', violations),
+    loadKg: sanitizePositiveFinite(log.loadKg, 'loadKg', violations),
+    durationSec: sanitizePositiveFinite(log.durationSec, 'durationSec', violations),
+    distanceM: sanitizePositiveFinite(log.distanceM, 'distanceM', violations),
+    rir,
+    wasModified: typeof log.wasModified === 'boolean' ? log.wasModified : false,
+    submittedAt: typeof log.submittedAt === 'string' ? log.submittedAt : new Date().toISOString(),
+  };
+
+  return { value, violations };
 }
