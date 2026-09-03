@@ -9,11 +9,12 @@ import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { computeWeekSummary } from '../domain/engine/barrierEngine';
-import { describeWeekContextInfluence, computeContextAdjustedPlannedSessions } from '../domain/context/weeklyCoachingIntegration';
+import { describeWeekContextInfluence } from '../domain/context/weeklyCoachingIntegration';
 import { computePerformanceStats } from '../domain/engine/progressEngine';
 import { generateWeeklyReport, AREA_PRAISE, type ReportArea } from '../domain/engine/weeklyReportEngine';
 import { barrierDisplayName } from '../domain/coaching/barriers';
 import { buildPerformanceSummary } from '../domain/performance/performanceEngine';
+import { buildExerciseMetrics } from '../domain/performance/exerciseMetrics';
 
 interface ReportRow {
   icon: IconName;
@@ -41,32 +42,6 @@ export default function WeeklyReport() {
   const { currentPlanWeek } = computeProgressionInfo(planStartDate, progressionLogs, answers.daysAvailablePerWeek);
   const record = getRecord(currentPlanWeek);
 
-  // Single analytical source of truth for this week's numbers (spec §25):
-  // the SAME context-adjusted planned-session count and real readiness
-  // history the Weekly Coaching Loop's own decision already uses, via the
-  // SAME `computeWeekSummary` composer — never a second, independently
-  // recomputed "planned" count that could silently disagree with it (a
-  // travel/competition-adjusted week previously showed its RAW weekly
-  // cadence here while the coaching decision below correctly used the
-  // context-adjusted one).
-  const contextAdjustedPlanned = computeContextAdjustedPlannedSessions(
-    answers.daysAvailablePerWeek,
-    last7.map((d) => d.date),
-    travelContexts,
-    competitionEvents
-  );
-  const currentWeekReadiness = last7.length > 0 ? getRecordsInRange(last7[0].date, last7[last7.length - 1].date) : [];
-  const weekSummary = computeWeekSummary(last7, prior7, contextAdjustedPlanned, currentWeekReadiness);
-
-  const completed = weekSummary.workoutsCompleted;
-  const planned = Math.max(weekSummary.workoutsPlanned, 1);
-  const nutritionAdherencePct = weekSummary.nutritionAdherencePct;
-  const recoveryAveragePct = weekSummary.recoveryScore;
-  const weightDeltaKg = weekSummary.weightDeltaKg;
-  const hasWeightData = weekSummary.hasWeightData;
-
-  const stats = computePerformanceStats(last7);
-
   // The real Performance Analytics layer (spec: "ADVANCED PROGRESS &
   // PERFORMANCE") — the same engine Progress/AI Coach read from, so Weekly
   // Report's milestones/goal-progress line is never a second, conflicting
@@ -85,12 +60,42 @@ export default function WeeklyReport() {
     travelContexts,
     competitionEvents,
   });
+
+  // Single analytical source of truth for this week's numbers (spec §25 /
+  // Phase 11 §9-10): `computeWeekSummary` internally reuses the SAME Phase 10
+  // functions (`buildTrainingConsistency`/`buildNutritionProgress`/
+  // `buildReadinessTrend`) — never a second, independently recomputed
+  // "planned"/nutrition/readiness number that could silently disagree with
+  // the Weekly Coaching decision shown below. `plannedPerWeek` is the RAW
+  // weekly cadence; context-adjustment for Travel/Competition happens inside
+  // `computeWeekSummary` itself via `travelContexts`/`competitionEvents`.
+  const currentWeekReadiness = last7.length > 0 ? getRecordsInRange(last7[0].date, last7[last7.length - 1].date) : [];
+  const weekExercises = getAllLoggedExerciseNames().map((name) => buildExerciseMetrics(name, getExerciseHistory(name)));
+  const weekSummary = computeWeekSummary(last7, prior7, answers.daysAvailablePerWeek, currentWeekReadiness, {
+    travelContexts,
+    competitionEvents,
+    exercises: weekExercises,
+    nutritionTargets: profile.nutrition,
+  });
+
+  const completed = weekSummary.workoutsCompleted;
+  const planned = Math.max(weekSummary.workoutsPlanned, 1);
+  const nutritionAdherencePct = weekSummary.nutritionAdherencePct;
+  const recoveryAveragePct = weekSummary.readinessAverageScore;
+  const weightDeltaKg = weekSummary.weightDeltaKg;
+  const hasWeightData = weekSummary.hasWeightData;
+
+  const stats = computePerformanceStats(last7);
+
   const scores: { area: ReportArea; score: number }[] = [
     { area: 'speed', score: stats.speed.hasData ? 50 + Math.max(-50, Math.min(50, stats.speed.changePct)) : 20 },
     { area: 'strength', score: stats.strength.hasData ? 50 + Math.max(-50, Math.min(50, stats.strength.changePct)) : 20 },
     { area: 'stamina', score: stats.stamina.hasData ? 50 + Math.max(-50, Math.min(50, stats.stamina.changePct)) : 20 },
     { area: 'nutrition', score: nutritionAdherencePct },
-    { area: 'recovery', score: recoveryAveragePct },
+    // Real readiness only counts toward "strongest/weakest area" copy when
+    // there's an actual check-in this week — never coerced from null to 0,
+    // which would unfairly always read as the weakest area (Phase 11 §14).
+    ...(recoveryAveragePct !== null ? [{ area: 'recovery' as const, score: recoveryAveragePct }] : []),
   ];
 
   const hasAnyActivity = completed > 0 || nutritionAdherencePct > 0 || hasWeightData;

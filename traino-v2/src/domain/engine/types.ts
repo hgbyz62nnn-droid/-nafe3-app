@@ -226,7 +226,9 @@ export interface WeeklyReportData {
   workoutsPlanned: number;
   nutritionAdherencePct: number;
   recoveryLabel: string;
-  recoveryAveragePct: number;
+  /** null when there isn't yet a real Daily Readiness check-in to average — never a
+   * fabricated recovery number (Phase 11). */
+  recoveryAveragePct: number | null;
   weightDeltaKg: number;
   coachFeedback: string;
 }

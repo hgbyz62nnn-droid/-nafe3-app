@@ -17,7 +17,9 @@ import { footballModule } from './sports/football/program';
 import type { AssessmentAnswers, FitnessLevel, MealSlot, NutritionTargets, UserProfile } from './engine/types';
 import type { NutritionProfile } from './nutrition/types';
 import { buildWeeklyCoachingReview } from './engine/weeklyCoachingEngine';
-import { computeWeekSummary } from './engine/barrierEngine';
+import { computeWeekSummary, detectBarriers, pickPrimaryBarrier } from './engine/barrierEngine';
+import { buildCoachingDecision } from './engine/coachingRulesEngine';
+import { buildExerciseMetrics } from './performance/exerciseMetrics';
 import { computeReadiness } from './engine/readinessEngine';
 import { sanitizeReadinessInputs } from './engine/validation';
 import type { BarrierId } from './coaching/barriers';
@@ -2098,6 +2100,527 @@ describe('ADVANCED PROGRESS & PERFORMANCE multi-athlete simulation (spec §30)',
       );
       expect(footballSummary.exercises.map((e) => e.exerciseName)).toEqual(['Back Squat']);
       expect(swimSummary.exercises.map((e) => e.exerciseName)).toEqual(['Freestyle Sprint']);
+    });
+  });
+});
+
+/**
+ * PHASE 11 — COACHING INTELLIGENCE CLEANUP multi-week simulation (spec §21)
+ * + invariants (spec §22). Drives the real `computeWeekSummary` /
+ * `detectBarriers` / `buildCoachingDecision` / `buildWeeklyCoachingReview`
+ * pipeline — the exact functions Weekly Check-In and Weekly Report call —
+ * over realistic multi-week athlete data, proving the barrier layer no
+ * longer depends on `computeRecoveryScore`/`computePerformanceStats` and
+ * only ever surfaces evidence real Daily Readiness / Performance Analytics
+ * / logged data actually supports.
+ */
+describe('COACHING INTELLIGENCE CLEANUP multi-week simulation (Phase 11 spec §21)', () => {
+  const WEEK_START = new Date(2026, 3, 6); // Monday
+
+  function simDayLog(date: string, overrides: Partial<DayLog> = {}): DayLog {
+    return { date, loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false, ...overrides };
+  }
+
+  /** Builds 7 DayLogs starting at `start`, one per `completedPattern` entry. */
+  function weekLogsFor(start: Date, completedPattern: boolean[], extra: (i: number) => Partial<DayLog> = () => ({})): DayLog[] {
+    return completedPattern.map((completed, i) => simDayLog(localDateKey(addDays(start, i)), { workoutCompleted: completed, ...extra(i) }));
+  }
+
+  function readinessRecordFor(date: string, overrides: Partial<DailyReadinessInputs> = {}): DailyReadinessRecord {
+    const { value: inputs } = sanitizeReadinessInputs(baseReadinessInputs(overrides));
+    const result = computeReadiness(inputs);
+    return {
+      date,
+      inputs: result.factors,
+      score: result.score,
+      status: result.status,
+      recommendation: result.recommendation,
+      recommendationApplied: result.recommendation.adjustmentApplied,
+      submittedAt: `${date}T08:00:00.000Z`,
+    };
+  }
+
+  function readinessWeekFor(start: Date, days: Partial<DailyReadinessInputs>[]): DailyReadinessRecord[] {
+    return days.map((overrides, i) => readinessRecordFor(localDateKey(addDays(start, i)), overrides));
+  }
+
+  function perfLogSim(date: string, overrides: Partial<ExercisePerformanceLog> = {}): ExercisePerformanceLog {
+    return { date, exerciseName: 'Back Squat', prescribedSets: 3, completedSets: 3, wasModified: false, submittedAt: `${date}T12:00:00.000Z`, ...overrides };
+  }
+
+  /** A real, multi-exposure declining trend for one exercise — never a single bad set. */
+  function decliningExerciseMetrics(name: string, start: Date) {
+    const history = [
+      perfLogSim(localDateKey(addDays(start, -21)), { exerciseName: name, loadKg: 80, repsAchieved: 8 }),
+      perfLogSim(localDateKey(addDays(start, -14)), { exerciseName: name, loadKg: 72, repsAchieved: 8 }),
+      perfLogSim(localDateKey(addDays(start, -7)), { exerciseName: name, loadKg: 62, repsAchieved: 8 }),
+    ];
+    return buildExerciseMetrics(name, history);
+  }
+
+  function travelFor(overrides: Partial<TravelContext> = {}): TravelContext {
+    return {
+      id: 'p11-travel',
+      mode: 'travel',
+      startDate: localDateKey(WEEK_START),
+      endDate: localDateKey(addDays(WEEK_START, 6)),
+      constraints: { equipmentIds: [], locationIds: ['home'], time: { minutesAvailable: 20 }, daysAvailablePerWeek: 2, affectsNutrition: false },
+      createdAt: '2026-03-25T00:00:00.000Z',
+      source: 'athlete',
+      ...overrides,
+    };
+  }
+
+  function eventFor(overrides: Partial<CompetitionEvent> = {}): CompetitionEvent {
+    return {
+      id: 'p11-event',
+      mode: 'competition',
+      eventDate: localDateKey(addDays(WEEK_START, 3)),
+      eventType: 'match',
+      createdAt: '2026-03-25T00:00:00.000Z',
+      source: 'athlete',
+      ...overrides,
+    };
+  }
+
+  function nutritionLog(date: string, calories: number, proteinG: number): NutritionLogEntry {
+    return { date, slotId: 'lunch', foodId: 'sim-food', quantity: 1, calories, proteinG, carbsG: 0, fatG: 0, wasModified: false, submittedAt: `${date}T12:00:00.000Z` };
+  }
+
+  const TARGETS = { calories: 2500, proteinG: 160 };
+
+  it('1. healthy consistent athlete — full completion, high readiness, no struggling exercises produces zero barriers', () => {
+    const sim = athlete({ name: 'p11-healthy', daysAvailablePerWeek: 5, trainingLocationIds: ['home'], equipmentIds: [] });
+    const profile = buildProfile(sim.answers);
+    const logs = weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]);
+    const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 7 }, () => ({ ...HIGH_DAY })));
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, readiness);
+
+    expect(summary.hasData).toBe(true);
+    expect(summary.readinessLowDaysCount).toBe(0);
+    expect(summary.workoutsMissed).toBe(0);
+
+    const detected = detectBarriers(null, summary);
+    expect(detected).toEqual([]);
+
+    const decision = buildCoachingDecision(null, summary, profile, { isRecurring: false, recurringWeeks: 0 });
+    expect(decision.barrier).toBeNull();
+    expect(decision.recommendedAction).toBe('NO_ACTION_NEEDED');
+    expect(decision.requiresApproval).toBe(false);
+  });
+
+  it('2. poor sleep athlete (also covers H: poor sleep + normal completion) — real sleep data corroborates poor_sleep without any missed-session help', () => {
+    const sim = athlete({ name: 'p11-poor-sleep', daysAvailablePerWeek: 5, trainingLocationIds: ['home'], equipmentIds: [] });
+    const logs = weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]);
+    const readiness = readinessWeekFor(WEEK_START, [
+      { sleepQuality: 1, sleepDurationBucket: 1 },
+      { sleepQuality: 1, sleepDurationBucket: 1 },
+      { sleepQuality: 2, sleepDurationBucket: 1 },
+      { sleepQuality: 3 },
+      { sleepQuality: 3 },
+    ]);
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, readiness);
+    expect(summary.poorSleepDaysCount).toBeGreaterThanOrEqual(3);
+    expect(summary.workoutsMissed).toBe(0);
+
+    const detected = detectBarriers({ barrierIds: ['poor_sleep'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'poor_sleep')!;
+    expect(found.objectiveSignal).toBe(true);
+    expect(found.confidence).toBe('high');
+    expect(found.evidence).toMatch(/poor\/short sleep/);
+    expect(found.evidence).not.toMatch(/caused/i);
+    // Normal completion this week — no missed-workout co-occurrence line should appear.
+    expect(found.evidence).not.toMatch(/overlapped/);
+  });
+
+  it('3. low energy / repeated-low-readiness athlete (fatigue) — real readiness drives fatigue evidence, co-occurrence phrased non-causally', () => {
+    const sim = athlete({ name: 'p11-fatigue', daysAvailablePerWeek: 5, trainingLocationIds: ['home'], equipmentIds: [] });
+    const logs = weekLogsFor(WEEK_START, [true, false, true, false, true, false, true]);
+    const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 6 }, () => ({ ...LOW_DAY })));
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, readiness);
+    expect(summary.readinessLowDaysCount).toBeGreaterThanOrEqual(3);
+
+    const detected = detectBarriers({ barrierIds: ['fatigue'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'fatigue')!;
+    expect(found.objectiveSignal).toBe(true);
+    expect(found.confidence).toBe('high');
+    expect(found.evidence).toMatch(/low readiness reported/);
+    expect(found.evidence).not.toMatch(/caused/i);
+    if (summary.workoutsMissed >= 2 && summary.readinessLowAndMissedWorkoutOverlapDays > 0) {
+      expect(found.evidence).toMatch(/overlapped on \d+ day/);
+    }
+  });
+
+  it('4. high stress athlete — aggregate real readiness (never a per-factor causal claim) corroborates stress with normal completion', () => {
+    const sim = athlete({ name: 'p11-stress', daysAvailablePerWeek: 5, trainingLocationIds: ['home'], equipmentIds: [] });
+    const logs = weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]);
+    const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 6 }, () => ({ ...LOW_DAY })));
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, readiness);
+    expect(summary.readinessLowDaysCount).toBeGreaterThanOrEqual(3);
+    expect(summary.workoutsMissed).toBe(0);
+
+    const detected = detectBarriers({ barrierIds: ['stress'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'stress')!;
+    expect(found.objectiveSignal).toBe(true);
+    expect(found.evidence).not.toMatch(/overlapped/); // nothing missed -> no false co-occurrence claim
+    expect(found.evidence).not.toMatch(/caused/i);
+  });
+
+  it('5. high soreness athlete — soreness is folded into the same aggregate readiness signal, never a separate fabricated barrier', () => {
+    const sim = athlete({ name: 'p11-soreness', daysAvailablePerWeek: 5, trainingLocationIds: ['home'], equipmentIds: [] });
+    const logs = weekLogsFor(WEEK_START, [true, false, true, true, false, true, true]);
+    const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 6 }, () => ({ ...LOW_DAY })));
+    expect(readiness.every((r) => r.inputs.soreness === LOW_DAY.soreness)).toBe(true);
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, readiness);
+    expect(summary.readinessLowDaysCount).toBeGreaterThanOrEqual(3);
+
+    const detected = detectBarriers({ barrierIds: ['fatigue'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'fatigue')!;
+    expect(found.objectiveSignal).toBe(true);
+    // 'soreness' is not a distinct BarrierId (spec §3's preserved vocabulary) — it is
+    // real evidence folded into fatigue/poor_sleep, never invented as a new barrier.
+    expect(BARRIER_OPTIONS_IDS).not.toContain('soreness');
+  });
+
+  it('6. repeated difficult workouts — real declining exercise trends drive workout_difficulty, never a single bad set', () => {
+    const sim = athlete({ name: 'p11-difficulty', daysAvailablePerWeek: 5, trainingLocationIds: ['home'], equipmentIds: [] });
+    const profile = buildProfile(sim.answers);
+    const logs = weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]);
+    const exercises = [decliningExerciseMetrics('Back Squat', WEEK_START), decliningExerciseMetrics('Romanian Deadlift', WEEK_START)];
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, [], { exercises });
+    expect(summary.exercisesWithDataCount).toBe(2);
+    expect(summary.strugglingExercisesCount).toBe(2);
+
+    const detected = detectBarriers({ barrierIds: ['workout_difficulty'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'workout_difficulty')!;
+    expect(found.objectiveSignal).toBe(true);
+    expect(found.evidence).toMatch(/2 of 2 logged exercises showing a declining trend/);
+
+    const decision = buildCoachingDecision(found, summary, profile, { isRecurring: false, recurringWeeks: 0 });
+    expect(decision.recommendedAction).toBe('REDUCE_VOLUME_INTENSITY');
+    expect(decision.proposedChanges?.trainingAdjustment?.volumeMultiplier).toBeCloseTo(0.85);
+  });
+
+  it('7. low nutrition adherence — detailed calorie logging corroborates nutrition_difficulty, never fabricated from missing logs', () => {
+    const sim = athlete({ name: 'p11-nutrition', daysAvailablePerWeek: 5, budgetTier: 'medium' });
+    const profile = buildProfile(sim.answers);
+    const logs = weekLogsFor(WEEK_START, [true, true, true, true, true, true, true], (i) =>
+      i < 3 ? { nutritionLogs: [nutritionLog(localDateKey(addDays(WEEK_START, i)), 600, 40)] } : {}
+    );
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, [], { nutritionTargets: TARGETS });
+    expect(summary.nutritionHasDetailedData).toBe(true);
+    expect(summary.nutritionDetailedAdherencePct).not.toBeNull();
+    expect(summary.nutritionDetailedAdherencePct!).toBeLessThan(50);
+
+    const detected = detectBarriers({ barrierIds: ['nutrition_difficulty'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'nutrition_difficulty')!;
+    expect(found.objectiveSignal).toBe(true);
+    expect(found.evidence).toMatch(/nutrition adherence \d+% \(below 50%\)/);
+
+    const decision = buildCoachingDecision(found, summary, profile, { isRecurring: false, recurringWeeks: 0 });
+    expect(decision.recommendedAction).toBe('SIMPLIFY_NUTRITION');
+    expect(decision.proposedChanges?.budgetTier).toBe('low');
+  });
+
+  it('8. schedule conflict — missed-session evidence is unaffected by the readiness/performance refactor', () => {
+    const sim = athlete({ name: 'p11-schedule', daysAvailablePerWeek: 5 });
+    const profile = buildProfile(sim.answers);
+    const logs = weekLogsFor(WEEK_START, [true, false, false, false, false, false, false]);
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, []);
+    expect(summary.workoutsMissed).toBeGreaterThanOrEqual(2);
+
+    const detected = detectBarriers({ barrierIds: ['schedule_conflict'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+    const found = detected.find((d) => d.barrier === 'schedule_conflict')!;
+    expect(found.objectiveSignal).toBe(true);
+    expect(found.evidence).toMatch(/planned sessions missed/);
+
+    const decision = buildCoachingDecision(found, summary, profile, { isRecurring: false, recurringWeeks: 0 });
+    expect(decision.recommendedAction).toBe('REDISTRIBUTE_SESSIONS');
+  });
+
+  it('9. travel athlete — Travel-adjusted days are never counted as ordinary missed workouts (also invariant #5)', () => {
+    const sim = athlete({ name: 'p11-travel', daysAvailablePerWeek: 5 });
+    // Only 2 of 7 days completed, matching Travel Mode's reduced 2/week override for
+    // the whole week — a naive (context-unaware) reading would call this 5 missed
+    // sessions against the athlete's normal 5/week rate.
+    const logs = weekLogsFor(WEEK_START, [true, false, true, false, false, false, false]);
+    const travel = travelFor();
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, [], { travelContexts: [travel] });
+
+    expect(summary.workoutsPlanned).toBe(2); // context-adjusted down from the raw 5/week rate
+    expect(summary.workoutsCompleted).toBe(2);
+    expect(summary.workoutsMissed).toBe(0);
+
+    const detected = detectBarriers(null, summary);
+    expect(detected).toEqual([]); // no false "time"/"workout_difficulty" barrier from travel days
+  });
+
+  it('10. competition athlete — an event day is never counted as an ordinary missed workout (also invariant #6)', () => {
+    const sim = athlete({ name: 'p11-competition', daysAvailablePerWeek: 5 });
+    const event = eventFor(); // event day = WEEK_START + 3
+    // Completed 4 of the 6 non-event days; the event day itself is never logged.
+    const logs = weekLogsFor(WEEK_START, [true, true, false, false, true, true, false]);
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, [], { competitionEvents: [event] });
+
+    expect(summary.workoutsPlanned).toBe(4); // event day contributes 0 to the adjusted target
+    expect(summary.workoutsCompleted).toBe(4);
+    expect(summary.workoutsMissed).toBe(0);
+
+    const detected = detectBarriers(null, summary);
+    expect(detected).toEqual([]);
+  });
+
+  it('11. injury/substitution athlete — injury_pain always sorts first and substitution never contaminates its own exercise history (also M, N)', () => {
+    const sim = athlete({ name: 'p11-injury', daysAvailablePerWeek: 5 });
+    const profile = buildProfile(sim.answers);
+    const logs = weekLogsFor(WEEK_START, [true, false, false, true, true, false, false]);
+    const originalHistory = [perfLogSim(localDateKey(addDays(WEEK_START, -14)), { exerciseName: 'Back Squat', loadKg: 80, repsAchieved: 8 })];
+    const substituteHistory = [perfLogSim(localDateKey(WEEK_START), { exerciseName: 'Goblet Squat', loadKg: 24, repsAchieved: 10, originalExerciseName: 'Back Squat', wasModified: true })];
+    const original = buildExerciseMetrics('Back Squat', originalHistory);
+    const substitute = buildExerciseMetrics('Goblet Squat', substituteHistory);
+    expect(original.totalExposures).toBe(1);
+    expect(substitute.totalExposures).toBe(1); // independent — never merged into the original's history
+
+    const summary = computeWeekSummary(logs, [], sim.answers.daysAvailablePerWeek, [], { exercises: [original, substitute] });
+    const detected = detectBarriers(
+      { barrierIds: ['injury_pain', 'workout_difficulty'], submittedAt: localDateKey(addDays(WEEK_START, 6)) },
+      summary
+    );
+    expect(detected[0].barrier).toBe('injury_pain'); // safety sorts first regardless of severity math
+    const injuryEntry = detected.find((d) => d.barrier === 'injury_pain')!;
+    expect(injuryEntry.objectiveSignal).toBe(true);
+    expect(injuryEntry.severity).toBe('high');
+
+    const decision = buildCoachingDecision(injuryEntry, summary, profile, { isRecurring: false, recurringWeeks: 0 });
+    expect(decision.recommendedAction).toBe('PAIN_SAFE_ADJUSTMENT');
+    expect(decision.proposedChanges?.trainingAdjustment?.skipHighImpact).toBe(true);
+  });
+
+  it('12. sparse-data athlete — zero logs/readiness/exercises never fabricates a barrier or a decision', () => {
+    const sim = athlete({ name: 'p11-sparse', daysAvailablePerWeek: 4 });
+    const profile = buildProfile(sim.answers);
+    const summary = computeWeekSummary([], [], sim.answers.daysAvailablePerWeek, [], {});
+    expect(summary.hasData).toBe(false);
+    expect(summary.readinessCheckInsCount).toBe(0);
+    expect(summary.readinessAverageScore).toBeNull();
+    expect(summary.exercisesWithDataCount).toBe(0);
+    expect(summary.nutritionHasDetailedData).toBe(false);
+    expect(summary.nutritionDetailedAdherencePct).toBeNull();
+
+    const detected = detectBarriers(null, summary);
+    expect(detected).toEqual([]);
+
+    const decision = buildCoachingDecision(null, summary, profile, { isRecurring: false, recurringWeeks: 0 });
+    expect(decision.barrier).toBeNull();
+    expect(decision.confidence).toBe('low');
+    expect(decision.reason).toMatch(/not enough logged data/i);
+  });
+
+  it('13. Football athlete — the full weekly-coaching pipeline runs identically to any other sport (no sport branching)', () => {
+    const sim = athlete({ name: 'p11-football', sport: 'football', daysAvailablePerWeek: 4 });
+    const profile = buildProfile(sim.answers);
+    const currentLogs = weekLogsFor(WEEK_START, [true, false, true, false, true, true, false]);
+    const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 5 }, () => ({ sleepQuality: 3, energy: 3 })));
+    const exercises = [buildExerciseMetrics('Back Squat', [perfLogSim(localDateKey(WEEK_START), { loadKg: 70, repsAchieved: 8 })])];
+    const { summary, decision } = buildWeeklyCoachingReview(
+      currentLogs, [], sim.answers.daysAvailablePerWeek, null, profile, [], readiness, [], false,
+      { exercises, nutritionTargets: profile.nutrition }
+    );
+    expect(Number.isFinite(summary.completionPct)).toBe(true);
+    expect(['time', 'poor_sleep', 'fatigue', 'work_study', 'stress', 'motivation', 'workout_difficulty', 'injury_pain', 'lack_of_equipment', 'travel', 'nutrition_difficulty', 'budget', 'schedule_conflict', 'other']).toContain(decision.barrier ?? 'other');
+  });
+
+  it('14. Swimming athlete — the same generic pipeline, zero sport-specific behavior (no sport branching)', () => {
+    const sim = athlete({ name: 'p11-swim', sport: 'swimming', daysAvailablePerWeek: 4, trainingLocationIds: ['pool'] });
+    const profile = buildProfile(sim.answers);
+    const currentLogs = weekLogsFor(WEEK_START, [true, false, true, false, true, true, false]);
+    const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 5 }, () => ({ sleepQuality: 3, energy: 3 })));
+    const exercises = [buildExerciseMetrics('Freestyle Sprint', [perfLogSim(localDateKey(WEEK_START), { exerciseName: 'Freestyle Sprint', distanceM: 100 })])];
+    const { summary, decision } = buildWeeklyCoachingReview(
+      currentLogs, [], sim.answers.daysAvailablePerWeek, null, profile, [], readiness, [], false,
+      { exercises, nutritionTargets: profile.nutrition }
+    );
+    expect(Number.isFinite(summary.completionPct)).toBe(true);
+    expect(['time', 'poor_sleep', 'fatigue', 'work_study', 'stress', 'motivation', 'workout_difficulty', 'injury_pain', 'lack_of_equipment', 'travel', 'nutrition_difficulty', 'budget', 'schedule_conflict', 'other']).toContain(decision.barrier ?? 'other');
+  });
+
+  const BARRIER_OPTIONS_IDS: string[] = [
+    'time', 'poor_sleep', 'fatigue', 'work_study', 'stress', 'motivation', 'workout_difficulty',
+    'injury_pain', 'lack_of_equipment', 'travel', 'nutrition_difficulty', 'budget', 'schedule_conflict', 'other',
+  ];
+
+  describe('invariants (Phase 11 spec §22)', () => {
+    it('1. safety is always the highest priority: injury_pain sorts first and always drives PAIN_SAFE_ADJUSTMENT', () => {
+      const sim = athlete({ name: 'inv-safety', daysAvailablePerWeek: 5 });
+      const profile = buildProfile(sim.answers);
+      const summary = computeWeekSummary(weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]), [], 5, []);
+      const detected = detectBarriers(
+        { barrierIds: ['motivation', 'time', 'injury_pain'], submittedAt: localDateKey(addDays(WEEK_START, 6)) },
+        summary
+      );
+      expect(detected[0].barrier).toBe('injury_pain');
+      const decision = buildCoachingDecision(pickPrimaryBarrier(detected), summary, profile, { isRecurring: false, recurringWeeks: 0 });
+      expect(decision.recommendedAction).toBe('PAIN_SAFE_ADJUSTMENT');
+    });
+
+    it('2. a readiness adjustment cannot be overridden by a weaker Weekly Coaching adjustment in the precedence chain', () => {
+      const sim = athlete({ name: 'inv-precedence', daysAvailablePerWeek: 4, trainingLocationIds: ['home'], equipmentIds: [] });
+      const profile = buildProfile(sim.answers);
+      const readinessAdjustment = { volumeMultiplier: 0.5, note: 'reduced for recovery' };
+      const weeklyAdjustment = { volumeMultiplier: 0.85, note: 'reduced for difficulty' };
+      const NO_PROGRESSION: ExerciseProgressionContext = { getHistory: () => [], getReadinessStatus: () => null };
+      const resolved: ResolvedContext = { mode: 'normal', travel: null, competition: null, competitionPhase: 'none' };
+      const result = composeContextualWorkout({
+        profile,
+        progression: NO_PROGRESSION,
+        activeAdjustment: null,
+        readinessAdjustment,
+        weeklyAdjustment,
+        resolvedContext: resolved,
+        athleteConstraints: { availableEquipment: profile.answers.equipmentIds, injuryIds: profile.answers.injuryIds, sport: profile.answers.sport, athleteLevel: profile.level },
+      });
+      const expectedWorkout = applyCoachAdjustment(profile, undefined, readinessAdjustment, 1, NO_PROGRESSION);
+      expect(result.workout).toEqual(expectedWorkout);
+    });
+
+    it('3. missing readiness data can never create poor-readiness evidence', () => {
+      const summary = computeWeekSummary(weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]), [], 5, []);
+      expect(summary.readinessLowDaysCount).toBe(0);
+      expect(summary.poorSleepDaysCount).toBe(0);
+      const detected = detectBarriers({ barrierIds: ['poor_sleep', 'fatigue'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+      for (const d of detected) expect(d.objectiveSignal).toBe(false);
+    });
+
+    it('4. missing performance data can never create a performance-decline (workout_difficulty) signal', () => {
+      const summary = computeWeekSummary(weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]), [], 5, [], { exercises: [] });
+      expect(summary.exercisesWithDataCount).toBe(0);
+      expect(summary.strugglingExercisesCount).toBe(0);
+      const detected = detectBarriers({ barrierIds: ['workout_difficulty'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+      expect(detected.find((d) => d.barrier === 'workout_difficulty')!.objectiveSignal).toBe(false);
+    });
+
+    it('5/6. travel and competition context never create ordinary missed-workout evidence', () => {
+      const travelSummary = computeWeekSummary(
+        weekLogsFor(WEEK_START, [true, false, true, false, false, false, false]),
+        [], 5, [], { travelContexts: [travelFor()] }
+      );
+      expect(detectBarriers(null, travelSummary)).toEqual([]);
+
+      const competitionSummary = computeWeekSummary(
+        weekLogsFor(WEEK_START, [true, true, false, false, true, true, false]),
+        [], 5, [], { competitionEvents: [eventFor()] }
+      );
+      expect(detectBarriers(null, competitionSummary)).toEqual([]);
+    });
+
+    it('7. exercise substitutions remain fully separate — never merged, never sharing a trend', () => {
+      const originalHistory = [
+        perfLogSim(localDateKey(addDays(WEEK_START, -14)), { exerciseName: 'Back Squat', loadKg: 80, repsAchieved: 8 }),
+        perfLogSim(localDateKey(addDays(WEEK_START, -7)), { exerciseName: 'Back Squat', loadKg: 82, repsAchieved: 8 }),
+      ];
+      const substituteHistory = [perfLogSim(localDateKey(WEEK_START), { exerciseName: 'Goblet Squat', loadKg: 24, repsAchieved: 10 })];
+      const original = buildExerciseMetrics('Back Squat', originalHistory);
+      const substitute = buildExerciseMetrics('Goblet Squat', substituteHistory);
+      expect(original.totalExposures).toBe(2);
+      expect(substitute.totalExposures).toBe(1);
+      expect(original.trend.state).not.toBe('insufficient_data'); // 2 comparable points is enough
+      expect(substitute.trend.state).toBe('insufficient_data'); // only 1 point — never borrows the original's
+    });
+
+    it('8. historical logs are never mutated by computing a week summary', () => {
+      const logs = weekLogsFor(WEEK_START, [true, false, true, true, false, true, true]);
+      const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 4 }, () => ({ ...LOW_DAY })));
+      const logsCopy = JSON.parse(JSON.stringify(logs));
+      const readinessCopy = JSON.parse(JSON.stringify(readiness));
+      computeWeekSummary(logs, [], 5, readiness);
+      expect(logs).toEqual(logsCopy);
+      expect(readiness).toEqual(readinessCopy);
+    });
+
+    it('9. the same inputs always produce the same coaching decision (determinism)', () => {
+      const sim = athlete({ name: 'inv-determinism', daysAvailablePerWeek: 5 });
+      const profile = buildProfile(sim.answers);
+      const logs = weekLogsFor(WEEK_START, [true, false, true, false, true, false, true]);
+      const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 5 }, () => ({ ...LOW_DAY })));
+      const checkIn = { barrierIds: ['fatigue'] as BarrierId[], submittedAt: localDateKey(addDays(WEEK_START, 6)) };
+      const run = () => {
+        const summary = computeWeekSummary([...logs], [], 5, [...readiness]);
+        const detected = detectBarriers(checkIn, summary);
+        return buildCoachingDecision(pickPrimaryBarrier(detected), summary, profile, { isRecurring: false, recurringWeeks: 0 });
+      };
+      expect(run()).toEqual(run());
+    });
+
+    it('10/11. no sport- or exercise-name-specific branching: identical numeric histories under different sports/names classify identically', () => {
+      const footballLogs = [perfLogSim('2026-02-01', { exerciseName: 'Back Squat', loadKg: 80 }), perfLogSim('2026-02-08', { exerciseName: 'Back Squat', loadKg: 60 })];
+      const swimLogs = [perfLogSim('2026-02-01', { exerciseName: 'Freestyle Sprint', loadKg: 80 }), perfLogSim('2026-02-08', { exerciseName: 'Freestyle Sprint', loadKg: 60 })];
+      const football = buildExerciseMetrics('Back Squat', footballLogs);
+      const swim = buildExerciseMetrics('Freestyle Sprint', swimLogs);
+      expect(football.trend.state).toBe(swim.trend.state);
+      expect(football.trend.confidence).toBe(swim.trend.confidence);
+    });
+
+    it('12. no external AI: recommendation text is a fixed lookup, not generated', () => {
+      const sim = athlete({ name: 'inv-fixed-text', daysAvailablePerWeek: 5 });
+      const profile = buildProfile(sim.answers);
+      const summary = computeWeekSummary(weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]), [], 5, []);
+      const detected = detectBarriers({ barrierIds: ['poor_sleep'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, summary);
+      const decision = buildCoachingDecision(pickPrimaryBarrier(detected), summary, profile, { isRecurring: false, recurringWeeks: 0 });
+      expect(decision.reason).toBe('Recovery signals were low this week — reducing load protects consistency.');
+    });
+
+    it('13. no fabricated metrics: absent nutrition logging is null, never presented as 0% adherence', () => {
+      const summary = computeWeekSummary(weekLogsFor(WEEK_START, [true, true, true, true, true, true, true]), [], 5, [], {
+        nutritionTargets: TARGETS,
+      });
+      expect(summary.nutritionHasDetailedData).toBe(false);
+      expect(summary.nutritionDetailedAdherencePct).toBeNull();
+    });
+
+    it('14. no diagnosis: no evidence string across a full multi-barrier week ever uses a medical/psychological term', () => {
+      const logs = weekLogsFor(WEEK_START, [false, false, false, false, false, false, false]);
+      const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 6 }, () => ({ ...LOW_DAY })));
+      const exercises = [decliningExerciseMetrics('Back Squat', WEEK_START)];
+      const summary = computeWeekSummary(logs, [], 5, readiness, { exercises, nutritionTargets: TARGETS });
+      const detected = detectBarriers(
+        { barrierIds: ['poor_sleep', 'fatigue', 'stress', 'workout_difficulty', 'nutrition_difficulty', 'time'], submittedAt: localDateKey(addDays(WEEK_START, 6)) },
+        summary
+      );
+      for (const d of detected) {
+        expect(d.evidence).not.toMatch(/diagnos|disorder|depress|anxiety|caused/i);
+      }
+    });
+
+    it('15. no destructive persistence migration: a pre-Phase-11-shaped WeeklyCoachingRecord history still works with the current engine', () => {
+      const legacyHistory: WeeklyCoachingRecord[] = [
+        {
+          reviewedPlanWeek: 1,
+          appliesFromPlanWeek: 2,
+          weekStartDateKey: localDateKey(addDays(WEEK_START, -7)),
+          checkIn: { barrierIds: ['fatigue'], submittedAt: localDateKey(addDays(WEEK_START, -1)) },
+          decision: {
+            barrier: 'fatigue', severity: 'medium', evidence: 'legacy evidence', confidence: 'high',
+            recommendedAction: 'REDUCE_VOLUME_INTENSITY', affectedPlanArea: 'training',
+            proposedChanges: { trainingAdjustment: { volumeMultiplier: 0.7, note: 'reduced for recovery' }, summary: 'legacy' },
+            reason: 'legacy reason', requiresApproval: true, isRecurring: false, recurringWeeks: 0,
+          },
+          approvalStatus: 'approved',
+          decidedAt: localDateKey(addDays(WEEK_START, -1)),
+        },
+      ];
+      const sim = athlete({ name: 'inv-legacy-history', daysAvailablePerWeek: 5 });
+      const profile = buildProfile(sim.answers);
+      const logs = weekLogsFor(WEEK_START, [true, false, true, false, true, false, true]);
+      const readiness = readinessWeekFor(WEEK_START, Array.from({ length: 5 }, () => ({ ...LOW_DAY })));
+      expect(() =>
+        buildWeeklyCoachingReview(logs, [], 5, { barrierIds: ['fatigue'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, profile, legacyHistory, readiness)
+      ).not.toThrow();
+      const { decision } = buildWeeklyCoachingReview(logs, [], 5, { barrierIds: ['fatigue'], submittedAt: localDateKey(addDays(WEEK_START, 6)) }, profile, legacyHistory, readiness);
+      // The legacy (pre-Phase-11-shaped) record is still readable and still contributes
+      // to the same recurring-streak count as any current-shape record — a 2-week streak
+      // (legacy week + this week), below RECURRING_THRESHOLD_WEEKS (3), so not yet "recurring".
+      expect(decision.isRecurring).toBe(false);
+      expect(decision.recurringWeeks).toBe(2);
     });
   });
 });

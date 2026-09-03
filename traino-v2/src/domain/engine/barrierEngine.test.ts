@@ -10,10 +10,12 @@ import {
   POOR_SLEEP_DAYS_THRESHOLD,
   READINESS_IMPROVEMENT_THRESHOLD,
   RECURRING_THRESHOLD_WEEKS,
+  STRUGGLING_EXERCISES_THRESHOLD,
 } from './barrierEngine';
 import type { DayLog } from '../state/LogContext';
 import type { WeeklyCheckIn, WeeklyCoachingRecord } from '../coaching/types';
 import type { DailyReadinessRecord, DailyReadinessInputs } from '../readiness/types';
+import type { ExercisePerformanceMetrics } from '../performance/types';
 import { computeReadiness } from './readinessEngine';
 
 function log(date: string, overrides: Partial<DayLog> = {}): DayLog {
@@ -70,7 +72,7 @@ describe('computeWeekSummary', () => {
   it('never produces NaN when plannedPerWeek is 0', () => {
     const summary = computeWeekSummary([log('2026-01-01', { workoutCompleted: true })], [], 0);
     expect(Number.isNaN(summary.completionPct)).toBe(false);
-    expect(Number.isNaN(summary.recoveryScore)).toBe(false);
+    expect(Number.isNaN(summary.strugglingExercisesCount)).toBe(false);
   });
 });
 
@@ -129,13 +131,26 @@ describe('detectBarriers', () => {
     expect(pickPrimaryBarrier(detected)?.barrier).toBe('injury_pain');
   });
 
-  it('fatigue/poor_sleep are corroborated only when both recovery is low and workouts were missed (E)', () => {
+  it('A (Phase 11): a completion-derived proxy no longer drives fatigue/poor_sleep — missed workouts alone, with zero real readiness check-ins, do NOT corroborate fatigue', () => {
     const missedLogs = [log('2026-01-01'), log('2026-01-02'), log('2026-01-03')];
-    const summary = computeWeekSummary(missedLogs, [], 5);
+    const summary = computeWeekSummary(missedLogs, [], 5); // no readiness records passed
     const detected = detectBarriers(checkIn(['fatigue']), summary);
     expect(detected[0].barrier).toBe('fatigue');
-    // recoveryScore for an all-missed week is low by construction of computeRecoveryScore
+    // Missing readiness data must never be treated as evidence of poor readiness
+    // (spec §13/§22 invariant #3) — before Phase 11 this used to read as "true" via
+    // a completion-ratio proxy (computeRecoveryScore) that never measured readiness.
+    expect(detected[0].objectiveSignal).toBe(false);
+  });
+
+  it('B (Phase 11): real low readiness (not a completion proxy) drives fatigue/poor_sleep corroboration', () => {
+    const missedLogs = [log('2026-01-01'), log('2026-01-02'), log('2026-01-03')];
+    const lowReadinessWeek = Array.from({ length: LOW_READINESS_DAYS_THRESHOLD }, (_, i) =>
+      readinessRecord(`2026-01-0${i + 1}`, { energy: 1, sleepQuality: 2, stress: 4, soreness: 4 })
+    );
+    const summary = computeWeekSummary(missedLogs, [], 5, lowReadinessWeek);
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
     expect(detected[0].objectiveSignal).toBe(true);
+    expect(detected[0].evidence).toMatch(/low readiness/);
   });
 
   it('supports multiple simultaneous barrier selections', () => {
@@ -350,5 +365,232 @@ describe('describeReadinessTrend — non-causal reporting', () => {
 
   it('READINESS_IMPROVEMENT_THRESHOLD is a positive score-point delta', () => {
     expect(READINESS_IMPROVEMENT_THRESHOLD).toBeGreaterThan(0);
+  });
+});
+
+/** PHASE 11 test matrix (spec §20): C-S (domain-level; U/V Football/Swimming and the
+ * multi-week travel/competition scenarios K/L live in simulation.test.ts alongside
+ * the 15 invariants, spec §21/§22). */
+
+function exerciseMetrics(overrides: Partial<ExercisePerformanceMetrics> = {}): ExercisePerformanceMetrics {
+  return {
+    exerciseName: 'Back Squat',
+    model: 'load',
+    totalExposures: 4,
+    successfulExposures: 4,
+    failedOrPartialExposures: 0,
+    contextualExposureCount: 0,
+    previous: { date: '2026-01-01', value: 65, label: '65kg' },
+    current: { date: '2026-01-08', value: 60, label: '60kg' },
+    best: { date: '2026-01-01', value: 65, label: '65kg' },
+    trend: { state: 'insufficient_data', confidence: 'insufficient', sampleSize: 0 },
+    personalRecords: [],
+    latestProgressionDecision: null,
+    ...overrides,
+  };
+}
+
+const workoutsLogs7 = (completed: number) =>
+  Array.from({ length: 7 }, (_, i) => log(`2026-02-0${i + 1}`, { workoutCompleted: i < completed }));
+
+describe('Phase 11 — C: real performance drives workout_difficulty evidence', () => {
+  it('a real declining comparable exercise trend corroborates workout_difficulty even with full completion', () => {
+    const summary = computeWeekSummary(workoutsLogs7(7), [], 7, [], {
+      exercises: [exerciseMetrics({ trend: { state: 'declining', confidence: 'sufficient', sampleSize: 4 } })],
+    });
+    const detected = detectBarriers(checkIn(['workout_difficulty']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+    expect(detected[0].evidence).toMatch(/declining trend/);
+  });
+
+  it('a stable/improving exercise trend does NOT corroborate workout_difficulty on a fully-completed week', () => {
+    const summary = computeWeekSummary(workoutsLogs7(7), [], 7, [], {
+      exercises: [exerciseMetrics({ trend: { state: 'improving', confidence: 'sufficient', sampleSize: 4 } })],
+    });
+    const detected = detectBarriers(checkIn(['workout_difficulty']), summary);
+    expect(detected[0].objectiveSignal).toBe(false);
+  });
+
+  it('STRUGGLING_EXERCISES_THRESHOLD is a positive integer', () => {
+    expect(STRUGGLING_EXERCISES_THRESHOLD).toBeGreaterThan(0);
+  });
+});
+
+describe('Phase 11 — D: sparse readiness data never fabricates evidence', () => {
+  it('0 readiness records -> insufficient data, no barrier corroboration from readiness', () => {
+    const summary = computeWeekSummary(workoutsLogs7(2), [], 7, []);
+    expect(summary.readinessCheckInsCount).toBe(0);
+    expect(summary.readinessAverageScore).toBeNull();
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(false);
+  });
+
+  it('1 readiness record is honestly limited, never treated as a full week of low readiness', () => {
+    const summary = computeWeekSummary(workoutsLogs7(2), [], 7, [readinessRecord('2026-02-01', { energy: 1, sleepQuality: 1 })]);
+    expect(summary.readinessCheckInsCount).toBe(1);
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(false); // below LOW_READINESS_DAYS_THRESHOLD
+  });
+
+  it('2 readiness records still below LOW_READINESS_DAYS_THRESHOLD (3) -> no corroboration', () => {
+    const week = [
+      readinessRecord('2026-02-01', { energy: 1, sleepQuality: 1 }),
+      readinessRecord('2026-02-02', { energy: 1, sleepQuality: 1 }),
+    ];
+    const summary = computeWeekSummary(workoutsLogs7(2), [], 7, week);
+    expect(summary.readinessCheckInsCount).toBe(2);
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(false);
+  });
+
+  it('3+ readiness records at/above the threshold DO corroborate', () => {
+    const week = Array.from({ length: 3 }, (_, i) => readinessRecord(`2026-02-0${i + 1}`, { energy: 1, sleepQuality: 1 }));
+    const summary = computeWeekSummary(workoutsLogs7(2), [], 7, week);
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+  });
+});
+
+describe('Phase 11 — E: sparse performance data never fabricates workout_difficulty evidence', () => {
+  it('zero logged exercises -> honest insufficient data, missed sessions remain the only (weaker) fallback signal', () => {
+    const summary = computeWeekSummary(workoutsLogs7(7), [], 7, [], { exercises: [] });
+    expect(summary.exercisesWithDataCount).toBe(0);
+    const detected = detectBarriers(checkIn(['workout_difficulty']), summary);
+    expect(detected[0].objectiveSignal).toBe(false); // full completion + zero exercise evidence
+  });
+});
+
+describe('Phase 11 — F/G/H/I: co-occurrence, never causation', () => {
+  it('F: low readiness + low completion overlapping on the same days is reported as co-occurrence', () => {
+    const logs = [
+      log('2026-02-01', { workoutCompleted: false }),
+      log('2026-02-02', { workoutCompleted: false }),
+      log('2026-02-03', { workoutCompleted: true }),
+    ];
+    const readiness = [readinessRecord('2026-02-01', { energy: 1 }), readinessRecord('2026-02-02', { energy: 1 })];
+    const summary = computeWeekSummary(logs, [], 7, readiness);
+    expect(summary.readinessLowAndMissedWorkoutOverlapDays).toBeGreaterThanOrEqual(1);
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].evidence).not.toMatch(/caused/i);
+  });
+
+  it('G: good readiness + low completion does NOT corroborate fatigue/stress from readiness', () => {
+    const logs = workoutsLogs7(1);
+    const goodReadiness = Array.from({ length: 5 }, (_, i) => readinessRecord(`2026-02-0${i + 1}`, { energy: 5, sleepQuality: 5, stress: 1, soreness: 1 }));
+    const summary = computeWeekSummary(logs, [], 7, goodReadiness);
+    const detected = detectBarriers(checkIn(['fatigue']), summary);
+    expect(detected[0].objectiveSignal).toBe(false);
+  });
+
+  it('H: poor sleep + otherwise normal completion still corroborates poor_sleep from real sleep data alone', () => {
+    const logs = workoutsLogs7(6);
+    const poorSleep = Array.from({ length: POOR_SLEEP_DAYS_THRESHOLD }, (_, i) =>
+      readinessRecord(`2026-02-0${i + 1}`, { sleepQuality: 1, sleepDurationBucket: 1, energy: 4, stress: 2, soreness: 2 })
+    );
+    const summary = computeWeekSummary(logs, [], 7, poorSleep);
+    const detected = detectBarriers(checkIn(['poor_sleep']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+    expect(detected[0].evidence).toMatch(/poor\/short sleep/);
+  });
+
+  it('I: stress + low completion corroborates via real low-readiness days, phrased non-causally', () => {
+    const logs = workoutsLogs7(2);
+    const stressWeek = Array.from({ length: LOW_READINESS_DAYS_THRESHOLD }, (_, i) =>
+      readinessRecord(`2026-02-0${i + 1}`, { stress: 5, energy: 2, soreness: 3 })
+    );
+    const summary = computeWeekSummary(logs, [], 7, stressWeek);
+    const detected = detectBarriers(checkIn(['stress']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+    expect(detected[0].evidence).not.toMatch(/caused/i);
+  });
+});
+
+describe('Phase 11 — J: repeated difficult workouts', () => {
+  it('multiple exercises with a real declining trend strengthen (never single-set-triggered) workout_difficulty evidence', () => {
+    const summary = computeWeekSummary(workoutsLogs7(7), [], 7, [], {
+      exercises: [
+        exerciseMetrics({ exerciseName: 'Back Squat', trend: { state: 'declining', confidence: 'sufficient', sampleSize: 4 } }),
+        exerciseMetrics({ exerciseName: 'Bench Press', trend: { state: 'declining', confidence: 'sufficient', sampleSize: 4 } }),
+        exerciseMetrics({ exerciseName: 'Deadlift', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 4 } }),
+      ],
+    });
+    const detected = detectBarriers(checkIn(['workout_difficulty']), summary);
+    expect(summary.strugglingExercisesCount).toBe(2);
+    expect(detected[0].evidence).toContain('2 of 3');
+  });
+});
+
+describe('Phase 11 — M: exercise substitution never contaminates barrier evidence', () => {
+  it('an original exercise and its substitute contribute two independent metrics objects, never merged', () => {
+    const original = exerciseMetrics({ exerciseName: 'Barbell Squat', trend: { state: 'declining', confidence: 'sufficient', sampleSize: 3 } });
+    const substitute = exerciseMetrics({ exerciseName: 'Goblet Squat', trend: { state: 'improving', confidence: 'sufficient', sampleSize: 3 } });
+    const summary = computeWeekSummary(workoutsLogs7(7), [], 7, [], { exercises: [original, substitute] });
+    // Both are counted independently — the substitute's strong performance never
+    // cancels out the original's real struggle evidence.
+    expect(summary.strugglingExercisesCount).toBe(1);
+    expect(summary.exercisesWithDataCount).toBe(2);
+  });
+});
+
+describe('Phase 11 — N: injury/pain is never overridden by performance/readiness evidence', () => {
+  it('injury_pain stays objectiveSignal true and highest severity regardless of otherwise-clean performance/readiness data', () => {
+    const goodReadiness = Array.from({ length: 5 }, (_, i) => readinessRecord(`2026-02-0${i + 1}`, { energy: 5, sleepQuality: 5, stress: 1 }));
+    const summary = computeWeekSummary(workoutsLogs7(7), [], 7, goodReadiness, {
+      exercises: [exerciseMetrics({ trend: { state: 'improving', confidence: 'sufficient', sampleSize: 4 } })],
+    });
+    const detected = detectBarriers(checkIn(['workout_difficulty', 'injury_pain']), summary);
+    expect(pickPrimaryBarrier(detected)?.barrier).toBe('injury_pain');
+    expect(detected.find((d) => d.barrier === 'injury_pain')?.objectiveSignal).toBe(true);
+  });
+});
+
+describe('Phase 11 — O: nutrition_difficulty prefers detailed adherence, honestly distinguishes incomplete logging', () => {
+  it('detailed adherence below threshold is real low-adherence evidence, not "incomplete logging"', () => {
+    const logs = [
+      log('2026-02-01', {
+        nutritionLogs: [
+          { date: '2026-02-01', slotId: 'breakfast', foodId: 'oats', quantity: 1, calories: 300, proteinG: 15, carbsG: 40, fatG: 8, wasModified: false, submittedAt: '2026-02-01T08:00:00.000Z' },
+        ],
+      }),
+      log('2026-02-02', {
+        nutritionLogs: [
+          { date: '2026-02-02', slotId: 'breakfast', foodId: 'oats', quantity: 1, calories: 300, proteinG: 15, carbsG: 40, fatG: 8, wasModified: false, submittedAt: '2026-02-02T08:00:00.000Z' },
+        ],
+      }),
+    ];
+    const summary = computeWeekSummary(logs, [], 7, [], { nutritionTargets: { calories: 2500, proteinG: 160 } });
+    expect(summary.nutritionHasDetailedData).toBe(true);
+    expect(summary.nutritionDetailedAdherencePct).not.toBeNull();
+    const detected = detectBarriers(checkIn(['nutrition_difficulty']), summary);
+    expect(detected[0].evidence).toMatch(/nutrition adherence \d+% \(below/);
+  });
+
+  it('P: incomplete logging (no detailed data) is reported as incomplete logging, never as 0% adherence', () => {
+    const logs = [log('2026-02-01'), log('2026-02-02')];
+    const summary = computeWeekSummary(logs, [], 7, [], { nutritionTargets: { calories: 2500, proteinG: 160 } });
+    expect(summary.nutritionHasDetailedData).toBe(false);
+    const detected = detectBarriers(checkIn(['budget']), summary);
+    expect(detected[0].evidence).toMatch(/incomplete meal logging/);
+  });
+});
+
+describe('Phase 11 — Q: schedule_conflict evidence is unaffected by the refactor (still completion-based)', () => {
+  it('a one-off low-completion week corroborates schedule_conflict', () => {
+    const summary = computeWeekSummary(workoutsLogs7(1), [], 5);
+    const detected = detectBarriers(checkIn(['schedule_conflict']), summary);
+    expect(detected[0].objectiveSignal).toBe(true);
+  });
+});
+
+describe('Phase 11 — S: determinism', () => {
+  it('same inputs always produce the same WeekSummary and the same detected barriers', () => {
+    const logs = workoutsLogs7(3);
+    const readiness = [readinessRecord('2026-02-01', { energy: 1, sleepQuality: 1 })];
+    const exercises = [exerciseMetrics({ trend: { state: 'declining', confidence: 'sufficient', sampleSize: 4 } })];
+    const context = { exercises, nutritionTargets: { calories: 2500, proteinG: 160 } };
+    const a = computeWeekSummary(logs, [], 7, readiness, context);
+    const b = computeWeekSummary([...logs], [], 7, [...readiness], { ...context, exercises: [...exercises] });
+    expect(a).toEqual(b);
+    expect(detectBarriers(checkIn(['workout_difficulty']), a)).toEqual(detectBarriers(checkIn(['workout_difficulty']), b));
   });
 });

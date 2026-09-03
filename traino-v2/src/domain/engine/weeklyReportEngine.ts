@@ -6,7 +6,9 @@ export interface WeekLog {
   workoutsCompleted: number;
   workoutsPlanned: number;
   nutritionAdherencePct: number;
-  recoveryAveragePct: number;
+  /** null when there's no real Daily Readiness check-in this week to average — the
+   * copy honestly says "No data" rather than showing a fabricated percentage (Phase 11). */
+  recoveryAveragePct: number | null;
   weightDeltaKg: number;
   weakestArea: ReportArea;
   strongestArea: ReportArea;
@@ -19,7 +21,8 @@ const RECOVERY_LABEL_THRESHOLDS: [number, string][] = [
   [0, 'Needs attention'],
 ];
 
-function labelForRecovery(pct: number): string {
+function labelForRecovery(pct: number | null): string {
+  if (pct === null) return 'No data';
   return RECOVERY_LABEL_THRESHOLDS.find(([min]) => pct >= min)?.[1] ?? 'Fair';
 }
 

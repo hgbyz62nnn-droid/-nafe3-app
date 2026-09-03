@@ -89,7 +89,14 @@ export interface WeeklyCoachingRecord {
 }
 
 /** Real, honestly-empty-when-absent weekly data — never fabricated. `hasData` is false
- * only when nothing at all was logged for the week (no workouts, no meals, no weight). */
+ * only when nothing at all was logged for the week (no workouts, no meals, no weight).
+ *
+ * Phase 11 note: the old `recoveryScore` field (a completion-ratio-derived proxy for
+ * recovery, see `progressEngine.computeRecoveryScore` — now deprecated) has been
+ * REMOVED. Real readiness is `readinessAverageScore` below, sourced from actual
+ * `DailyReadinessRecord` check-ins via `performance/readinessTrend.ts`'s
+ * `buildReadinessTrend` (the same function Progress/AI Coach read from) — never
+ * defaulted when absent (missing readiness ≠ poor readiness). */
 export interface WeekSummary {
   hasData: boolean;
   workoutsPlanned: number;
@@ -97,7 +104,15 @@ export interface WeekSummary {
   workoutsMissed: number;
   completionPct: number;
   nutritionAdherencePct: number;
-  recoveryScore: number;
+  /** True when enough detailed food logging exists this week to trust
+   * `nutritionDetailedAdherencePct` — see `performance/nutritionProgress.ts`.
+   * Incomplete logging is never presented as low adherence. */
+  nutritionHasDetailedData: boolean;
+  /** Detailed calorie-based adherence (spec §5's "actual nutrition adherence"),
+   * null when `nutritionHasDetailedData` is false — a more precise signal than
+   * `nutritionAdherencePct` (meal-slot completion) when available, preferred by
+   * barrier evidence but never fabricated from missing logs. */
+  nutritionDetailedAdherencePct: number | null;
   weightDeltaKg: number;
   hasWeightData: boolean;
   /** How many Daily Check-ins were submitted this week (0-7). */
@@ -113,4 +128,19 @@ export interface WeekSummary {
    * on the same day — the actual data `evidenceFor` uses to surface poor sleep as
    * supporting evidence for a fatigue/poor_sleep barrier, never as its cause. */
   readinessLowAndPoorSleepOverlapDays: number;
+  /** Days this week where a low readiness status and a missed (not completed)
+   * planned workout occurred on the SAME day — a co-occurrence signal only
+   * (spec §6/§3): "low readiness and lower training completion overlapped",
+   * never presented as "low readiness caused the missed workout". */
+  readinessLowAndMissedWorkoutOverlapDays: number;
+  /** How many distinct exercises logged this week show real, multi-exposure
+   * struggle evidence (a declining comparable trend — see
+   * `performance/exerciseMetrics.ts`'s `ExercisePerformanceMetrics.trend`),
+   * the real replacement for `workout_difficulty`'s old missed-session-only
+   * evidence. 0 when no exercise history is available — never fabricated. */
+  strugglingExercisesCount: number;
+  /** How many distinct exercises this week have ANY logged history at all —
+   * the honest denominator for `strugglingExercisesCount` (0 exercises logged
+   * is "insufficient data", not "no difficulty"). */
+  exercisesWithDataCount: number;
 }

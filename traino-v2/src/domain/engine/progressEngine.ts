@@ -97,6 +97,16 @@ export interface PerformanceStatResult {
   hasData: boolean;
 }
 
+/**
+ * Category-level session-COUNT-per-week ("how many speed/strength/stamina
+ * sessions did you do"), not a measure of exercise performance itself despite
+ * the "Performance" label on the cards that render this. Real per-exercise
+ * performance (load/reps/distance/duration trends) lives in
+ * `performance/exerciseMetrics.ts`. This stays as a legitimate, still-real
+ * training-frequency-by-category display metric for Progress/Weekly Report's
+ * category chart and headline copy — it was never used by Weekly Coaching /
+ * Barrier Detection and still isn't; do not wire it into coaching decisions.
+ */
 export function computePerformanceStats(recentLogs: DayLog[]): Record<PerformanceCategory, PerformanceStatResult> {
   const completedByCategory: Record<PerformanceCategory, DayLog[]> = { speed: [], strength: [], stamina: [] };
   for (const day of recentLogs) {
@@ -172,8 +182,17 @@ export function computeWeekOverWeekWeightDelta(
   return { deltaKg, hasData: true };
 }
 
-/** Simple deterministic recovery proxy from workout consistency — there's
- * no sleep/HR data source yet, so this stands in until one exists. */
+/**
+ * @deprecated Phase 11 ("Coaching Intelligence Cleanup"): this was a stand-in
+ * recovery PROXY derived purely from workout-completion ratio, written before the
+ * Daily Readiness System existed. It never actually measured recovery/readiness —
+ * "on-plan completion" and "recovered" are different things. Real readiness now
+ * exists (`domain/readiness/` + `performance/readinessTrend.ts`'s `buildReadinessTrend`,
+ * sourced from actual `DailyReadinessRecord` check-ins) and Weekly Coaching / Barrier
+ * Detection no longer call this function. Kept only as a standalone, still-correct
+ * utility in case a caller genuinely needs a completion-based proxy again — do NOT
+ * wire this into any new coaching/readiness logic; use `buildReadinessTrend` instead.
+ */
 export function computeRecoveryScore(recentLogs: DayLog[], plannedDaysPerWeek: number): number {
   if (recentLogs.length === 0 || plannedDaysPerWeek === 0) return 70;
   const completed = recentLogs.filter((d) => d.workoutCompleted).length;

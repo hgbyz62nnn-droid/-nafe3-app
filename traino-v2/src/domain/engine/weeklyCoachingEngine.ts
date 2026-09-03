@@ -2,7 +2,7 @@ import type { UserProfile } from './types';
 import type { DayLog } from '../state/LogContext';
 import type { DailyReadinessRecord } from '../readiness/types';
 import type { CoachingDecision, WeekSummary, WeeklyCheckIn, WeeklyCoachingRecord } from '../coaching/types';
-import { computeWeekSummary, describeReadinessTrend, detectBarriers, detectRecurringPattern, pickPrimaryBarrier } from './barrierEngine';
+import { computeWeekSummary, describeReadinessTrend, detectBarriers, detectRecurringPattern, pickPrimaryBarrier, type WeekSummaryContext } from './barrierEngine';
 import { buildCoachingDecision } from './coachingRulesEngine';
 
 /**
@@ -34,10 +34,11 @@ export function buildWeeklyCoachingReview(
   history: WeeklyCoachingRecord[],
   currentWeekReadiness: DailyReadinessRecord[] = [],
   priorWeekReadiness: DailyReadinessRecord[] = [],
-  reducedLoadAppliedThisWeek = false
+  reducedLoadAppliedThisWeek = false,
+  context: WeekSummaryContext = {}
 ): WeeklyCoachingReview {
-  const summary = computeWeekSummary(currentWeekLogs, priorWeekLogs, plannedPerWeek, currentWeekReadiness);
-  const priorSummary = computeWeekSummary(priorWeekLogs, [], plannedPerWeek, priorWeekReadiness);
+  const summary = computeWeekSummary(currentWeekLogs, priorWeekLogs, plannedPerWeek, currentWeekReadiness, context);
+  const priorSummary = computeWeekSummary(priorWeekLogs, [], plannedPerWeek, priorWeekReadiness, context);
   const detected = detectBarriers(checkIn, summary);
   const primary = pickPrimaryBarrier(detected);
   const recurring = detectRecurringPattern(history, primary?.barrier ?? null);

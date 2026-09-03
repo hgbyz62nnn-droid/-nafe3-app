@@ -12,12 +12,8 @@ import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { composeContextualWorkout } from '../domain/context/composeContextualWorkout';
 import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
-import {
-  computePerformanceStats,
-  computeWorkoutCompletion,
-  computeNutritionAdherence,
-  computeRecoveryScore,
-} from '../domain/engine/progressEngine';
+import { computePerformanceStats, computeWorkoutCompletion, computeNutritionAdherence } from '../domain/engine/progressEngine';
+import { buildReadinessTrend } from '../domain/performance/readinessTrend';
 import { barrierDisplayName } from '../domain/coaching/barriers';
 import { READINESS_STATUS_COLOR, READINESS_STATUS_LABEL } from '../domain/readiness/scales';
 import { SPORTS } from '../domain/sports/sports';
@@ -73,7 +69,7 @@ export default function Home() {
   const { profile, planStartDate } = useProfile();
   const { getRecentLogs, getLogsSince } = useLogs();
   const { getRecord, getApprovedAdjustmentForWeek } = useWeeklyCoaching();
-  const { getTodayRecord } = useDailyReadiness();
+  const { getTodayRecord, getRecordsInRange } = useDailyReadiness();
   const { getResolvedContext } = useTrainingContext();
   const { today } = useLogs();
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
@@ -112,7 +108,11 @@ export default function Home() {
   const consistencyPct = Math.round((workoutsCompleted / workoutsPlanned) * 100);
   const coachingRecord = getRecord(currentPlanWeek);
   const nutritionPct = computeNutritionAdherence(last7);
-  const recoveryPct = computeRecoveryScore(last7, profile.answers.daysAvailablePerWeek);
+  // Real average readiness this week (Phase 11) — never a completion-derived proxy.
+  // null when there's no real Daily Readiness check-in yet; the "Recovery" tile
+  // shows an honest "—" rather than a fabricated percentage.
+  const weekReadinessRecords = last7.length > 0 ? getRecordsInRange(last7[0].date, last7[last7.length - 1].date) : [];
+  const recoveryPct = buildReadinessTrend(weekReadinessRecords).averageScore;
 
   const perfStats = computePerformanceStats(last7);
   const leadCategory = (['strength', 'speed', 'stamina'] as const).reduce((best, cat) =>
@@ -303,9 +303,9 @@ export default function Home() {
           </div>
         </StatTile>
         <StatTile label="Recovery">
-          <p className="text-white text-[20px] font-extrabold leading-none mb-1">{recoveryPct}%</p>
+          <p className="text-white text-[20px] font-extrabold leading-none mb-1">{recoveryPct !== null ? `${recoveryPct}%` : '—'}</p>
           <div className="relative w-[38px] h-[38px]">
-            <ProgressRing percent={recoveryPct} color="#4A9EFF" />
+            <ProgressRing percent={recoveryPct ?? 0} color="#4A9EFF" />
             <Icon name="heart" size={13} className="text-info absolute inset-0 m-auto" />
           </div>
         </StatTile>

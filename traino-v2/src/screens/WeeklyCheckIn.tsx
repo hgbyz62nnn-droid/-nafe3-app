@@ -11,13 +11,13 @@ import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { buildWeeklyCoachingReview } from '../domain/engine/weeklyCoachingEngine';
-import { computeContextAdjustedPlannedSessions } from '../domain/context/weeklyCoachingIntegration';
+import { buildExerciseMetrics } from '../domain/performance/exerciseMetrics';
 import { addDays, localDateKey } from '../domain/engine/dateUtils';
 
 export default function WeeklyCheckIn() {
   const navigate = useNavigate();
   const { profile, planStartDate } = useProfile();
-  const { getRecentLogs, getLogsSince } = useLogs();
+  const { getRecentLogs, getLogsSince, getAllLoggedExerciseNames, getExerciseHistory } = useLogs();
   const { getHistoryBefore, getApprovedAdjustmentForWeek, saveReview } = useWeeklyCoaching();
   const { getRecordsInRange } = useDailyReadiness();
   const { travelContexts, competitionEvents } = useTrainingContext();
@@ -52,27 +52,27 @@ export default function WeeklyCheckIn() {
     const reducedLoadAppliedThisWeek =
       (getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment?.volumeMultiplier ?? 1) < 1;
 
-    // Travel/Competition-adjusted days never look like normal missed workouts
-    // (spec §21) — the planned-session count for this week reflects whatever
-    // context was actually active on each of its days, not the athlete's full
-    // normal cadence.
-    const contextAdjustedPlanned = computeContextAdjustedPlannedSessions(
-      profile.answers.daysAvailablePerWeek,
-      currentWeekLogs.map((d) => d.date),
-      travelContexts,
-      competitionEvents
-    );
+    // Real per-exercise performance evidence for workout_difficulty barrier
+    // detection (Phase 11 §7) — the same Phase 10 function Progress/AI Coach
+    // build metrics with, never a re-derived difficulty heuristic.
+    const weekExercises = getAllLoggedExerciseNames().map((name) => buildExerciseMetrics(name, getExerciseHistory(name)));
 
+    // Travel/Competition-adjusted days never look like normal missed workouts
+    // (spec §21) — `computeWeekSummary` context-adjusts the planned-session
+    // count internally from the raw weekly cadence + these context arrays,
+    // so it's never pre-adjusted (double-adjustment risk) or independently
+    // recomputed away from what Weekly Coaching actually reviewed.
     const { decision, readinessNote } = buildWeeklyCoachingReview(
       currentWeekLogs,
       priorWeekLogs,
-      contextAdjustedPlanned,
+      profile.answers.daysAvailablePerWeek,
       checkIn,
       profile,
       history,
       currentWeekReadiness,
       priorWeekReadiness,
-      reducedLoadAppliedThisWeek
+      reducedLoadAppliedThisWeek,
+      { travelContexts, competitionEvents, exercises: weekExercises, nutritionTargets: profile.nutrition }
     );
     saveReview(currentPlanWeek, localDateKey(new Date()), checkIn, decision, readinessNote);
     navigate('/weekly-report');
