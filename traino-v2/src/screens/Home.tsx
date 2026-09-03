@@ -8,7 +8,9 @@ import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
-import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
+import { useTrainingContext } from '../domain/state/TrainingContextStore';
+import { composeContextualWorkout } from '../domain/context/composeContextualWorkout';
+import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import {
   computePerformanceStats,
@@ -72,6 +74,8 @@ export default function Home() {
   const { getRecentLogs, getLogsSince } = useLogs();
   const { getRecord, getApprovedAdjustmentForWeek } = useWeeklyCoaching();
   const { getTodayRecord } = useDailyReadiness();
+  const { getResolvedContext } = useTrainingContext();
+  const { today } = useLogs();
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
   const { progressionWeek, currentPlanWeek } = computeProgressionInfo(
     planStartDate,
@@ -83,10 +87,23 @@ export default function Home() {
     ? (readinessRecord.recommendation.trainingAdjustment ?? null)
     : null;
   const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
-  const effectiveAdjustment = readinessAdjustment ?? weeklyAdjustment;
-  const workout = effectiveAdjustment
-    ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek)
-    : generateTodayWorkout(profile, undefined, progressionWeek);
+  const resolvedContext = getResolvedContext(today);
+  const athleteConstraints: AthleteConstraints = {
+    availableEquipment: profile.answers.equipmentIds,
+    injuryIds: profile.answers.injuryIds,
+    sport: profile.answers.sport,
+    athleteLevel: profile.level,
+  };
+  const { skipNormalSession, contextMessage, workout: composedWorkout } = composeContextualWorkout({
+    profile,
+    weekNumber: progressionWeek,
+    activeAdjustment: null,
+    readinessAdjustment,
+    weeklyAdjustment,
+    resolvedContext,
+    athleteConstraints,
+  });
+  const workout = composedWorkout;
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
 
   const last7 = getRecentLogs(7);
@@ -122,6 +139,19 @@ export default function Home() {
           </span>
         </button>
       </div>
+
+      {(resolvedContext.mode === 'travel' || contextMessage) && (
+        <Link
+          to="/travel-competition"
+          className="mx-5 mt-4 flex items-center gap-2.5 bg-card border border-border-soft rounded-card-sm px-3.5 py-2.5"
+        >
+          <Icon name={resolvedContext.mode === 'competition' ? 'calendar' : 'suitcase'} size={15} className="text-red shrink-0" />
+          <p className="flex-1 text-text-secondary text-[12px] font-semibold">
+            {contextMessage ?? 'Travel Mode active'}
+          </p>
+          <Icon name="chevronRight" size={14} className="text-text-muted shrink-0" />
+        </Link>
+      )}
 
       <div className="px-5 mt-5">
         <p className="text-text-secondary text-[11px] font-bold tracking-wider uppercase mb-2">
@@ -164,7 +194,9 @@ export default function Home() {
                 {sportName} Performance
               </p>
               <p className="text-white text-[26px] font-extrabold leading-[1.15] mt-1">
-                {workout.name.includes(' + ') ? (
+                {skipNormalSession || !workout ? (
+                  'Competition Day'
+                ) : workout.name.includes(' + ') ? (
                   <>
                     {workout.name.split(' + ')[0]} +<br />
                     {workout.name.split(' + ').slice(1).join(' + ')}
@@ -173,17 +205,19 @@ export default function Home() {
                   workout.name
                 )}
               </p>
-              <div className="flex items-center gap-3 mt-3 text-white text-[13px] font-medium">
-                <span className="flex items-center gap-1.5">
-                  <Icon name="clock" size={15} />
-                  {workout.durationMin} min
-                </span>
-                <span className="text-border">|</span>
-                <span className="flex items-center gap-1.5">
-                  <Icon name="target" size={15} />
-                  {workout.intensity}
-                </span>
-              </div>
+              {workout && !skipNormalSession && (
+                <div className="flex items-center gap-3 mt-3 text-white text-[13px] font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="clock" size={15} />
+                    {workout.durationMin} min
+                  </span>
+                  <span className="text-border">|</span>
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="target" size={15} />
+                    {workout.intensity}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

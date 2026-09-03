@@ -163,7 +163,14 @@ export type AiCoachIntent =
   | 'what_are_my_calories'
   | 'why_these_foods'
   | 'replace_food'
-  | 'how_is_my_nutrition_this_week';
+  | 'how_is_my_nutrition_this_week'
+  | 'im_traveling'
+  | 'how_train_while_traveling'
+  | 'whats_changed_traveling'
+  | 'i_have_competition'
+  | 'why_workout_adjusted_for_context'
+  | 'after_competition'
+  | 'when_normal_plan_returns';
 
 export interface AiCoachAdjustment {
   /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */

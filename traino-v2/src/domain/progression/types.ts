@@ -94,6 +94,19 @@ export interface ExercisePerformanceLog {
    * (equipment/location/injury/AI-Coach adjustment) — evidence is still recorded under
    * the substitute's own name, this flag is for display/audit only. */
   wasModified: boolean;
+  /** Set only when this session was logged under an active Travel/Competition
+   * context (spec §19/§20) — undefined means a normal-context log, the same
+   * "absent means nothing unusual, never a fabricated default" contract every
+   * other optional log field in this app already follows. Progression evidence
+   * (see TodaysWorkout.tsx's `progressionContext.getHistory`) excludes any log
+   * with this set, so a context-adjusted exposure can never read back as
+   * evidence the normal exercise should progress or regress. */
+  contextMode?: 'travel' | 'competition';
+  /** The plan's originally-scheduled exercise name, set only when different from
+   * `exerciseName` (i.e. a substitution occurred) — spec §19's "original exercise
+   * vs actual exercise". `wasModified` already flags THAT a substitution
+   * happened; this carries what it was substituted FROM. */
+  originalExerciseName?: string;
   submittedAt: string; // ISO timestamp
 }
 

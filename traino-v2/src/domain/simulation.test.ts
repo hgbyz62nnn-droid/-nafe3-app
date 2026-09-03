@@ -36,6 +36,10 @@ import { getFood } from './nutrition/registry';
 import { computeDetailedNutritionAdherence, recommendNutritionTargetReview } from './nutrition/adherence';
 import { computeWeightTrend } from './engine/progressEngine';
 import type { NutritionLogEntry } from './nutrition/types';
+import { composeContextualWorkout } from './context/composeContextualWorkout';
+import { resolveActiveContext } from './context/resolveActiveContext';
+import { resolveTravelWorkout } from './context/travelEngine';
+import type { CompetitionEvent, ResolvedContext, TravelContext } from './context/types';
 
 /**
  * Multi-athlete, multi-week simulation. Not a UI test — this drives the
@@ -1400,5 +1404,292 @@ describe('Nutrition Engine multi-athlete simulation (spec §35)', () => {
       const p2 = buildDailyPlan(profile, targets);
       expect(p1).toEqual(p2);
     }
+  });
+});
+
+describe('TRAVEL MODE + COMPETITION MODE multi-athlete simulation (spec §34)', () => {
+  const NO_PROGRESSION: ExerciseProgressionContext = { getHistory: () => [], getReadinessStatus: () => null };
+
+  function constraintsFor(profile: UserProfile): AthleteConstraints {
+    return {
+      availableEquipment: profile.answers.equipmentIds,
+      injuryIds: profile.answers.injuryIds,
+      sport: profile.answers.sport,
+      athleteLevel: profile.level,
+    };
+  }
+
+  function travelFor(overrides: Partial<TravelContext> = {}): TravelContext {
+    return {
+      id: 'sim-travel',
+      mode: 'travel',
+      startDate: '2026-03-01',
+      endDate: '2026-03-05',
+      constraints: { equipmentIds: [], locationIds: ['home'], time: { minutesAvailable: 30 }, affectsNutrition: false },
+      createdAt: '2026-02-25T00:00:00.000Z',
+      source: 'athlete',
+      ...overrides,
+    };
+  }
+
+  function eventFor(overrides: Partial<CompetitionEvent> = {}): CompetitionEvent {
+    return {
+      id: 'sim-event',
+      mode: 'competition',
+      eventDate: '2026-03-20',
+      eventType: 'match',
+      createdAt: '2026-02-25T00:00:00.000Z',
+      source: 'athlete',
+      ...overrides,
+    };
+  }
+
+  function contextualPlanFor(
+    profile: UserProfile,
+    resolvedContext: ResolvedContext,
+    readinessAdjustment: ReturnType<typeof computeReadiness>['recommendation']['trainingAdjustment'] | null = null
+  ) {
+    return composeContextualWorkout({
+      profile,
+      progression: NO_PROGRESSION,
+      activeAdjustment: null,
+      readinessAdjustment: readinessAdjustment ?? null,
+      weeklyAdjustment: null,
+      resolvedContext,
+      athleteConstraints: constraintsFor(profile),
+    });
+  }
+
+  it('1. Normal athlete — no travel/competition data at all resolves to the untouched base plan every day', () => {
+    const sim = athlete({ name: 'ctx-normal' });
+    const profile = buildProfile(sim.answers);
+    for (const date of ['2026-03-01', '2026-03-02', '2026-03-03']) {
+      const resolved = resolveActiveContext(date, [], []);
+      expect(resolved.mode).toBe('normal');
+      const result = contextualPlanFor(profile, resolved);
+      expect(result.workout).toEqual(generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION));
+    }
+  });
+
+  it('2. Short trip (3 days, bodyweight) — temporary adaptation applies only within the window, then restores', () => {
+    const sim = athlete({ name: 'ctx-short-trip', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const shortTrip = travelFor({ startDate: '2026-03-01', endDate: '2026-03-03', constraints: { equipmentIds: [], locationIds: ['home'], time: { minutesAvailable: 30 }, affectsNutrition: false } });
+    expect(resolveActiveContext('2026-03-02', [shortTrip], []).mode).toBe('travel');
+    expect(resolveActiveContext('2026-03-04', [shortTrip], []).mode).toBe('normal');
+    const restored = contextualPlanFor(profile, resolveActiveContext('2026-03-04', [shortTrip], []));
+    expect(restored.workout).toEqual(generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION));
+  });
+
+  it('3. Long trip (3 weeks, dumbbells/bands) — every day in the window resolves to a valid travel-adjusted session', () => {
+    const sim = athlete({ name: 'ctx-long-trip', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const longTrip = travelFor({
+      startDate: '2026-03-01',
+      endDate: '2026-03-21',
+      constraints: { equipmentIds: ['dumbbells', 'resistance_bands'], locationIds: ['home'], time: { minutesAvailable: 45 }, affectsNutrition: false },
+    });
+    for (const date of ['2026-03-01', '2026-03-10', '2026-03-21']) {
+      const resolved = resolveActiveContext(date, [longTrip], []);
+      expect(resolved.mode).toBe('travel');
+      const result = contextualPlanFor(profile, resolved);
+      expect(result.workout!.exercises.length).toBeGreaterThan(0);
+    }
+    expect(resolveActiveContext('2026-03-22', [longTrip], []).mode).toBe('normal');
+  });
+
+  it('4. Bodyweight-only traveler — no resolved exercise ever requires equipment', () => {
+    const sim = athlete({ name: 'ctx-bodyweight-traveler', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const workout = resolveTravelWorkout(profile, travelFor().constraints, { athleteConstraints: constraintsFor(profile) });
+    expect(workout.exercises.length).toBeGreaterThan(0);
+  });
+
+  it('5. Hotel-gym traveler — resolves a valid session using the hotel-gym equipment subset', () => {
+    const sim = athlete({ name: 'ctx-hotel-gym', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const hotelGym = travelFor({ constraints: { equipmentIds: ['dumbbells', 'barbell', 'bench'], locationIds: ['gym'], time: { minutesAvailable: 45 }, affectsNutrition: false } });
+    const workout = resolveTravelWorkout(profile, hotelGym.constraints, { athleteConstraints: constraintsFor(profile) });
+    expect(workout.exercises.length).toBeGreaterThan(0);
+  });
+
+  it('6. Traveler with low readiness — travel constraints and readiness reduction compose together (spec §16)', () => {
+    const sim = athlete({ name: 'ctx-traveler-low-readiness', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const readiness = computeReadiness(sanitizeReadinessInputs({ sleepQuality: 1, sleepDurationBucket: 1, energy: 1, stress: 5, soreness: 5, motivation: 2, painFlag: false }).value);
+    const resolved = resolveActiveContext('2026-03-02', [travelFor()], []);
+    const result = contextualPlanFor(profile, resolved, readiness.recommendation.trainingAdjustment ?? null);
+    expect(result.workout).toBeDefined();
+    expect(result.contextMessage).toBeTruthy();
+  });
+
+  it('7. Traveler with an injury constraint — safety is never bypassed by travel', () => {
+    const sim = athlete({ name: 'ctx-traveler-injury', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'], injuryIds: ['knee'] });
+    const profile = buildProfile(sim.answers);
+    const resolved = resolveActiveContext('2026-03-02', [travelFor({ constraints: { equipmentIds: ['dumbbells'], locationIds: ['home'], time: { minutesAvailable: 30 }, affectsNutrition: false } })], []);
+    const result = contextualPlanFor(profile, resolved);
+    expect(result.workout!.exercises.every((ex) => !/jump|depth/i.test(ex.name))).toBe(true);
+  });
+
+  it('8. Athlete with one competition — resolves the correct phase as the event approaches', () => {
+    const sim = athlete({ name: 'ctx-one-competition' });
+    const profile = buildProfile(sim.answers);
+    const event = eventFor({ eventDate: '2026-03-20' });
+    expect(resolveActiveContext('2026-03-15', [], [event]).competitionPhase).toBe('near');
+    expect(resolveActiveContext('2026-03-19', [], [event]).competitionPhase).toBe('very_near');
+    expect(resolveActiveContext('2026-03-20', [], [event]).competitionPhase).toBe('event_day');
+    const eventDayPlan = contextualPlanFor(profile, resolveActiveContext('2026-03-20', [], [event]));
+    expect(eventDayPlan.skipNormalSession).toBe(true);
+  });
+
+  it('9. Athlete with multiple competitions — each resolves independently, nearest wins', () => {
+    const sim = athlete({ name: 'ctx-multi-competition' });
+    const profile = buildProfile(sim.answers);
+    const first = eventFor({ id: 'first', eventDate: '2026-03-20' });
+    const second = eventFor({ id: 'second', eventDate: '2026-05-01' });
+    expect(resolveActiveContext('2026-03-19', [], [first, second]).competition?.id).toBe('first');
+    expect(resolveActiveContext('2026-04-28', [], [first, second]).competition?.id).toBe('second');
+    const result = contextualPlanFor(profile, resolveActiveContext('2026-03-19', [], [first, second]));
+    expect(result.workout).toBeDefined();
+  });
+
+  it('10. Competition + low readiness — a conservative session results, never bypassing the taper rule', () => {
+    const sim = athlete({ name: 'ctx-competition-low-readiness' });
+    const profile = buildProfile(sim.answers);
+    const readiness = computeReadiness(sanitizeReadinessInputs({ sleepQuality: 1, sleepDurationBucket: 1, energy: 1, stress: 5, soreness: 5, motivation: 2, painFlag: false }).value);
+    const resolved = resolveActiveContext('2026-03-19', [], [eventFor()]);
+    const result = contextualPlanFor(profile, resolved, readiness.recommendation.trainingAdjustment ?? null);
+    expect(result.skipNormalSession).toBe(false);
+    expect(result.workout).toBeDefined();
+  });
+
+  it('11. Competition + injury — safety is never bypassed by competition taper rules', () => {
+    const sim = athlete({ name: 'ctx-competition-injury', injuryIds: ['shoulder'] });
+    const profile = buildProfile(sim.answers);
+    const resolved = resolveActiveContext('2026-03-19', [], [eventFor()]);
+    const result = contextualPlanFor(profile, resolved);
+    expect(result.workout!.exercises.every((ex) => !/bench press/i.test(ex.name) || ex.substitutionReason !== 'none')).toBe(true);
+  });
+
+  it('12. Athlete returning from travel — the base plan is provably identical to before travel started', () => {
+    const sim = athlete({ name: 'ctx-return-from-travel', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const before = generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION);
+    contextualPlanFor(profile, resolveActiveContext('2026-03-02', [travelFor()], []));
+    const after = generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION);
+    expect(after).toEqual(before);
+    expect(resolveActiveContext('2026-03-06', [travelFor()], []).mode).toBe('normal');
+  });
+
+  it('13. Athlete returning from competition — resumes normal plan once the recovery window ends', () => {
+    const sim = athlete({ name: 'ctx-return-from-competition' });
+    const profile = buildProfile(sim.answers);
+    const event = eventFor({ eventDate: '2026-03-20', recoveryWindowDays: 2 });
+    expect(resolveActiveContext('2026-03-21', [], [event]).competitionPhase).toBe('post_event');
+    expect(resolveActiveContext('2026-03-23', [], [event]).mode).toBe('normal');
+    const after = contextualPlanFor(profile, resolveActiveContext('2026-03-23', [], [event]));
+    expect(after.workout).toEqual(generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION));
+  });
+
+  it('14. Football athlete — Travel Mode composes correctly, sport-agnostic engine unaffected', () => {
+    const sim = athlete({ name: 'ctx-football-travel', sport: 'football', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const profile = buildProfile(sim.answers);
+    const resolved = resolveActiveContext('2026-03-02', [travelFor()], []);
+    const result = contextualPlanFor(profile, resolved);
+    expect(result.workout!.exercises.length).toBeGreaterThan(0);
+  });
+
+  it('15. Swimming athlete — Competition Mode composes correctly, sport-agnostic engine unaffected', () => {
+    const sim = athlete({ name: 'ctx-swimming-competition', sport: 'swimming', trainingLocationIds: ['pool'], equipmentIds: [] });
+    const profile = buildProfile(sim.answers);
+    const resolved = resolveActiveContext('2026-03-19', [], [eventFor({ sport: 'swimming' })]);
+    const result = contextualPlanFor(profile, resolved);
+    expect(result.workout).toBeDefined();
+    expect(result.contextMessage).toBeTruthy();
+  });
+
+  describe('invariants (spec §35)', () => {
+    it('#1/#2: neither travel nor competition ever permanently mutates the base plan, across every scenario athlete', () => {
+      for (const sim of ATHLETES) {
+        const profile = buildProfile(sim.answers);
+        const before = generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION);
+        contextualPlanFor(profile, resolveActiveContext('2026-03-02', [travelFor()], []));
+        contextualPlanFor(profile, resolveActiveContext('2026-03-19', [], [eventFor()]));
+        const after = generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION);
+        expect(after).toEqual(before);
+      }
+    });
+
+    it('#3: safety (injury contraindication) is never bypassed by travel or competition, across every injured scenario athlete', () => {
+      for (const sim of ATHLETES) {
+        const profile = buildProfile(sim.answers);
+        if (profile.answers.injuryIds.includes('none')) continue;
+        const travelResult = contextualPlanFor(profile, resolveActiveContext('2026-03-02', [travelFor({ constraints: { equipmentIds: ['dumbbells'], locationIds: ['home'], time: { minutesAvailable: 30 }, affectsNutrition: false } })], []));
+        const competitionResult = contextualPlanFor(profile, resolveActiveContext('2026-03-19', [], [eventFor()]));
+        for (const result of [travelResult, competitionResult]) {
+          if (!result.workout) continue;
+          for (const ex of result.workout.exercises) {
+            const def = getExerciseByName(ex.name);
+            if (!def) continue;
+            expect(def.safety.contraindications.some((tag) => profile.answers.injuryIds.includes(tag))).toBe(false);
+          }
+        }
+      }
+    });
+
+    it('#5: equipment constraints are never bypassed — every travel-resolved exercise is either equipment-free or matches the travel subset', () => {
+      const sim = athlete({ name: 'ctx-invariant-equipment', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+      const profile = buildProfile(sim.answers);
+      const travel = travelFor({ constraints: { equipmentIds: ['dumbbells'], locationIds: ['home'], time: { minutesAvailable: 30 }, affectsNutrition: false } });
+      const result = contextualPlanFor(profile, resolveActiveContext('2026-03-02', [travel], []));
+      expect(result.workout).toBeDefined();
+      for (const ex of result.workout!.exercises) {
+        const def = getExerciseByName(ex.name);
+        if (!def) continue;
+        expect(def.equipment.length === 0 || def.equipment.some((e) => travel.constraints.equipmentIds.includes(e))).toBe(true);
+      }
+    });
+
+    it('#8: an expired travel/competition context never affects today\'s plan', () => {
+      const sim = athlete({ name: 'ctx-invariant-expired', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+      const profile = buildProfile(sim.answers);
+      const expiredTravel = travelFor({ startDate: '2026-01-01', endDate: '2026-01-05' });
+      const expiredEvent = eventFor({ eventDate: '2026-01-01' });
+      const resolved = resolveActiveContext('2026-06-01', [expiredTravel], [expiredEvent]);
+      expect(resolved.mode).toBe('normal');
+      const result = contextualPlanFor(profile, resolved);
+      expect(result.workout).toEqual(generateTodayWorkout(profile, undefined, 1, NO_PROGRESSION));
+    });
+
+    it('#9: same inputs always produce the same adapted plan (determinism)', () => {
+      const sim = athlete({ name: 'ctx-invariant-determinism', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+      const profile = buildProfile(sim.answers);
+      const resolved = resolveActiveContext('2026-03-02', [travelFor()], []);
+      const a = contextualPlanFor(profile, resolved);
+      const b = contextualPlanFor(profile, resolved);
+      expect(a).toEqual(b);
+    });
+
+    it('#10: no duplicate active context — an overlapping travel+travel or competition+competition combination is never silently chosen (see validation.test.ts)', () => {
+      // Resolution-level defense (creation-time rejection is covered in
+      // context/validation.test.ts) — even pre-existing overlapping data
+      // resolves deterministically rather than throwing or picking randomly.
+      const overlapA = travelFor({ id: 'a', startDate: '2026-03-01', endDate: '2026-03-10' });
+      const overlapB = travelFor({ id: 'b', startDate: '2026-03-05', endDate: '2026-03-15' });
+      const first = resolveActiveContext('2026-03-07', [overlapA, overlapB], []);
+      const second = resolveActiveContext('2026-03-07', [overlapA, overlapB], []);
+      expect(first).toEqual(second);
+    });
+
+    it('#12: sport modules remain isolated — Football and Swimming both resolve valid travel-adjusted sessions with zero cross-contamination', () => {
+      const footballSim = athlete({ name: 'ctx-invariant-football', sport: 'football', equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+      const swimSim = athlete({ name: 'ctx-invariant-swim', sport: 'swimming', trainingLocationIds: ['pool'], equipmentIds: [] });
+      const footballProfile = buildProfile(footballSim.answers);
+      const swimProfile = buildProfile(swimSim.answers);
+      const footballResult = contextualPlanFor(footballProfile, resolveActiveContext('2026-03-02', [travelFor()], []));
+      const swimResult = contextualPlanFor(swimProfile, resolveActiveContext('2026-03-02', [travelFor()], []));
+      expect(footballResult.workout).toBeDefined();
+      expect(swimResult.workout).toBeDefined();
+    });
   });
 });

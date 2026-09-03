@@ -12,7 +12,14 @@ export interface ResolvedExercise {
   restSec?: number;
   category: ExerciseSlot['category'];
   /** Why the displayed name/reps differ from the slot's primary movement, if at all. */
-  substitutionReason: 'none' | 'equipment' | 'location' | 'injury' | 'adjustment';
+  substitutionReason: 'none' | 'equipment' | 'location' | 'injury' | 'adjustment' | 'travel' | 'competition';
+  /** The slot's original, pre-substitution movement name — set whenever
+   * `substitutionReason !== 'none'`. Used for logging ("original exercise" vs
+   * "actual exercise", spec §19) and by domain/context/travelEngine.ts to find a
+   * richer Exercise-Intelligence-driven alternative than the authored
+   * bodyweightAlternative when a partial equipment subset (not pure bodyweight)
+   * is available. */
+  sourceSlotName?: string;
   /** Present only when a `ResolveContext.progression` was supplied and this block is
    * progressable (not warmup/cooldown) — the structured decision behind `reps` above,
    * for the AI Coach / Progress screen / "why" UI. Evidence is always attached to this
@@ -85,6 +92,7 @@ function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExerc
       restSec: slot.restSec,
       category: slot.category,
       substitutionReason: reason,
+      sourceSlotName: slot.name,
     };
   } else {
     base = {
@@ -183,6 +191,22 @@ export function generateTodayWorkout(
   return resolveDay(dayForIndex(profile, dayIndex), baseContext(profile, weekNumber, progression));
 }
 
+/** Scales every non-warmup/cooldown block's sets by `multiplier` (a no-op for an
+ * invalid/absent multiplier) — the one place volume-scaling math lives, shared by
+ * `applyCoachAdjustment` and `generateContextAdjustedWorkout` below rather than
+ * duplicated between them. */
+function applyVolumeMultiplier(resolved: ResolvedWorkout, multiplier: number | undefined): ResolvedWorkout {
+  if (!multiplier || Number.isNaN(multiplier) || multiplier <= 0) return resolved;
+  return {
+    ...resolved,
+    exercises: resolved.exercises.map((ex) =>
+      ex.category === 'warmup' || ex.category === 'cooldown'
+        ? ex
+        : { ...ex, sets: Math.max(1, Math.round(ex.sets * multiplier)) }
+    ),
+  };
+}
+
 /**
  * Applies a deterministic AI Coach adjustment (see aiCoachEngine.ts) to
  * today's workout — forcing bodyweight substitutions, dropping
@@ -204,17 +228,39 @@ export function applyCoachAdjustment(
     skipHighImpact: adjustment.skipHighImpact,
   };
 
-  const resolved = resolveDay(day, ctx);
+  return applyVolumeMultiplier(resolveDay(day, ctx), adjustment.volumeMultiplier);
+}
 
-  const multiplier = adjustment.volumeMultiplier;
-  if (!multiplier || Number.isNaN(multiplier) || multiplier <= 0) return resolved;
+/** Overrides for a temporary Training Context (Travel/Competition, see
+ * domain/context/) resolving today's workout — reuses the exact same
+ * `ResolveContext`/`resolveDay` substitution machinery `generateTodayWorkout`
+ * and `applyCoachAdjustment` already use, just with equipment/location
+ * overridden instead of read straight from the athlete's stored profile. */
+export interface ContextOverride {
+  /** Temporary equipment available for the duration of the context — replaces
+   * `profile.answers.equipmentIds` for this resolution only; the stored
+   * profile is never mutated. */
+  equipmentIds?: string[];
+  locationIds?: string[];
+  adjustment?: AiCoachAdjustment;
+}
 
-  return {
-    ...resolved,
-    exercises: resolved.exercises.map((ex) =>
-      ex.category === 'warmup' || ex.category === 'cooldown'
-        ? ex
-        : { ...ex, sets: Math.max(1, Math.round(ex.sets * multiplier)) }
-    ),
+export function generateContextAdjustedWorkout(
+  profile: UserProfile,
+  dayIndex: number | undefined,
+  override: ContextOverride,
+  weekNumber = 1,
+  progression?: ExerciseProgressionContext
+): ResolvedWorkout {
+  const day = dayForIndex(profile, dayIndex);
+
+  const ctx: ResolveContext = {
+    ...baseContext(profile, weekNumber, progression),
+    equipmentIds: override.equipmentIds ?? profile.answers.equipmentIds,
+    locationIds: override.locationIds ?? profile.answers.trainingLocationIds,
+    forceBodyweight: override.adjustment?.swapToBodyweight,
+    skipHighImpact: override.adjustment?.skipHighImpact,
   };
+
+  return applyVolumeMultiplier(resolveDay(day, ctx), override.adjustment?.volumeMultiplier);
 }

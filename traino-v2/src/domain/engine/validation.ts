@@ -245,6 +245,8 @@ export function sanitizeExercisePerformanceLog(
     distanceM: sanitizePositiveFinite(log.distanceM, 'distanceM', violations),
     rir,
     wasModified: typeof log.wasModified === 'boolean' ? log.wasModified : false,
+    contextMode: log.contextMode === 'travel' || log.contextMode === 'competition' ? log.contextMode : undefined,
+    originalExerciseName: typeof log.originalExerciseName === 'string' && log.originalExerciseName.length > 0 ? log.originalExerciseName : undefined,
     submittedAt: typeof log.submittedAt === 'string' ? log.submittedAt : new Date().toISOString(),
   };
 

@@ -5,7 +5,9 @@ import { Icon, type IconName } from '../components/ui/Icon';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
+import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
+import { describeWeekContextInfluence } from '../domain/context/weeklyCoachingIntegration';
 import {
   computePerformanceStats,
   computeWorkoutCompletion,
@@ -29,11 +31,13 @@ export default function WeeklyReport() {
   const { answers } = profile;
   const { getRecentLogs, getLogsSince } = useLogs();
   const { getRecord, approve, reject } = useWeeklyCoaching();
+  const { travelContexts, competitionEvents } = useTrainingContext();
   const navigate = useNavigate();
 
   const last7 = getRecentLogs(7);
   const last14 = getRecentLogs(14);
   const prior7 = last14.slice(0, 7);
+  const contextNote = describeWeekContextInfluence(last7.map((d) => d.date), travelContexts, competitionEvents);
 
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
   const { currentPlanWeek } = computeProgressionInfo(planStartDate, progressionLogs, answers.daysAvailablePerWeek);
@@ -183,6 +187,15 @@ export default function WeeklyReport() {
               <div className="bg-card border border-border-soft rounded-card p-4 flex items-start gap-2.5">
                 <Icon name="battery" size={15} className="text-red shrink-0 mt-0.5" />
                 <p className="text-text-secondary text-[13px] leading-relaxed">{record.readinessNote}</p>
+              </div>
+            </div>
+          )}
+
+          {contextNote && (
+            <div className="px-4 mt-3">
+              <div className="bg-card border border-border-soft rounded-card p-4 flex items-start gap-2.5">
+                <Icon name="suitcase" size={15} className="text-red shrink-0 mt-0.5" />
+                <p className="text-text-secondary text-[13px] leading-relaxed">{contextNote}</p>
               </div>
             </div>
           )}

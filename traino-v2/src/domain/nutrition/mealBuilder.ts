@@ -2,6 +2,7 @@ import type { BudgetTier, DietaryPreference } from '../engine/types';
 import type { DailyNutritionPlan, FoodDefinition, FoodPreferenceSignal, MealRole, MealTotals, NutritionProfile, PlannedFoodItem, PlannedMeal } from './types';
 import { getAllFoods } from './registry';
 import { MEAL_DISTRIBUTIONS } from './mealDistribution';
+import { isReadyToEat, READY_TO_EAT_BONUS } from './travelBias';
 
 /**
  * Deterministic Meal Builder + Daily Plan Builder (spec §11/§12). Composes
@@ -73,6 +74,11 @@ export interface FoodSelectionConstraints {
    * dinner don't always land on the exact same food — never introduces randomness:
    * the same seed always resolves to the same food. */
   varietySeed?: string;
+  /** Travel Mode nutrition (spec §7): a modest ranking-only bias toward foods that
+   * need no preparation/cooking — never a hard filter, never overrides allergy/diet/
+   * budget/macro fit. See domain/context/travelNutrition.ts for the category-based
+   * `isReadyToEat` heuristic this reads. */
+  preferReadyToEat?: boolean;
   /** How many calories this role needs to cover in the meal — used only to steer away
    * from a food whose natural serving size would need an unrealistic quantity to hit
    * that target (e.g. 19 egg whites), never to change safety/diet/budget filtering. */
@@ -136,6 +142,7 @@ export function selectFoodForRole(role: MealRole, constraints: FoodSelectionCons
     else if (signal === 'frequently_replaced') score -= 10;
     else if (signal === 'disliked') score -= 20;
     if (food.region === 'egyptian_mena') score += 2;
+    if (constraints.preferReadyToEat && isReadyToEat(food)) score += READY_TO_EAT_BONUS;
     if (recentlyUsed.has(food.id)) score -= 5;
     if (constraints.roleCalorieTarget && food.calories > 0) {
       const impliedQuantity = constraints.roleCalorieTarget / food.calories;
@@ -210,7 +217,11 @@ export function buildMeal(
  * across several meals can realistically land ~10% off a small target. */
 const DAILY_CALORIE_TOLERANCE_RATIO = 0.12;
 
-export function buildDailyPlan(profile: NutritionProfile, targets: { calories: number; proteinG: number; carbsG: number; fatG: number }): DailyNutritionPlan {
+export function buildDailyPlan(
+  profile: NutritionProfile,
+  targets: { calories: number; proteinG: number; carbsG: number; fatG: number },
+  options: { preferReadyToEat?: boolean } = {}
+): DailyNutritionPlan {
   const distribution = MEAL_DISTRIBUTIONS[profile.mealsPerDay];
   const constraints: FoodSelectionConstraints = {
     dietaryPreference: profile.dietaryPreference,
@@ -218,6 +229,7 @@ export function buildDailyPlan(profile: NutritionProfile, targets: { calories: n
     budgetTier: profile.budgetTier,
     dislikedFoodIds: profile.dislikedFoodIds,
     likedFoodIds: profile.likedFoodIds,
+    preferReadyToEat: options.preferReadyToEat,
   };
 
   // Cross-meal variety: each meal is nudged (never hard-blocked) away from foods

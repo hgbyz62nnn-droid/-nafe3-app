@@ -12,6 +12,8 @@ import { formatEnumLabel, MATCH_REASON_LABELS } from '../exercise/labels';
 import { getFood } from '../nutrition/registry';
 import { suggestFoodAlternatives, type FoodAthleteConstraints } from '../nutrition/matchingEngine';
 import { FOOD_MATCH_REASON_LABELS } from '../nutrition/labels';
+import type { ResolvedContext } from '../context/types';
+import { daysUntilEvent } from '../context/competitionEngine';
 
 /** Structured context the Weekly Coaching / Daily Readiness / Progression / Exercise
  * Intelligence intents below read from — the most recently reviewed week's record,
@@ -52,6 +54,14 @@ export interface AiCoachReplyContext {
   foodAthleteConstraints?: FoodAthleteConstraints;
   /** This week's detailed nutrition adherence (domain/nutrition/adherence.ts). */
   nutritionAdherence?: DetailedNutritionAdherence;
+  /** Today's resolved Travel/Competition context (domain/context/resolveActiveContext.ts). */
+  resolvedContext?: ResolvedContext;
+  /** Today's local date key (YYYY-MM-DD) — needed to compute days-until-event. */
+  today?: string;
+  /** How today's session was actually changed by that context, if at all — the
+   * same message composeContextualWorkout.ts already produces for the Home/
+   * Today's Workout banner, reused here rather than re-derived. */
+  contextMessage?: string | null;
 }
 
 /** Resolves which exercise an exercise-intelligence intent is about: the explicitly
@@ -485,6 +495,84 @@ export function getAiCoachReply(intent: AiCoachIntent, context?: AiCoachReplyCon
         message: `This week: about ${adherence.caloriesAdherencePct}% of your calorie target and ${adherence.proteinAdherencePct}% of your protein target on average, with ${adherence.mealCompletionPct}% of meals logged.`,
         ctaLabel: 'VIEW WEEKLY REPORT',
       };
+    }
+
+    case 'im_traveling': {
+      const travel = context?.resolvedContext?.travel;
+      if (context?.resolvedContext?.mode === 'travel' && travel) {
+        return {
+          message: `You're in Travel Mode through ${travel.endDate} — today's session is already adjusted for your travel equipment and time.`,
+          ctaLabel: 'VIEW TODAY',
+        };
+      }
+      return {
+        message: "You can start Travel Mode from your profile — set your dates, available equipment, and time, and I'll adjust your sessions automatically.",
+      };
+    }
+
+    case 'how_train_while_traveling': {
+      const travel = context?.resolvedContext?.travel;
+      if (context?.resolvedContext?.mode !== 'travel' || !travel) {
+        return { message: "You're not in Travel Mode right now — start it from your profile if you're about to travel." };
+      }
+      const equipmentLabel = travel.constraints.equipmentIds.length > 0 ? travel.constraints.equipmentIds.map(formatEnumLabel).join(', ') : 'bodyweight only';
+      return {
+        message: `While traveling, today's session uses ${equipmentLabel} with about ${travel.constraints.time.minutesAvailable} minutes available — your main training focus stays the same, just adapted to what you have.`,
+      };
+    }
+
+    case 'whats_changed_traveling': {
+      if (context?.resolvedContext?.mode !== 'travel') {
+        return { message: "Nothing's changed — you're not in Travel Mode right now." };
+      }
+      return { message: context?.contextMessage ?? "Today's session is adjusted for Travel Mode — equipment, location, and available time." };
+    }
+
+    case 'i_have_competition': {
+      const event = context?.resolvedContext?.competition;
+      if (event && context?.today) {
+        const days = daysUntilEvent(event, context.today);
+        if (days !== null && days >= 0) {
+          return {
+            message: `Your competition is set for ${event.eventDate}${days === 0 ? ' — today!' : ` — ${days} day${days === 1 ? '' : 's'} away`}. Training adjusts automatically as it gets closer.`,
+          };
+        }
+        return { message: `Your competition on ${event.eventDate} has passed — let me know if you want to add a new one.` };
+      }
+      return { message: "You can add a competition from your profile — set the date and I'll taper your training automatically as it approaches." };
+    }
+
+    case 'why_workout_adjusted_for_context': {
+      if (!context?.contextMessage) return { message: "Today's session wasn't changed by Travel or Competition Mode." };
+      return { message: context.contextMessage };
+    }
+
+    case 'after_competition': {
+      const ctx = context?.resolvedContext;
+      if (ctx?.competition && ctx.competitionPhase === 'post_event') {
+        return {
+          message:
+            "You're in a recovery-oriented window after your competition — lower volume, high-impact movements removed. Your normal plan resumes automatically once this window ends.",
+        };
+      }
+      if (ctx?.competition) {
+        return { message: 'After your competition, training shifts to a short recovery-oriented window before your normal plan resumes.' };
+      }
+      return { message: "You don't have a competition on file right now." };
+    }
+
+    case 'when_normal_plan_returns': {
+      const ctx = context?.resolvedContext;
+      if (ctx?.mode === 'travel' && ctx.travel) {
+        return { message: `Your normal plan resumes right after ${ctx.travel.endDate}, when Travel Mode ends.` };
+      }
+      if (ctx?.mode === 'competition' && ctx.competitionPhase === 'post_event') {
+        return { message: 'Your normal plan resumes automatically once the post-competition recovery window ends.' };
+      }
+      if (ctx?.mode === 'competition') {
+        return { message: 'Your plan is temporarily adjusted for your upcoming competition and will resume automatically afterward.' };
+      }
+      return { message: "You're already on your normal plan." };
     }
   }
 }

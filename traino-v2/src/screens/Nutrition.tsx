@@ -9,6 +9,7 @@ import FoodDetailPanel from '../components/FoodDetailPanel';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useFoodPreferences } from '../domain/state/FoodPreferenceContext';
+import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { deriveNutritionProfile } from '../domain/nutrition/profile';
 import { buildDailyPlan } from '../domain/nutrition/mealBuilder';
 import { deriveFoodPreferenceSignals, deriveRecentlyUsedFoodIds } from '../domain/nutrition/preferences';
@@ -81,6 +82,7 @@ export default function Nutrition() {
   const targets = profile.nutrition;
   const { today, getDayLog, toggleMealLogged, logNutritionEntry, getNutritionLogsForDate, getAllNutritionLogs } = useLogs();
   const { replacementCounts, explicitSignals, recordReplacement } = useFoodPreferences();
+  const { getResolvedContext } = useTrainingContext();
   const [swaps, setSwaps] = useState<Record<string, FoodDefinition>>({});
   const [detailKey, setDetailKey] = useState<string | null>(null);
 
@@ -88,14 +90,25 @@ export default function Nutrition() {
   const todayNutritionLogs = getNutritionLogsForDate(today);
 
   const allNutritionLogs = getAllNutritionLogs();
+  const resolvedContext = getResolvedContext(today);
+  // Competition event day: no normal hard training session occurs (see
+  // TodaysWorkout.tsx/competitionEngine.ts), so the Meal Builder's training-day
+  // carb emphasis shouldn't apply either — spec §22's "avoid unnecessary
+  // calorie/macro changes" is satisfied by simply NOT touching targets at all;
+  // this is the one legitimate, already-existing NutritionProfile field to update.
+  const isTrainingDay = resolvedContext.competitionPhase !== 'event_day';
+  // Travel Mode nutrition is opt-in (spec §8) — only bias toward easy-to-find/
+  // portable foods when the athlete's active travel context explicitly turned
+  // nutrition on; never silently changes food selection otherwise.
+  const preferReadyToEat = resolvedContext.mode === 'travel' && (resolvedContext.travel?.constraints.affectsNutrition ?? false);
   const nutritionProfile = deriveNutritionProfile(answers, {
     dislikedFoodIds: [],
     likedFoodIds: Object.entries(explicitSignals)
       .filter(([, s]) => s === 'liked')
       .map(([id]) => id),
-    isTrainingDay: true,
+    isTrainingDay,
   });
-  const plan = buildDailyPlan(nutritionProfile, targets);
+  const plan = buildDailyPlan(nutritionProfile, targets, { preferReadyToEat });
   const foodConstraints: FoodAthleteConstraints = {
     dietaryPreference: answers.dietaryPreference,
     allergyIds: answers.allergyIds,
@@ -171,6 +184,14 @@ export default function Nutrition() {
       <p className="text-text-secondary text-[13px] px-4 mt-3">
         Today, {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}
       </p>
+
+      {preferReadyToEat && (
+        <div className="mx-4 mt-2 flex items-center gap-2 bg-card border border-border-soft rounded-card-sm px-3.5 py-2">
+          <Icon name="suitcase" size={14} className="text-text-secondary shrink-0" />
+          <p className="text-text-secondary text-[11.5px] font-semibold">Travel Mode — favoring easy-to-find, portable foods</p>
+        </div>
+      )}
+
       <p className="text-text-muted text-[11px] px-4 mt-1">Estimated daily target</p>
 
       <div className="flex items-center gap-4 px-4 mt-3">

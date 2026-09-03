@@ -9,13 +9,15 @@ import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { useExercisePreferences } from '../domain/state/ExercisePreferenceContext';
-import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { getExerciseByName } from '../domain/exercise/registry';
 import { derivePreferenceSignals, deriveRecentlyUsedIds } from '../domain/exercise/preferences';
 import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import type { ExerciseDefinition } from '../domain/exercise/types';
 import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
+import type { ResolvedExercise } from '../domain/engine/planEngine';
+import { useTrainingContext } from '../domain/state/TrainingContextStore';
+import { composeContextualWorkout } from '../domain/context/composeContextualWorkout';
 import ExerciseLogPanel from '../components/ExerciseLogPanel';
 import ExerciseDetailPanel from '../components/ExerciseDetailPanel';
 
@@ -25,6 +27,7 @@ export default function TodaysWorkout() {
   const { getApprovedAdjustmentForWeek } = useWeeklyCoaching();
   const { getTodayRecord, getRecord } = useDailyReadiness();
   const { replacementCounts, recordReplacement } = useExercisePreferences();
+  const { getResolvedContext } = useTrainingContext();
   const [swaps, setSwaps] = useState<Record<number, ExerciseDefinition>>({});
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
@@ -52,27 +55,44 @@ export default function TodaysWorkout() {
   );
 
   // Precedence (most specific/recent wins outright — never stacked/combined):
-  // an explicit per-session AI Coach chat adjustment > today's readiness check-in
-  // adjustment (day-level, automatic) > the standing weekly-coaching adjustment
-  // (week-level, only for the exact week it was approved for) > the base plan.
+  // an explicit per-session AI Coach chat adjustment > today's Competition Mode
+  // day-plan > today's readiness check-in adjustment (day-level, automatic) >
+  // the standing weekly-coaching adjustment (week-level, only for the exact
+  // week it was approved for) > the base plan. Travel Mode's equipment/
+  // location/time override composes alongside this chain rather than
+  // replacing it — see domain/context/composeContextualWorkout.ts for the
+  // full documented precedence rule (spec §15/§16).
   const readinessRecord = getTodayRecord();
   const readinessAdjustment = readinessRecord?.recommendationApplied
     ? (readinessRecord.recommendation.trainingAdjustment ?? null)
     : null;
   const weeklyAdjustment = getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment ?? null;
-  const effectiveAdjustment = activeAdjustment ?? readinessAdjustment ?? weeklyAdjustment;
 
   // Performance evidence (Progression Engine) sits below safety/readiness/weekly
   // adjustments in precedence — it decides today's target reps/load within whatever
-  // session those higher tiers already resolved, never overriding them.
+  // session those higher tiers already resolved, never overriding them. Travel/
+  // competition-tagged logs are excluded from this evidence (see LogContext.tsx /
+  // domain/context — a reduced/substituted context-adjusted session must never be
+  // read back as evidence the normal exercise should regress, spec §18/§20).
   const progressionContext: ExerciseProgressionContext = {
-    getHistory: getExerciseHistory,
+    getHistory: (name) => getExerciseHistory(name).filter((log) => !log.contextMode),
     getReadinessStatus: (date) => getRecord(date)?.status ?? null,
   };
 
-  const workout = effectiveAdjustment
-    ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek, progressionContext)
-    : generateTodayWorkout(profile, undefined, progressionWeek, progressionContext);
+  const resolvedContext = getResolvedContext(today);
+  const { skipNormalSession, contextMessage, workout: composedWorkout } = composeContextualWorkout({
+    profile,
+    weekNumber: progressionWeek,
+    progression: progressionContext,
+    activeAdjustment,
+    readinessAdjustment,
+    weeklyAdjustment,
+    resolvedContext,
+    athleteConstraints,
+  });
+  const workout = composedWorkout;
+  const isTravelContextActive = resolvedContext.mode === 'travel';
+  const isCompetitionContextActive = resolvedContext.mode === 'competition' && !!contextMessage;
 
   function handleReplace(index: number, sourceExerciseName: string, replacement: ExerciseDefinition) {
     const sourceId = getExerciseByName(sourceExerciseName)?.id;
@@ -81,8 +101,14 @@ export default function TodaysWorkout() {
     setDetailIndex(null);
   }
 
-  function handleLogSave(entry: Parameters<typeof logExercisePerformance>[1]) {
-    logExercisePerformance(today, entry);
+  function handleLogSave(entry: Parameters<typeof logExercisePerformance>[1], ex: ResolvedExercise) {
+    // Tag the log with today's active context (spec §19) — undefined for a
+    // normal day, the same "absent means nothing unusual" contract every
+    // other optional log field already follows. `sourceSlotName` (set by
+    // planEngine whenever a substitution occurred, travel or otherwise)
+    // becomes the log's "original exercise" for audit/history.
+    const contextMode = resolvedContext.mode === 'normal' ? undefined : resolvedContext.mode;
+    logExercisePerformance(today, { ...entry, contextMode, originalExerciseName: ex.sourceSlotName });
     setExpandedIndex(null);
   }
 
@@ -97,7 +123,9 @@ export default function TodaysWorkout() {
         <h1 className="flex-1 text-center text-white text-[15px] font-extrabold tracking-wide">
           TODAY'S WORKOUT
         </h1>
-        <Icon name="sliders" size={18} className="text-white shrink-0" />
+        <Link to="/travel-competition" className="w-8 h-8 flex items-center justify-center shrink-0" aria-label="Travel & Competition Mode">
+          <Icon name="sliders" size={18} className="text-white" />
+        </Link>
       </div>
 
       {activeAdjustment && (
@@ -113,7 +141,14 @@ export default function TodaysWorkout() {
         </div>
       )}
 
-      {!activeAdjustment && readinessAdjustment && (
+      {!activeAdjustment && isCompetitionContextActive && (
+        <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
+          <Icon name="calendar" size={16} className="text-red shrink-0" />
+          <p className="flex-1 text-red text-[12px] font-semibold">{contextMessage}</p>
+        </div>
+      )}
+
+      {!activeAdjustment && !isCompetitionContextActive && readinessAdjustment && (
         <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
           <Icon name="battery" size={16} className="text-red shrink-0" />
           <p className="flex-1 text-red text-[12px] font-semibold">
@@ -125,30 +160,47 @@ export default function TodaysWorkout() {
         </div>
       )}
 
-      {!activeAdjustment && !readinessAdjustment && weeklyAdjustment && (
+      {!activeAdjustment && !isCompetitionContextActive && !readinessAdjustment && weeklyAdjustment && (
         <div className="mx-4 mt-3 flex items-center gap-2.5 bg-red/10 border border-red/40 rounded-card-sm px-3.5 py-2.5">
           <Icon name="aiMascot" size={16} className="text-red shrink-0" />
           <p className="flex-1 text-red text-[12px] font-semibold">Adjusted by this week's coaching recommendation</p>
         </div>
       )}
 
+      {isTravelContextActive && (
+        <div className="mx-4 mt-2 flex items-center gap-2 bg-card border border-border-soft rounded-card-sm px-3.5 py-2">
+          <Icon name="suitcase" size={14} className="text-text-secondary shrink-0" />
+          <p className="text-text-secondary text-[11.5px] font-semibold">Travel Mode active — today's session uses your travel equipment/time</p>
+        </div>
+      )}
+
+      {skipNormalSession ? (
+        <div className="px-4 mt-4">
+          <div className="bg-card rounded-card border border-border-soft p-6 text-center">
+            <Icon name="calendar" size={28} className="text-red mx-auto" />
+            <h2 className="text-white text-[17px] font-extrabold mt-3">Competition Day</h2>
+            <p className="text-text-secondary text-[12.5px] mt-1.5">{contextMessage}</p>
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="px-4 mt-4">
         <div className="bg-card rounded-card border border-border-soft p-4">
-          <h2 className="text-white text-[20px] font-extrabold">{workout.name}</h2>
+          <h2 className="text-white text-[20px] font-extrabold">{workout!.name}</h2>
           <div className="flex items-center gap-4 mt-2">
             <span className="flex items-center gap-1.5 text-text-secondary text-[12.5px]">
               <Icon name="clock" size={14} className="text-text-secondary" />
-              {workout.durationMin} min
+              {workout!.durationMin} min
             </span>
             <span className="flex items-center gap-1.5 text-text-secondary text-[12.5px]">
               <Icon name="target" size={14} className="text-text-secondary" />
-              {workout.intensity}
+              {workout!.intensity}
             </span>
           </div>
         </div>
 
         <div className="mt-2">
-          {workout.exercises.map((ex, i) => {
+          {workout!.exercises.map((ex, i) => {
             const isTimedBlock = ex.category === 'warmup' || ex.category === 'cooldown';
             const manualSwap = swaps[i];
             const manuallySwapped = !!manualSwap;
@@ -164,7 +216,7 @@ export default function TodaysWorkout() {
               !manuallySwapped && ex.progression && (ex.progression.decision === 'PROGRESS' || ex.progression.decision === 'REGRESS');
 
             return (
-              <div key={`${ex.name}-${i}`} className={i < workout.exercises.length - 1 ? 'border-b border-border-soft' : ''}>
+              <div key={`${ex.name}-${i}`} className={i < workout!.exercises.length - 1 ? 'border-b border-border-soft' : ''}>
                 <div className="flex items-center gap-3 py-4">
                   <span className="text-text-muted text-[14px] font-bold w-4 shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
@@ -215,7 +267,7 @@ export default function TodaysWorkout() {
                   </button>
                 </div>
                 {expandedIndex === i && canLog && (
-                  <ExerciseLogPanel exercise={ex} onSave={handleLogSave} onCancel={() => setExpandedIndex(null)} />
+                  <ExerciseLogPanel exercise={ex} onSave={(entry) => handleLogSave(entry, ex)} onCancel={() => setExpandedIndex(null)} />
                 )}
                 {detailIndex === i && (
                   <ExerciseDetailPanel
@@ -233,7 +285,7 @@ export default function TodaysWorkout() {
 
       <div className="px-4 mt-4">
         <button
-          onClick={() => setWorkoutCompleted(today, !completed, workout.name, workout.statCategory)}
+          onClick={() => setWorkoutCompleted(today, !completed, workout!.name, workout!.statCategory)}
           className={`w-full rounded-button py-4 font-extrabold text-[15px] tracking-wide shadow-button flex items-center justify-center gap-2 ${
             completed ? 'bg-success text-bg' : 'bg-red text-white'
           }`}
@@ -248,6 +300,8 @@ export default function TodaysWorkout() {
           )}
         </button>
       </div>
+      </>
+      )}
     </Screen>
   );
 }

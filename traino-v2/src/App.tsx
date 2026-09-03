@@ -5,6 +5,7 @@ import { WeeklyCoachingProvider } from './domain/state/WeeklyCoachingContext';
 import { DailyReadinessProvider } from './domain/state/DailyReadinessContext';
 import { ExercisePreferenceProvider } from './domain/state/ExercisePreferenceContext';
 import { FoodPreferenceProvider } from './domain/state/FoodPreferenceContext';
+import { TrainingContextProvider } from './domain/state/TrainingContextStore';
 import Home from './screens/Home';
 import AssessmentAbout from './screens/AssessmentAbout';
 import SportSelection from './screens/SportSelection';
@@ -23,6 +24,7 @@ import WeeklyCheckIn from './screens/WeeklyCheckIn';
 import DailyCheckIn from './screens/DailyCheckIn';
 import HumanCoach from './screens/HumanCoach';
 import Profile from './screens/Profile';
+import TravelCompetition from './screens/TravelCompetition';
 
 export default function App() {
   return (
@@ -32,6 +34,7 @@ export default function App() {
           <DailyReadinessProvider>
             <ExercisePreferenceProvider>
               <FoodPreferenceProvider>
+                <TrainingContextProvider>
                 <BrowserRouter>
                   <Routes>
                     <Route path="/" element={<Home />} />
@@ -52,8 +55,10 @@ export default function App() {
                     <Route path="/daily-check-in" element={<DailyCheckIn />} />
                     <Route path="/human-coach" element={<HumanCoach />} />
                     <Route path="/profile" element={<Profile />} />
+                    <Route path="/travel-competition" element={<TravelCompetition />} />
                   </Routes>
                 </BrowserRouter>
+                </TrainingContextProvider>
               </FoodPreferenceProvider>
             </ExercisePreferenceProvider>
           </DailyReadinessProvider>

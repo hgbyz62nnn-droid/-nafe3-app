@@ -8,8 +8,10 @@ import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
+import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { buildWeeklyCoachingReview } from '../domain/engine/weeklyCoachingEngine';
+import { computeContextAdjustedPlannedSessions } from '../domain/context/weeklyCoachingIntegration';
 import { addDays, localDateKey } from '../domain/engine/dateUtils';
 
 export default function WeeklyCheckIn() {
@@ -18,6 +20,7 @@ export default function WeeklyCheckIn() {
   const { getRecentLogs, getLogsSince } = useLogs();
   const { getHistoryBefore, getApprovedAdjustmentForWeek, saveReview } = useWeeklyCoaching();
   const { getRecordsInRange } = useDailyReadiness();
+  const { travelContexts, competitionEvents } = useTrainingContext();
   const [selected, setSelected] = useState<Set<BarrierId>>(new Set());
   const [note, setNote] = useState('');
 
@@ -49,10 +52,21 @@ export default function WeeklyCheckIn() {
     const reducedLoadAppliedThisWeek =
       (getApprovedAdjustmentForWeek(currentPlanWeek)?.decision?.proposedChanges?.trainingAdjustment?.volumeMultiplier ?? 1) < 1;
 
+    // Travel/Competition-adjusted days never look like normal missed workouts
+    // (spec §21) — the planned-session count for this week reflects whatever
+    // context was actually active on each of its days, not the athlete's full
+    // normal cadence.
+    const contextAdjustedPlanned = computeContextAdjustedPlannedSessions(
+      profile.answers.daysAvailablePerWeek,
+      currentWeekLogs.map((d) => d.date),
+      travelContexts,
+      competitionEvents
+    );
+
     const { decision, readinessNote } = buildWeeklyCoachingReview(
       currentWeekLogs,
       priorWeekLogs,
-      profile.answers.daysAvailablePerWeek,
+      contextAdjustedPlanned,
       checkIn,
       profile,
       history,

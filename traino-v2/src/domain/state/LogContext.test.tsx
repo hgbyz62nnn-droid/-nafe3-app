@@ -322,3 +322,105 @@ describe('LogContext — getLogsSince (calendar-aware progression input)', () =>
     expect(result.current.getLogsSince('not-a-date')).toEqual([]);
   });
 });
+
+// TRAVEL MODE + COMPETITION MODE test matrix (spec §33): N — travel logging,
+// Y — competition logging, Z — historical log integrity (context metadata
+// snapshot, never rewritten later).
+describe('LogContext — N: travel-context exercise logging', () => {
+  it('logs an exercise performed during Travel Mode with contextMode set and the original slot name preserved', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logExercisePerformance('2026-03-05', {
+        exerciseName: 'Goblet Squat',
+        prescribedSets: 3,
+        completedSets: 3,
+        wasModified: true,
+        contextMode: 'travel',
+        originalExerciseName: 'Back Squat',
+      })
+    );
+    const [entry] = result.current.getExerciseHistory('Goblet Squat');
+    expect(entry.contextMode).toBe('travel');
+    expect(entry.originalExerciseName).toBe('Back Squat');
+  });
+
+  it('a normal (non-travel) log has no contextMode — absent, never a fabricated default', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logExercisePerformance('2026-03-05', {
+        exerciseName: 'Back Squat',
+        prescribedSets: 3,
+        completedSets: 3,
+        wasModified: false,
+      })
+    );
+    const [entry] = result.current.getExerciseHistory('Back Squat');
+    expect(entry.contextMode).toBeUndefined();
+  });
+
+  it('sanitizes an invalid contextMode rather than storing garbage', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logExercisePerformance('2026-03-05', {
+        exerciseName: 'Push-Ups',
+        prescribedSets: 3,
+        completedSets: 3,
+        wasModified: false,
+        contextMode: 'not_a_real_mode' as never,
+      })
+    );
+    const [entry] = result.current.getExerciseHistory('Push-Ups');
+    expect(entry.contextMode).toBeUndefined();
+  });
+});
+
+describe('LogContext — Y: competition-context exercise logging', () => {
+  it('logs a competition-taper-adjusted exercise with contextMode: competition', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      result.current.logExercisePerformance('2026-03-18', {
+        exerciseName: 'Back Squat',
+        prescribedSets: 2,
+        completedSets: 2,
+        loadKg: 60,
+        wasModified: false,
+        contextMode: 'competition',
+      })
+    );
+    const [entry] = result.current.getExerciseHistory('Back Squat');
+    expect(entry.contextMode).toBe('competition');
+  });
+});
+
+describe('LogContext — Z: historical log integrity (context metadata snapshot, never rewritten)', () => {
+  it('a normal-context log and a later competition-context log for the same exercise on different days both keep their own contextMode', () => {
+    const { result } = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() => {
+      result.current.logExercisePerformance('2026-03-01', {
+        exerciseName: 'Back Squat', prescribedSets: 4, completedSets: 4, loadKg: 80, wasModified: false,
+      });
+      result.current.logExercisePerformance('2026-03-18', {
+        exerciseName: 'Back Squat', prescribedSets: 2, completedSets: 2, loadKg: 60, wasModified: false, contextMode: 'competition',
+      });
+    });
+    const history = result.current.getExerciseHistory('Back Squat');
+    expect(history).toHaveLength(2);
+    const normalDay = history.find((h) => h.date === '2026-03-01')!;
+    const competitionDay = history.find((h) => h.date === '2026-03-18')!;
+    expect(normalDay.contextMode).toBeUndefined();
+    expect(competitionDay.contextMode).toBe('competition');
+  });
+
+  it('persists contextMode/originalExerciseName across a remount, unchanged', () => {
+    const first = renderHook(() => useLogs(), { wrapper: LogProvider });
+    act(() =>
+      first.result.current.logExercisePerformance('2026-03-05', {
+        exerciseName: 'Goblet Squat', prescribedSets: 3, completedSets: 3, wasModified: true, contextMode: 'travel', originalExerciseName: 'Back Squat',
+      })
+    );
+    const second = renderHook(() => useLogs(), { wrapper: LogProvider });
+    const [entry] = second.result.current.getExerciseHistory('Goblet Squat');
+    expect(entry.contextMode).toBe('travel');
+    expect(entry.originalExerciseName).toBe('Back Squat');
+  });
+});

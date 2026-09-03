@@ -36,6 +36,13 @@ const ALL_INTENTS: AiCoachIntent[] = [
   'why_these_foods',
   'replace_food',
   'how_is_my_nutrition_this_week',
+  'im_traveling',
+  'how_train_while_traveling',
+  'whats_changed_traveling',
+  'i_have_competition',
+  'why_workout_adjusted_for_context',
+  'after_competition',
+  'when_normal_plan_returns',
 ];
 
 function progressionDecision(overrides: Partial<ExerciseProgressionDecision> = {}): ExerciseProgressionDecision {
@@ -519,6 +526,137 @@ describe('getAiCoachReply — Nutrition Engine intents (AD)', () => {
   it('all five nutrition intents never throw and are deterministic', () => {
     const context = { latestRecord: null, dailyPlan: plan, nutritionTargets: TARGETS, focusedFoodId, foodAthleteConstraints: foodConstraints };
     const intents: AiCoachIntent[] = ['what_should_i_eat_today', 'what_are_my_calories', 'why_these_foods', 'replace_food', 'how_is_my_nutrition_this_week'];
+    for (const intent of intents) {
+      expect(() => getAiCoachReply(intent, context)).not.toThrow();
+      expect(getAiCoachReply(intent, context)).toEqual(getAiCoachReply(intent, context));
+    }
+  });
+});
+
+// AB: AI Coach travel/competition intents (spec §33/§23)
+describe('getAiCoachReply — Travel/Competition intents (AB)', () => {
+  const travel = {
+    id: 't1',
+    mode: 'travel' as const,
+    startDate: '2026-03-01',
+    endDate: '2026-03-10',
+    constraints: { equipmentIds: ['dumbbells'], locationIds: ['home'], time: { minutesAvailable: 30 }, affectsNutrition: false },
+    createdAt: '2026-02-25T00:00:00.000Z',
+    source: 'athlete' as const,
+  };
+  const competition = {
+    id: 'e1',
+    mode: 'competition' as const,
+    eventDate: '2026-03-20',
+    eventType: 'match' as const,
+    createdAt: '2026-02-25T00:00:00.000Z',
+    source: 'athlete' as const,
+  };
+
+  it('im_traveling reports real active-travel status', () => {
+    const reply = getAiCoachReply('im_traveling', {
+      latestRecord: null,
+      resolvedContext: { mode: 'travel', travel, competition: null, competitionPhase: 'none' },
+    });
+    expect(reply.message).toContain('2026-03-10');
+  });
+
+  it('im_traveling is honest when travel mode is not active', () => {
+    const reply = getAiCoachReply('im_traveling', { latestRecord: null, resolvedContext: { mode: 'normal', travel: null, competition: null, competitionPhase: 'none' } });
+    expect(reply.message).toMatch(/start travel mode/i);
+  });
+
+  it('how_train_while_traveling describes the real active equipment/time constraints', () => {
+    const reply = getAiCoachReply('how_train_while_traveling', {
+      latestRecord: null,
+      resolvedContext: { mode: 'travel', travel, competition: null, competitionPhase: 'none' },
+    });
+    expect(reply.message).toContain('30');
+  });
+
+  it('how_train_while_traveling is honest when travel is not active', () => {
+    const reply = getAiCoachReply('how_train_while_traveling', { latestRecord: null, resolvedContext: { mode: 'normal', travel: null, competition: null, competitionPhase: 'none' } });
+    expect(reply.message).toMatch(/not in travel mode/i);
+  });
+
+  it('whats_changed_traveling reuses the real contextMessage when supplied', () => {
+    const reply = getAiCoachReply('whats_changed_traveling', {
+      latestRecord: null,
+      resolvedContext: { mode: 'travel', travel, competition: null, competitionPhase: 'none' },
+      contextMessage: "Today's session uses your travel equipment.",
+    });
+    expect(reply.message).toBe("Today's session uses your travel equipment.");
+  });
+
+  it('i_have_competition reports real days-until-event from structured data', () => {
+    const reply = getAiCoachReply('i_have_competition', {
+      latestRecord: null,
+      resolvedContext: { mode: 'competition', travel: null, competition, competitionPhase: 'near' },
+      today: '2026-03-15',
+    });
+    expect(reply.message).toContain('5 day');
+  });
+
+  it('i_have_competition is honest when no competition is on file', () => {
+    const reply = getAiCoachReply('i_have_competition', { latestRecord: null, resolvedContext: { mode: 'normal', travel: null, competition: null, competitionPhase: 'none' } });
+    expect(reply.message).toMatch(/add a competition/i);
+  });
+
+  it('why_workout_adjusted_for_context explains today\'s real change when one occurred', () => {
+    const reply = getAiCoachReply('why_workout_adjusted_for_context', {
+      latestRecord: null,
+      contextMessage: 'Training adjusted around your upcoming competition.',
+    });
+    expect(reply.message).toBe('Training adjusted around your upcoming competition.');
+  });
+
+  it('why_workout_adjusted_for_context is honest when nothing changed today', () => {
+    const reply = getAiCoachReply('why_workout_adjusted_for_context', { latestRecord: null });
+    expect(reply.message).toMatch(/wasn't changed/i);
+  });
+
+  it('after_competition describes the real post-event recovery window', () => {
+    const reply = getAiCoachReply('after_competition', {
+      latestRecord: null,
+      resolvedContext: { mode: 'competition', travel: null, competition, competitionPhase: 'post_event' },
+    });
+    expect(reply.message).toMatch(/recovery/i);
+  });
+
+  it('after_competition is honest when there is no competition on file', () => {
+    const reply = getAiCoachReply('after_competition', { latestRecord: null, resolvedContext: { mode: 'normal', travel: null, competition: null, competitionPhase: 'none' } });
+    expect(reply.message).toMatch(/don't have a competition/i);
+  });
+
+  it('when_normal_plan_returns reports the real travel end date', () => {
+    const reply = getAiCoachReply('when_normal_plan_returns', {
+      latestRecord: null,
+      resolvedContext: { mode: 'travel', travel, competition: null, competitionPhase: 'none' },
+    });
+    expect(reply.message).toContain('2026-03-10');
+  });
+
+  it('when_normal_plan_returns is honest when already on the normal plan', () => {
+    const reply = getAiCoachReply('when_normal_plan_returns', { latestRecord: null, resolvedContext: { mode: 'normal', travel: null, competition: null, competitionPhase: 'none' } });
+    expect(reply.message).toMatch(/already on your normal plan/i);
+  });
+
+  it('all seven travel/competition intents never throw and are deterministic', () => {
+    const context = {
+      latestRecord: null,
+      resolvedContext: { mode: 'travel' as const, travel, competition: null, competitionPhase: 'none' as const },
+      today: '2026-03-05',
+      contextMessage: "Today's session uses your travel equipment.",
+    };
+    const intents: AiCoachIntent[] = [
+      'im_traveling',
+      'how_train_while_traveling',
+      'whats_changed_traveling',
+      'i_have_competition',
+      'why_workout_adjusted_for_context',
+      'after_competition',
+      'when_normal_plan_returns',
+    ];
     for (const intent of intents) {
       expect(() => getAiCoachReply(intent, context)).not.toThrow();
       expect(getAiCoachReply(intent, context)).toEqual(getAiCoachReply(intent, context));

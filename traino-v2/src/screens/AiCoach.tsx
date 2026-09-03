@@ -24,6 +24,8 @@ import { computeDetailedNutritionAdherence } from '../domain/nutrition/adherence
 import type { FoodAthleteConstraints } from '../domain/nutrition/matchingEngine';
 import type { MealRole } from '../domain/nutrition/types';
 import { getFood } from '../domain/nutrition/registry';
+import { useTrainingContext } from '../domain/state/TrainingContextStore';
+import { resolveCompetitionDayPlan } from '../domain/context/competitionEngine';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'How ready am I today?', intent: 'how_ready_am_i' },
@@ -52,6 +54,12 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: 'Replace this food', intent: 'replace_food' },
   { label: "I don't like this meal", intent: 'replace_food' },
   { label: 'How is my nutrition this week?', intent: 'how_is_my_nutrition_this_week' },
+  { label: 'How should I train while traveling?', intent: 'how_train_while_traveling' },
+  { label: "What's changed because I'm traveling?", intent: 'whats_changed_traveling' },
+  { label: 'I have a competition', intent: 'i_have_competition' },
+  { label: 'Why did you adjust my workout?', intent: 'why_workout_adjusted_for_context' },
+  { label: 'What happens after my competition?', intent: 'after_competition' },
+  { label: 'When does my normal plan return?', intent: 'when_normal_plan_returns' },
 ];
 
 /** Intents that read structured Weekly Coaching / Daily Readiness / Progression /
@@ -77,6 +85,13 @@ const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
   'why_these_foods',
   'replace_food',
   'how_is_my_nutrition_this_week',
+  'im_traveling',
+  'how_train_while_traveling',
+  'whats_changed_traveling',
+  'i_have_competition',
+  'why_workout_adjusted_for_context',
+  'after_competition',
+  'when_normal_plan_returns',
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -92,7 +107,8 @@ export default function AiCoach() {
   const { profile, setActiveAdjustment, planStartDate } = useProfile();
   const { getLatestRecord } = useWeeklyCoaching();
   const { getTodayRecord, getRecord } = useDailyReadiness();
-  const { getExerciseHistory, getLogsSince, getRecentLogs, getAllNutritionLogs } = useLogs();
+  const { getExerciseHistory, getLogsSince, getRecentLogs, getAllNutritionLogs, today } = useLogs();
+  const { getResolvedContext } = useTrainingContext();
   const { replacementCounts } = useExercisePreferences();
   const { replacementCounts: foodReplacementCounts, explicitSignals: foodExplicitSignals } = useFoodPreferences();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
@@ -134,6 +150,13 @@ export default function AiCoach() {
   };
   const nutritionAdherence = computeDetailedNutritionAdherence(getRecentLogs(7), { calories: profile.nutrition.calories, proteinG: profile.nutrition.proteinG });
 
+  const resolvedContext = getResolvedContext(today);
+  // Same message-derivation composeContextualWorkout.ts uses for the Today's
+  // Workout banner (spec §12) — reused here rather than re-derived independently.
+  const competitionDayPlan = resolvedContext.mode === 'competition' ? resolveCompetitionDayPlan(resolvedContext.competitionPhase) : null;
+  const contextMessage =
+    competitionDayPlan?.message ?? (resolvedContext.mode === 'travel' ? "Today's session is adjusted for Travel Mode." : null);
+
   function todaysProgressionDecisions() {
     const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
     const { progressionWeek } = computeProgressionInfo(planStartDate, progressionLogs, profile.answers.daysAvailablePerWeek);
@@ -159,6 +182,9 @@ export default function AiCoach() {
           focusedFoodRole,
           foodAthleteConstraints,
           nutritionAdherence,
+          resolvedContext,
+          today,
+          contextMessage,
         })
       : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
