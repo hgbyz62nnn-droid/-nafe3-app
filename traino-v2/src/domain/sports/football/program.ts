@@ -173,7 +173,12 @@ const intermediateDays: WorkoutDayTemplate[] = [
         sets: 4,
         reps: '6',
         equipment: ['barbell', 'squat_rack'],
-        bodyweightAlternative: { name: 'Bulgarian Split Squat', reps: '10 / leg' },
+        // Not 'Bulgarian Split Squat': that movement is itself flagged
+        // contraindications:['knee'] a few slots below in this same day, so it
+        // would be an unsafe fallback for exactly the injury this substitution
+        // exists to protect. Glute Bridge is a hip-hinge pattern, no loaded
+        // knee flexion.
+        bodyweightAlternative: { name: 'Glute Bridge', reps: '15' },
         category: 'strength',
         contraindications: ['knee'],
       },
@@ -488,6 +493,8 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '4 min',
         restSec: 90,
         equipment: [],
+        locations: ['sports_field', 'sports_club', 'multiple'],
+        bodyweightAlternative: { name: 'Shadow Passing Drill (solo)', reps: '4 min' },
         category: 'conditioning',
       },
       { name: 'Cool Down', sets: 1, reps: '6 min', equipment: [], category: 'cooldown' },

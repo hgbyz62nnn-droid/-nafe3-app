@@ -7,17 +7,25 @@ import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
+import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
 
 export default function TodaysWorkout() {
-  const { profile, activeAdjustment, setActiveAdjustment } = useProfile();
-  const { today, getDayLog, setWorkoutCompleted } = useLogs();
+  const { profile, activeAdjustment, setActiveAdjustment, planStartDate } = useProfile();
+  const { today, getDayLog, setWorkoutCompleted, getLogsSince } = useLogs();
   const [swaps, setSwaps] = useState<Record<number, number>>({});
   const completed = getDayLog(today).workoutCompleted;
 
+  const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
+  const { progressionWeek } = computeProgressionInfo(
+    planStartDate,
+    progressionLogs,
+    profile.answers.daysAvailablePerWeek
+  );
+
   const workout = activeAdjustment
-    ? applyCoachAdjustment(profile, undefined, activeAdjustment)
-    : generateTodayWorkout(profile);
+    ? applyCoachAdjustment(profile, undefined, activeAdjustment, progressionWeek)
+    : generateTodayWorkout(profile, undefined, progressionWeek);
 
   function cycleSwap(index: number, altCount: number) {
     setSwaps((prev) => {

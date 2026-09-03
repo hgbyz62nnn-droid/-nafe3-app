@@ -65,9 +65,13 @@ export interface ExerciseSlot {
   restSec?: number;
   /** Equipment ids that satisfy this slot; empty array = bodyweight/no equipment needed. */
   equipment: string[];
-  /** Substitute exercise used when none of `equipment` is available, an injury contraindicates
-   * this slot, or the AI Coach applies a bodyweight-only/pain-safe adjustment. Always low-load
-   * and bodyweight-only. */
+  /** Training-location ids (see domain/assessment/trainingLocations.ts) where this slot is
+   * feasible, e.g. a full-field simulation tagged ['sports_field', 'sports_club', 'multiple'].
+   * Omitted/empty = feasible anywhere the athlete trains. */
+  locations?: string[];
+  /** Substitute exercise used when none of `equipment` is available, none of `locations` matches,
+   * an injury contraindicates this slot, or the AI Coach applies a bodyweight-only/pain-safe
+   * adjustment. Always low-load and bodyweight-only, and always location-unconstrained. */
   bodyweightAlternative?: { name: string; reps: string };
   category: ExerciseCategory;
   /** Health-limitation tag ids (see domain/assessment/health.ts) this movement should be avoided

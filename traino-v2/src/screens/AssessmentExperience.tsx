@@ -41,6 +41,17 @@ function BucketGrid({
   );
 }
 
+/**
+ * Experience years, current training frequency, and committed future
+ * frequency are three genuinely independent answers — each has its own
+ * BucketGrid writing to its own AssessmentAnswers field. None of these
+ * handlers may touch more than one field: experienceYears feeds
+ * levelEngine's experience axis, currentTrainingFrequency feeds its
+ * separate frequency axis, and daysAvailablePerWeek feeds the nutrition
+ * activity multiplier and the "workouts planned" denominator elsewhere.
+ * They can legitimately differ (e.g. someone who currently trains 2x/week
+ * but is committing to 5x/week going forward).
+ */
 export default function AssessmentExperience() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
@@ -63,13 +74,20 @@ export default function AssessmentExperience() {
       </div>
 
       <div className="px-5 mt-6">
-        <h2 className="text-white text-[18px] font-extrabold">How many days a week can you train?</h2>
+        <h2 className="text-white text-[18px] font-extrabold">How many days a week do you currently train?</h2>
+        <BucketGrid
+          options={FREQUENCY_OPTIONS}
+          value={answers.currentTrainingFrequency}
+          onSelect={(opt) => updateAnswers({ currentTrainingFrequency: opt.value })}
+        />
+      </div>
+
+      <div className="px-5 mt-6">
+        <h2 className="text-white text-[18px] font-extrabold">How many days a week can you commit going forward?</h2>
         <BucketGrid
           options={FREQUENCY_OPTIONS}
           value={answers.daysAvailablePerWeek}
-          onSelect={(opt) =>
-            updateAnswers({ daysAvailablePerWeek: opt.value, currentTrainingFrequency: opt.value })
-          }
+          onSelect={(opt) => updateAnswers({ daysAvailablePerWeek: opt.value })}
         />
       </div>
 

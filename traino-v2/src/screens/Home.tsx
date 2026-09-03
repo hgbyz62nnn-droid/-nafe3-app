@@ -6,6 +6,7 @@ import { AssetSlot } from '../components/ui/AssetSlot';
 import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { generateTodayWorkout } from '../domain/engine/planEngine';
+import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import {
   computePerformanceStats,
   computeWorkoutCompletion,
@@ -62,9 +63,15 @@ function StatTile({ children, label }: { children: React.ReactNode; label: strin
 }
 
 export default function Home() {
-  const { profile } = useProfile();
-  const { getRecentLogs } = useLogs();
-  const workout = generateTodayWorkout(profile);
+  const { profile, planStartDate } = useProfile();
+  const { getRecentLogs, getLogsSince } = useLogs();
+  const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
+  const { progressionWeek } = computeProgressionInfo(
+    planStartDate,
+    progressionLogs,
+    profile.answers.daysAvailablePerWeek
+  );
+  const workout = generateTodayWorkout(profile, undefined, progressionWeek);
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
 
   const last7 = getRecentLogs(7);

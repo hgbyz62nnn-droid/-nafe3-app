@@ -1,6 +1,7 @@
 import { getSportModule } from '../sports/registry';
 import type { AiCoachAdjustment, ExerciseSlot, UserProfile, WorkoutDayTemplate } from './types';
 import { applyProgression } from './progressionEngine';
+import { isValidWeekNumber } from './validation';
 
 export interface ResolvedExercise {
   name: string;
@@ -9,7 +10,7 @@ export interface ResolvedExercise {
   restSec?: number;
   category: ExerciseSlot['category'];
   /** Why the displayed name/reps differ from the slot's primary movement, if at all. */
-  substitutionReason: 'none' | 'equipment' | 'injury' | 'adjustment';
+  substitutionReason: 'none' | 'equipment' | 'location' | 'injury' | 'adjustment';
 }
 
 export interface ResolvedWorkout {
@@ -24,6 +25,7 @@ export interface ResolvedWorkout {
 
 interface ResolveContext {
   equipmentIds: string[];
+  locationIds: string[];
   injuryIds: string[];
   /** From an applied AI Coach adjustment — always prefer the bodyweight version. */
   forceBodyweight?: boolean;
@@ -38,13 +40,15 @@ function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExerc
   }
 
   const missingEquipment = slot.equipment.length > 0 && !slot.equipment.some((id) => ctx.equipmentIds.includes(id));
+  const wrongLocation =
+    (slot.locations ?? []).length > 0 && !slot.locations!.some((loc) => ctx.locationIds.includes(loc));
   const injuryFlagged = (slot.contraindications ?? []).some((tag) => ctx.injuryIds.includes(tag));
-  const shouldSubstitute = ctx.forceBodyweight || missingEquipment || injuryFlagged;
+  const shouldSubstitute = ctx.forceBodyweight || missingEquipment || wrongLocation || injuryFlagged;
 
   if (shouldSubstitute && !slot.bodyweightAlternative) {
     // No safe/available substitute exists for this slot — drop it rather than
-    // emit the original movement (which is either unavailable or, for an
-    // injury match, exactly the movement the athlete should be avoiding).
+    // emit the original movement (which is either unavailable/infeasible, or
+    // for an injury match, exactly the movement the athlete should be avoiding).
     return null;
   }
 
@@ -54,7 +58,9 @@ function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExerc
       ? 'injury'
       : missingEquipment
         ? 'equipment'
-        : 'adjustment';
+        : wrongLocation
+          ? 'location'
+          : 'adjustment';
     base = {
       name: slot.bodyweightAlternative.name,
       sets: slot.sets,
@@ -94,10 +100,14 @@ function resolveDay(day: WorkoutDayTemplate, ctx: ResolveContext): ResolvedWorko
 }
 
 function baseContext(profile: UserProfile, weekNumber = 1): ResolveContext {
+  // A NaN/negative/non-integer week number (corrupt state, a bad progression calc) must
+  // never reach applyProgression's arithmetic — it would propagate as a NaN set count.
+  const safeWeekNumber = isValidWeekNumber(weekNumber) ? weekNumber : 1;
   return {
     equipmentIds: profile.answers.equipmentIds,
+    locationIds: profile.answers.trainingLocationIds,
     injuryIds: profile.answers.injuryIds,
-    weekNumber,
+    weekNumber: safeWeekNumber,
   };
 }
 
@@ -159,9 +169,9 @@ export function applyCoachAdjustment(
 
   const resolved = resolveDay(day, ctx);
 
-  if (!adjustment.volumeMultiplier) return resolved;
-
   const multiplier = adjustment.volumeMultiplier;
+  if (!multiplier || Number.isNaN(multiplier) || multiplier <= 0) return resolved;
+
   return {
     ...resolved,
     exercises: resolved.exercises.map((ex) =>

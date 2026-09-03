@@ -1,7 +1,12 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { MealSlot, PerformanceCategory } from '../engine/types';
+import { addDays, daysBetween, localDateKey, parseLocalDateKey } from '../engine/dateUtils';
+import { isValidWeightKg } from '../engine/validation';
+import { loadVersioned, saveVersioned, type Migration } from './persistence';
 
-const STORAGE_KEY = 'traino.logs.v1';
+const STORAGE_KEY = 'traino.logs';
+const LEGACY_STORAGE_KEY = 'traino.logs.v1';
+const LOGS_DATA_VERSION = 2;
 
 export interface DayLog {
   date: string; // YYYY-MM-DD, local calendar date
@@ -20,24 +25,68 @@ function emptyDayLog(date: string): DayLog {
   return { date, loggedMealSlots: [], mealOverrides: {}, workoutCompleted: false };
 }
 
-/** Local calendar date (not UTC) — a workout logged at 11pm should count for
- * the athlete's local "today", not flip to tomorrow for negative-UTC-offset users. */
-function localDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 type LogsByDate = Record<string, DayLog>;
 
+function isDayLog(value: unknown, dateKey: string): value is DayLog {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.date === 'string' &&
+    v.date === dateKey &&
+    Array.isArray(v.loggedMealSlots) &&
+    typeof v.mealOverrides === 'object' &&
+    v.mealOverrides !== null &&
+    typeof v.workoutCompleted === 'boolean'
+  );
+}
+
+function isLogsByDate(value: unknown): value is LogsByDate {
+  if (typeof value !== 'object' || value === null) return false;
+  return Object.entries(value as Record<string, unknown>).every(([key, day]) => isDayLog(day, key));
+}
+
+/** v1 (pre-migration-layer `traino.logs.v1` bare object, and the initial versioned shape) -> v2:
+ * every day log must have `loggedMealSlots`/`mealOverrides` present (some early-build entries
+ * only ever wrote `workoutCompleted`) so downstream code never has to null-check them. */
+const v1ToV2: Migration = {
+  fromVersion: 1,
+  migrate: (data) => {
+    const next: Record<string, unknown> = {};
+    for (const [date, rawDay] of Object.entries(data)) {
+      const day = (rawDay ?? {}) as Record<string, unknown>;
+      next[date] = {
+        ...day,
+        date,
+        loggedMealSlots: Array.isArray(day.loggedMealSlots) ? day.loggedMealSlots : [],
+        mealOverrides: typeof day.mealOverrides === 'object' && day.mealOverrides !== null ? day.mealOverrides : {},
+        workoutCompleted: Boolean(day.workoutCompleted),
+      };
+    }
+    return next;
+  },
+};
+
+function readLegacy(): { dataVersion: number; data: Record<string, unknown> } | null {
+  const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (!raw) return null;
+  const parsed = JSON.parse(raw);
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  return { dataVersion: 1, data: parsed };
+}
+
 function loadLogs(): LogsByDate {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+  const result = loadVersioned<LogsByDate>({
+    storageKey: STORAGE_KEY,
+    currentVersion: LOGS_DATA_VERSION,
+    migrations: [v1ToV2],
+    validate: isLogsByDate,
+    fallback: () => ({}),
+    readLegacy,
+  });
+  if (result.usedFallback && result.reason) {
+    console.warn(`[LogContext] starting with empty logs: ${result.reason}`);
   }
+  return result.data;
 }
 
 interface LogContextValue {
@@ -50,6 +99,11 @@ interface LogContextValue {
   logWeight: (date: string, weightKg: number) => void;
   /** Most recent `days` day-logs, oldest first, including empty days with no activity. */
   getRecentLogs: (days: number) => DayLog[];
+  /** Every day-log from `startDate` (inclusive) through today, oldest first, including empty
+   * days — the calendar-complete window `computeProgressionInfo` needs to tell a missed week
+   * apart from one that just hasn't happened yet. Returns [] if `startDate` is malformed or
+   * in the future. */
+  getLogsSince: (startDate: string) => DayLog[];
 }
 
 const LogContext = createContext<LogContextValue | null>(null);
@@ -62,11 +116,7 @@ export function LogProvider({ children }: { children: ReactNode }) {
     setLogs((prev) => {
       const current = prev[date] ?? emptyDayLog(date);
       const next = { ...prev, [date]: updater(current) };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // localStorage unavailable — state still updates for this session.
-      }
+      saveVersioned(STORAGE_KEY, LOGS_DATA_VERSION, next);
       return next;
     });
   }
@@ -104,6 +154,10 @@ export function LogProvider({ children }: { children: ReactNode }) {
   }
 
   function logWeight(date: string, weightKg: number) {
+    if (!isValidWeightKg(weightKg)) {
+      console.warn(`[LogContext] rejected weight log for ${date}: ${weightKg} is not a valid weight in kg`);
+      return;
+    }
     updateDay(date, (day) => ({ ...day, weightKg }));
   }
 
@@ -118,6 +172,19 @@ export function LogProvider({ children }: { children: ReactNode }) {
     return result;
   }
 
+  function getLogsSince(startDate: string): DayLog[] {
+    const start = parseLocalDateKey(startDate);
+    if (!start) return [];
+    const todayDate = new Date();
+    const span = daysBetween(start, todayDate);
+    if (span < 0) return [];
+    const result: DayLog[] = [];
+    for (let i = 0; i <= span; i++) {
+      result.push(getDayLog(localDateKey(addDays(start, i))));
+    }
+    return result;
+  }
+
   const value = useMemo<LogContextValue>(
     () => ({
       logs,
@@ -128,6 +195,7 @@ export function LogProvider({ children }: { children: ReactNode }) {
       setWorkoutCompleted,
       logWeight,
       getRecentLogs,
+      getLogsSince,
     }),
     [logs, today]
   );
