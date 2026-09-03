@@ -1,82 +1,23 @@
+import { LEGACY_ALTERNATIVES_BY_NAME } from '../exercise/legacyAlternatives';
+
 /**
  * Deterministic exercise-replacement table for the "Replace an exercise"
  * flow: each entry lists pre-authored alternatives that target the same
  * movement pattern/muscle group. A fixed lookup, not a generated swap.
+ *
+ * Thin compatibility wrapper: `domain/exercise/legacyAlternatives.ts` is now
+ * the single source of truth for this data (also read by the Exercise
+ * Library derivation) — this file exists only so existing callers
+ * (TodaysWorkout.tsx and tests) don't need to change their import path.
+ * New code should prefer the Exercise Intelligence matching engine
+ * (`domain/exercise/matchingEngine.ts`), which is safety/equipment/intent
+ * aware; this table has none of that.
  */
 export interface AlternativeExercise {
   name: string;
   reps: string;
 }
 
-const EXERCISE_ALTERNATIVES: Record<string, AlternativeExercise[]> = {
-  'Back Squat': [
-    { name: 'Front Squat', reps: '6' },
-    { name: 'Bulgarian Split Squat', reps: '10 / leg' },
-  ],
-  'Romanian Deadlift': [
-    { name: 'Single-Leg Glute Bridge', reps: '12 / leg' },
-    { name: 'Good Morning', reps: '10' },
-  ],
-  'Bulgarian Split Squat': [
-    { name: 'Walking Lunges', reps: '12 / leg' },
-    { name: 'Step-Ups', reps: '10 / leg' },
-  ],
-  'Leg Press': [
-    { name: 'Walking Lunges', reps: '12 / leg' },
-    { name: 'Goblet Squat', reps: '12' },
-  ],
-  'Bench Press': [
-    { name: 'Push-Ups', reps: '15' },
-    { name: 'Dumbbell Floor Press', reps: '10' },
-  ],
-  'Pull-Up': [
-    { name: 'Dumbbell Row', reps: '10 / side' },
-    { name: 'Lat Pulldown', reps: '10' },
-  ],
-  'Weighted Pull-Up': [
-    { name: 'Pull-Up', reps: '8-10' },
-    { name: 'Dumbbell Row', reps: '12 / side' },
-  ],
-  'Sprint Intervals': [
-    { name: 'Bike Intervals', reps: '20 sec' },
-    { name: 'Shuttle Runs', reps: '20 sec' },
-  ],
-  'Box Jump': [
-    { name: 'Broad Jump', reps: '6' },
-    { name: 'Step-Up with Drive', reps: '8 / leg' },
-  ],
-  'Push-Ups': [
-    { name: 'Incline Push-Ups', reps: '15' },
-    { name: 'Dumbbell Bench Press', reps: '10' },
-  ],
-  Plank: [
-    { name: 'Dead Bug', reps: '10 / side' },
-    { name: 'Side Plank', reps: '30 sec / side' },
-  ],
-
-  // -- Swimming --
-  'Freestyle Catch-Up Drill': [
-    { name: 'Freestyle Sculling Drill', reps: '25m' },
-    { name: 'Single-Arm Freestyle Drill', reps: '25m / arm' },
-  ],
-  'Kickboard Flutter Kick': [
-    { name: 'Fins Flutter Kick Sprint', reps: '25m' },
-    { name: 'Vertical Kicking (no board)', reps: '30 sec' },
-  ],
-  'Sprint Intervals 50m': [
-    { name: 'Sprint Intervals 100m', reps: '100m @ 1:40' },
-    { name: 'Descending 100s', reps: '100m descending pace' },
-  ],
-  'Continuous Freestyle Swim': [
-    { name: 'Pull Buoy Freestyle', reps: '50m' },
-    { name: 'Descending 100s', reps: '100m descending pace' },
-  ],
-  'Pull Buoy Freestyle': [
-    { name: 'Pull Buoy + Paddles Freestyle', reps: '75m' },
-    { name: 'Continuous Freestyle Swim', reps: '200m easy pace' },
-  ],
-};
-
 export function getExerciseAlternatives(name: string): AlternativeExercise[] {
-  return EXERCISE_ALTERNATIVES[name] ?? [];
+  return LEGACY_ALTERNATIVES_BY_NAME[name] ?? [];
 }

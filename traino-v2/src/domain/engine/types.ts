@@ -119,8 +119,10 @@ export interface SportModuleData {
  * 'should_i_train_today' surface Daily Readiness System context deterministically (see
  * readinessEngine.ts); 'why_weight_increased'/'why_no_progression'/'whats_changed_from_last_week'/
  * 'what_should_i_aim_for' surface the Progression Engine's decisions deterministically (see
- * exerciseProgressionEngine.ts) — every one of them still resolves to pre-templated text over
- * structured data, never a generated explanation. */
+ * exerciseProgressionEngine.ts); 'why_this_exercise'/'what_muscles_does_this_train'/
+ * 'easier_version'/'harder_version'/'why_limited_alternatives' surface Exercise Intelligence
+ * data deterministically (see domain/exercise/registry.ts + matchingEngine.ts) — every one of
+ * them still resolves to pre-templated text over structured data, never a generated explanation. */
 export type AiCoachIntent =
   | 'feeling_tired'
   | 'adjust_todays_workout'
@@ -137,7 +139,12 @@ export type AiCoachIntent =
   | 'why_weight_increased'
   | 'why_no_progression'
   | 'whats_changed_from_last_week'
-  | 'what_should_i_aim_for';
+  | 'what_should_i_aim_for'
+  | 'why_this_exercise'
+  | 'what_muscles_does_this_train'
+  | 'easier_version'
+  | 'harder_version'
+  | 'why_limited_alternatives';
 
 export interface AiCoachAdjustment {
   /** Applied to today's remaining sets/volume, e.g. 0.7 = cut 30%. */

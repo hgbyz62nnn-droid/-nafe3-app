@@ -3,6 +3,7 @@ import type { ExercisePerformanceLog, ExerciseProgressionDecision, ProgressionMo
 import type { ReadinessStatus } from '../readiness/types';
 import { deriveBaseTarget, inferProgressionModel } from './progressionModels';
 import { decideExerciseProgression } from './exerciseProgressionEngine';
+import { getExerciseByName } from '../exercise/registry';
 
 /**
  * Composes progressionModels + exerciseProgressionEngine into the one call planEngine
@@ -58,7 +59,14 @@ export function applyExerciseProgression(
   equipmentForModel: string[],
   context: ExerciseProgressionContext
 ): ProgressedExercise | null {
-  const config = inferProgressionModel({ reps: resolved.reps, category: resolved.category, equipment: equipmentForModel });
+  // Exercise metadata -> progression model -> Progression Engine (spec: single source of
+  // truth): prefer the Exercise Library's own progressionModel when this exercise is in it,
+  // falling back to the original reps-string inference for anything not yet registered.
+  const definition = getExerciseByName(resolved.name);
+  const config = inferProgressionModel(
+    { reps: resolved.reps, category: resolved.category, equipment: equipmentForModel },
+    definition?.progressionModel
+  );
   if (!config) return null;
 
   const baseTarget = deriveBaseTarget(

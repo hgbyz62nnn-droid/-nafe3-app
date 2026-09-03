@@ -3,6 +3,7 @@ import { ProfileProvider } from './domain/state/ProfileContext';
 import { LogProvider } from './domain/state/LogContext';
 import { WeeklyCoachingProvider } from './domain/state/WeeklyCoachingContext';
 import { DailyReadinessProvider } from './domain/state/DailyReadinessContext';
+import { ExercisePreferenceProvider } from './domain/state/ExercisePreferenceContext';
 import Home from './screens/Home';
 import AssessmentAbout from './screens/AssessmentAbout';
 import SportSelection from './screens/SportSelection';
@@ -28,28 +29,30 @@ export default function App() {
       <LogProvider>
         <WeeklyCoachingProvider>
           <DailyReadinessProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/onboarding/about" element={<AssessmentAbout />} />
-                <Route path="/sport-selection" element={<SportSelection />} />
-                <Route path="/assessment" element={<AssessmentTrainingLocation />} />
-                <Route path="/equipment" element={<Equipment />} />
-                <Route path="/assessment/experience" element={<AssessmentExperience />} />
-                <Route path="/assessment/health" element={<AssessmentHealth />} />
-                <Route path="/assessment/body" element={<AssessmentBody />} />
-                <Route path="/assessment/nutrition-preferences" element={<AssessmentNutritionPreferences />} />
-                <Route path="/ai-coach" element={<AiCoach />} />
-                <Route path="/todays-workout" element={<TodaysWorkout />} />
-                <Route path="/nutrition" element={<Nutrition />} />
-                <Route path="/progress" element={<Progress />} />
-                <Route path="/weekly-report" element={<WeeklyReport />} />
-                <Route path="/weekly-check-in" element={<WeeklyCheckIn />} />
-                <Route path="/daily-check-in" element={<DailyCheckIn />} />
-                <Route path="/human-coach" element={<HumanCoach />} />
-                <Route path="/profile" element={<Profile />} />
-              </Routes>
-            </BrowserRouter>
+            <ExercisePreferenceProvider>
+              <BrowserRouter>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/onboarding/about" element={<AssessmentAbout />} />
+                  <Route path="/sport-selection" element={<SportSelection />} />
+                  <Route path="/assessment" element={<AssessmentTrainingLocation />} />
+                  <Route path="/equipment" element={<Equipment />} />
+                  <Route path="/assessment/experience" element={<AssessmentExperience />} />
+                  <Route path="/assessment/health" element={<AssessmentHealth />} />
+                  <Route path="/assessment/body" element={<AssessmentBody />} />
+                  <Route path="/assessment/nutrition-preferences" element={<AssessmentNutritionPreferences />} />
+                  <Route path="/ai-coach" element={<AiCoach />} />
+                  <Route path="/todays-workout" element={<TodaysWorkout />} />
+                  <Route path="/nutrition" element={<Nutrition />} />
+                  <Route path="/progress" element={<Progress />} />
+                  <Route path="/weekly-report" element={<WeeklyReport />} />
+                  <Route path="/weekly-check-in" element={<WeeklyCheckIn />} />
+                  <Route path="/daily-check-in" element={<DailyCheckIn />} />
+                  <Route path="/human-coach" element={<HumanCoach />} />
+                  <Route path="/profile" element={<Profile />} />
+                </Routes>
+              </BrowserRouter>
+            </ExercisePreferenceProvider>
           </DailyReadinessProvider>
         </WeeklyCoachingProvider>
       </LogProvider>

@@ -26,6 +26,9 @@ import type { DailyReadinessInputs, DailyReadinessRecord, ReadinessStatus } from
 import type { ExerciseProgressionContext } from './engine/progressionIntegration';
 import type { ExercisePerformanceLog, ProgressionTarget } from './progression/types';
 import { swimmingModule } from './sports/swimming/program';
+import { getExerciseByName } from './exercise/registry';
+import { suggestReplacements, type AthleteConstraints } from './exercise/matchingEngine';
+import { derivePreferenceSignals, deriveRecentlyUsedIds } from './exercise/preferences';
 
 /**
  * Multi-athlete, multi-week simulation. Not a UI test — this drives the
@@ -969,5 +972,186 @@ describe('Progression Engine multi-day simulation', () => {
     // The substitute has no logged history of its own yet — it must start fresh (SKIP),
     // never inheriting "Light Sprint Intervals"'s 3-exposure PROGRESS streak.
     expect(substitute!.progression?.decision).toBe('SKIP');
+  });
+});
+
+describe('Exercise Intelligence multi-athlete simulation (spec §26)', () => {
+  /** Every non-timed exercise in a real resolved plan must resolve to a real Exercise
+   * Library entry, and every candidate the matching engine offers for it must respect
+   * that athlete's actual safety/equipment constraints — this is what "the app never
+   * proposes an invalid exercise" means in practice, run against real generated plans
+   * rather than synthetic queries. */
+  function assertPlanExercisesResolveAndCandidatesAreValid(
+    workout: ReturnType<typeof generateTodayWorkout>,
+    constraints: AthleteConstraints
+  ) {
+    const resolvedNonTimed = workout.exercises.filter((ex) => ex.category !== 'warmup' && ex.category !== 'cooldown');
+    expect(resolvedNonTimed.length).toBeGreaterThan(0);
+
+    for (const ex of resolvedNonTimed) {
+      const definition = getExerciseByName(ex.name);
+      expect(definition, `"${ex.name}" should resolve to a real Exercise Library entry`).toBeDefined();
+      if (!definition) continue;
+
+      const candidates = suggestReplacements(definition.id, constraints, 10);
+      for (const c of candidates) {
+        expect(
+          c.exercise.safety.contraindications.some((tag) => constraints.injuryIds.includes(tag)),
+          `candidate "${c.exercise.id}" for "${definition.id}" should never be contraindicated for ${constraints.injuryIds.join(',')}`
+        ).toBe(false);
+        expect(
+          c.exercise.equipment.length === 0 || c.exercise.equipment.some((eq) => constraints.availableEquipment.includes(eq)),
+          `candidate "${c.exercise.id}" for "${definition.id}" should only require equipment the athlete has`
+        ).toBe(true);
+      }
+    }
+    return resolvedNonTimed;
+  }
+
+  it('1. Gym athlete, full equipment — valid exercises, safety/equipment respected', () => {
+    const sim = athlete({ name: 'gym-full', trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: sim.answers.equipmentIds, injuryIds: sim.answers.injuryIds });
+  });
+
+  it('2. Home athlete, dumbbells only — candidates never require equipment beyond dumbbells', () => {
+    const sim = athlete({ name: 'home-dumbbells', trainingLocationIds: ['home'], equipmentIds: ['dumbbells'], injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    const constraints: AthleteConstraints = { availableEquipment: ['dumbbells'], injuryIds: ['none'] };
+    const resolved = assertPlanExercisesResolveAndCandidatesAreValid(workout, constraints);
+    const definition = getExerciseByName(resolved[0].name)!;
+    const candidates = suggestReplacements(definition.id, constraints, 10);
+    expect(candidates.every((c) => c.exercise.equipment.length === 0 || c.exercise.equipment.includes('dumbbells'))).toBe(true);
+  });
+
+  it('3. Home athlete, bodyweight-only — every candidate is equipment-free, intent still preserved via movement pattern', () => {
+    const sim = athlete({ name: 'home-bodyweight', trainingLocationIds: ['home'], equipmentIds: [], injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    const constraints: AthleteConstraints = { availableEquipment: [], injuryIds: ['none'] };
+    const resolved = assertPlanExercisesResolveAndCandidatesAreValid(workout, constraints);
+    const definition = getExerciseByName(resolved[0].name)!;
+    const candidates = suggestReplacements(definition.id, constraints, 10);
+    expect(candidates.every((c) => c.exercise.equipment.length === 0)).toBe(true);
+  });
+
+  it('4. Traveling athlete (bodyweightOnly matching mode) — same movement pattern preserved, no equipment required', () => {
+    const sim = athlete({ name: 'traveling', trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    const strengthEx = workout.exercises.find((ex) => ex.category === 'strength');
+    expect(strengthEx).toBeDefined();
+    const definition = getExerciseByName(strengthEx!.name)!;
+    const candidates = suggestReplacements(definition.id, { availableEquipment: [], injuryIds: ['none'] }, 5);
+    expect(candidates.every((c) => c.exercise.equipment.length === 0)).toBe(true);
+  });
+
+  it('5. Equipment-restricted athlete (kettlebell only) — no candidate requires unavailable equipment', () => {
+    const sim = athlete({ name: 'kettlebell-only', trainingLocationIds: ['home'], equipmentIds: ['kettlebell'], injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: ['kettlebell'], injuryIds: ['none'] });
+  });
+
+  it('6. Injury-constrained athlete (knee) — no candidate is ever contraindicated for knee', () => {
+    const sim = athlete({ name: 'knee-injury', trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['knee'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: FULL_EQUIPMENT, injuryIds: ['knee'] });
+  });
+
+  it('7. Beginner athlete — plan resolves, candidates ranked with athleteLevel: beginner never throw', () => {
+    const sim = athlete({ name: 'beginner', experienceYears: 0, currentTrainingFrequency: 0, trainingLocationIds: ['home'], equipmentIds: [], injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    expect(profile.level).toBe('beginner');
+    const workout = generateTodayWorkout(profile, 0, 1);
+    assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: [], injuryIds: ['none'], athleteLevel: profile.level });
+  });
+
+  it('8. Intermediate athlete — plan resolves, candidates ranked with athleteLevel: intermediate never throw', () => {
+    const sim = athlete({ name: 'intermediate', experienceYears: 2, currentTrainingFrequency: 3, trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: FULL_EQUIPMENT, injuryIds: ['none'], athleteLevel: profile.level });
+  });
+
+  it('9. Advanced athlete — plan resolves, candidates ranked with athleteLevel: advanced never throw', () => {
+    const sim = athlete({ name: 'advanced', experienceYears: 8, currentTrainingFrequency: 6, trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: FULL_EQUIPMENT, injuryIds: ['none'], athleteLevel: profile.level });
+  });
+
+  it('10. Football athlete — resolved exercises are football-relevant where tagged, engine stays sport-agnostic', () => {
+    const sim = athlete({ name: 'football-athlete', sport: 'football', trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    const resolved = assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: FULL_EQUIPMENT, injuryIds: ['none'], sport: 'football' });
+    const definition = getExerciseByName(resolved[0].name)!;
+    expect(definition.sportRelevance.football).toBeDefined();
+  });
+
+  it('11. Swimming athlete — resolved exercises are swimming-relevant where tagged, engine stays sport-agnostic', () => {
+    const sim = athlete({ name: 'swim-athlete', sport: 'swimming', trainingLocationIds: ['pool'], equipmentIds: ['kickboard', 'pull_buoy', 'fins'], injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    const resolved = assertPlanExercisesResolveAndCandidatesAreValid(workout, { availableEquipment: ['kickboard', 'pull_buoy', 'fins'], injuryIds: ['none'], sport: 'swimming' });
+    const definition = getExerciseByName(resolved[0].name)!;
+    expect(definition.sportRelevance.swimming).toBeDefined();
+    // Swimming's distance-based exercises still classify with the distance model, unaffected.
+    const distanceEx = workout.exercises.find((ex) => getExerciseByName(ex.name)?.progressionModel === 'distance');
+    expect(distanceEx).toBeDefined();
+  });
+
+  it('12. Athlete with exercise preferences — a liked exercise ranks above an otherwise-identical unliked candidate', () => {
+    const sim = athlete({ name: 'preference-athlete', trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    // The Exercise Library (not necessarily today's specific plan) is what the matching
+    // engine reads from — assert directly against it rather than depending on which day
+    // of this athlete's weekly split happens to include Back Squat.
+    expect(getExerciseByName('Back Squat')).toBeDefined();
+    expect(generateTodayWorkout(profile, 0, 1).exercises.length).toBeGreaterThan(0);
+    const withoutPref = suggestReplacements('back-squat', { availableEquipment: FULL_EQUIPMENT, injuryIds: ['none'] }, 10).find((c) => c.exercise.id === 'front-squat');
+    const withPref = suggestReplacements(
+      'back-squat',
+      { availableEquipment: FULL_EQUIPMENT, injuryIds: ['none'], preferenceByExerciseId: { 'front-squat': 'liked' } },
+      10
+    ).find((c) => c.exercise.id === 'front-squat');
+    expect(withoutPref).toBeDefined();
+    expect(withPref).toBeDefined();
+    expect(withPref!.score).toBeGreaterThan(withoutPref!.score);
+  });
+
+  it('13. Athlete with exercise replacement history — real logged performance derives frequently_completed/frequently_replaced signals that flow into ranking without throwing', () => {
+    const sim = athlete({ name: 'history-athlete', trainingLocationIds: ['gym'], equipmentIds: FULL_EQUIPMENT, injuryIds: ['none'] });
+    const profile = buildProfile(sim.answers);
+    const workout = generateTodayWorkout(profile, 0, 1);
+    expect(workout.exercises.length).toBeGreaterThan(0);
+
+    const logs: ExercisePerformanceLog[] = [
+      { date: '2026-01-01', exerciseName: 'Back Squat', prescribedSets: 4, completedSets: 4, wasModified: false, submittedAt: '2026-01-01T18:00:00.000Z' },
+      { date: '2026-01-08', exerciseName: 'Back Squat', prescribedSets: 4, completedSets: 4, wasModified: false, submittedAt: '2026-01-08T18:00:00.000Z' },
+      { date: '2026-01-15', exerciseName: 'Back Squat', prescribedSets: 4, completedSets: 4, wasModified: false, submittedAt: '2026-01-15T18:00:00.000Z' },
+    ];
+    const replacementCounts = { 'front-squat': 3 };
+    const preferenceByExerciseId = derivePreferenceSignals(logs, replacementCounts);
+    expect(preferenceByExerciseId['back-squat']).toBe('frequently_completed');
+    expect(preferenceByExerciseId['front-squat']).toBe('frequently_replaced');
+
+    const recentlyUsedExerciseIds = deriveRecentlyUsedIds(logs);
+    const constraints: AthleteConstraints = {
+      availableEquipment: FULL_EQUIPMENT,
+      injuryIds: ['none'],
+      preferenceByExerciseId,
+      recentlyUsedExerciseIds,
+    };
+    expect(() => suggestReplacements('back-squat', constraints, 10)).not.toThrow();
+    const frontSquat = suggestReplacements('back-squat', constraints, 10).find((c) => c.exercise.id === 'front-squat');
+    const withoutHistory = suggestReplacements('back-squat', { availableEquipment: FULL_EQUIPMENT, injuryIds: ['none'] }, 10).find((c) => c.exercise.id === 'front-squat');
+    // frequently_replaced is a negative ranking signal — front-squat should rank no higher
+    // with that history than without it.
+    expect(frontSquat!.score).toBeLessThanOrEqual(withoutHistory!.score);
   });
 });

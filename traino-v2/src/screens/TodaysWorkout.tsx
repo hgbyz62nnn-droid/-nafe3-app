@@ -8,20 +8,41 @@ import { useProfile } from '../domain/state/ProfileContext';
 import { useLogs } from '../domain/state/LogContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
+import { useExercisePreferences } from '../domain/state/ExercisePreferenceContext';
 import { generateTodayWorkout, applyCoachAdjustment } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
-import { getExerciseAlternatives } from '../domain/engine/exerciseAlternatives';
+import { getExerciseByName } from '../domain/exercise/registry';
+import { derivePreferenceSignals, deriveRecentlyUsedIds } from '../domain/exercise/preferences';
+import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
+import type { ExerciseDefinition } from '../domain/exercise/types';
 import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
 import ExerciseLogPanel from '../components/ExerciseLogPanel';
+import ExerciseDetailPanel from '../components/ExerciseDetailPanel';
 
 export default function TodaysWorkout() {
   const { profile, activeAdjustment, setActiveAdjustment, planStartDate } = useProfile();
-  const { today, getDayLog, setWorkoutCompleted, getLogsSince, getExerciseHistory, logExercisePerformance } = useLogs();
+  const { today, getDayLog, setWorkoutCompleted, getLogsSince, getRecentLogs, getExerciseHistory, logExercisePerformance } = useLogs();
   const { getApprovedAdjustmentForWeek } = useWeeklyCoaching();
   const { getTodayRecord, getRecord } = useDailyReadiness();
-  const [swaps, setSwaps] = useState<Record<number, number>>({});
+  const { replacementCounts, recordReplacement } = useExercisePreferences();
+  const [swaps, setSwaps] = useState<Record<number, ExerciseDefinition>>({});
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const completed = getDayLog(today).workoutCompleted;
+
+  // Deterministic preference/history signals — ranking-only, never a hard filter
+  // (see domain/exercise/preferences.ts). A bounded 90-day window is plenty of
+  // evidence for "frequently completed/skipped" without scanning the athlete's
+  // entire history on every render.
+  const recentExerciseLogs = getRecentLogs(90).flatMap((day) => day.exerciseLogs ?? []);
+  const athleteConstraints: AthleteConstraints = {
+    availableEquipment: profile.answers.equipmentIds,
+    injuryIds: profile.answers.injuryIds,
+    sport: profile.answers.sport,
+    athleteLevel: profile.level,
+    preferenceByExerciseId: derivePreferenceSignals(recentExerciseLogs, replacementCounts),
+    recentlyUsedExerciseIds: deriveRecentlyUsedIds(recentExerciseLogs),
+  };
 
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
   const { progressionWeek, currentPlanWeek } = computeProgressionInfo(
@@ -53,12 +74,11 @@ export default function TodaysWorkout() {
     ? applyCoachAdjustment(profile, undefined, effectiveAdjustment, progressionWeek, progressionContext)
     : generateTodayWorkout(profile, undefined, progressionWeek, progressionContext);
 
-  function cycleSwap(index: number, altCount: number) {
-    setSwaps((prev) => {
-      const current = prev[index] ?? -1;
-      const next = current + 1 >= altCount ? -1 : current + 1;
-      return { ...prev, [index]: next };
-    });
+  function handleReplace(index: number, sourceExerciseName: string, replacement: ExerciseDefinition) {
+    const sourceId = getExerciseByName(sourceExerciseName)?.id;
+    if (sourceId) recordReplacement(sourceId);
+    setSwaps((prev) => ({ ...prev, [index]: replacement }));
+    setDetailIndex(null);
   }
 
   function handleLogSave(entry: Parameters<typeof logExercisePerformance>[1]) {
@@ -130,10 +150,9 @@ export default function TodaysWorkout() {
         <div className="mt-2">
           {workout.exercises.map((ex, i) => {
             const isTimedBlock = ex.category === 'warmup' || ex.category === 'cooldown';
-            const alternatives = getExerciseAlternatives(ex.name);
-            const swapIndex = swaps[i] ?? -1;
-            const manuallySwapped = swapIndex >= 0 && !!alternatives[swapIndex];
-            const display = manuallySwapped ? alternatives[swapIndex] : ex;
+            const manualSwap = swaps[i];
+            const manuallySwapped = !!manualSwap;
+            const display = manualSwap ? { name: manualSwap.displayName, reps: ex.reps } : ex;
             const meta = isTimedBlock ? display.reps : `${ex.sets} x ${display.reps}`;
             const hasImage = !isTimedBlock;
             // A manual (unpersisted) exercise swap changes what's displayed, so logging
@@ -165,11 +184,14 @@ export default function TodaysWorkout() {
                       </p>
                     )}
                   </div>
-                  {!isTimedBlock && alternatives.length > 0 && (
+                  {!isTimedBlock && (
                     <button
-                      onClick={() => cycleSwap(i, alternatives.length)}
+                      onClick={() => {
+                        setExpandedIndex(null);
+                        setDetailIndex((prev) => (prev === i ? null : i));
+                      }}
                       className="w-8 h-8 min-w-[32px] rounded-full border border-border-soft flex items-center justify-center shrink-0"
-                      aria-label="Replace exercise"
+                      aria-label="View exercise details / replace"
                     >
                       <Icon name="swap" size={14} className="text-text-secondary" strokeWidth={2} />
                     </button>
@@ -178,7 +200,11 @@ export default function TodaysWorkout() {
                     <AssetSlot className="w-14 h-11 rounded-lg shrink-0" fit="cover" compact />
                   )}
                   <button
-                    onClick={() => canLog && setExpandedIndex((prev) => (prev === i ? null : i))}
+                    onClick={() => {
+                      if (!canLog) return;
+                      setDetailIndex(null);
+                      setExpandedIndex((prev) => (prev === i ? null : i));
+                    }}
                     disabled={!canLog}
                     aria-label={canLog ? 'Log this exercise' : undefined}
                     className={`w-8 h-8 min-w-[32px] rounded-full flex items-center justify-center shrink-0 ${
@@ -190,6 +216,14 @@ export default function TodaysWorkout() {
                 </div>
                 {expandedIndex === i && canLog && (
                   <ExerciseLogPanel exercise={ex} onSave={handleLogSave} onCancel={() => setExpandedIndex(null)} />
+                )}
+                {detailIndex === i && (
+                  <ExerciseDetailPanel
+                    exerciseName={ex.name}
+                    constraints={athleteConstraints}
+                    onClose={() => setDetailIndex(null)}
+                    onSelectReplacement={(replacement) => handleReplace(i, display.name, replacement)}
+                  />
                 )}
               </div>
             );

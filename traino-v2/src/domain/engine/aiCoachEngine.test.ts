@@ -23,6 +23,11 @@ const ALL_INTENTS: AiCoachIntent[] = [
   'why_no_progression',
   'whats_changed_from_last_week',
   'what_should_i_aim_for',
+  'why_this_exercise',
+  'what_muscles_does_this_train',
+  'easier_version',
+  'harder_version',
+  'why_limited_alternatives',
 ];
 
 function progressionDecision(overrides: Partial<ExerciseProgressionDecision> = {}): ExerciseProgressionDecision {
@@ -295,6 +300,106 @@ describe('getAiCoachReply — Progression Engine intents (X)', () => {
     const a = getAiCoachReply('whats_changed_from_last_week', { latestRecord: null, todaysProgressionDecisions: decisions });
     const b = getAiCoachReply('whats_changed_from_last_week', { latestRecord: null, todaysProgressionDecisions: decisions });
     expect(a).toEqual(b);
+  });
+});
+
+describe('getAiCoachReply — Exercise Intelligence intents (Y)', () => {
+  const constraints = { availableEquipment: ['barbell', 'squat_rack', 'bench'], injuryIds: ['none'] };
+
+  it('why_this_exercise explains the focused exercise from real ExerciseDefinition data', () => {
+    const reply = getAiCoachReply('why_this_exercise', { latestRecord: null, focusedExerciseName: 'Back Squat' });
+    expect(reply.message).toContain('Back Squat');
+    expect(reply.message).toContain('Squat');
+  });
+
+  it('why_this_exercise is honest when no exercise is in focus and no fallback exists', () => {
+    const reply = getAiCoachReply('why_this_exercise', { latestRecord: null });
+    expect(reply.message).toMatch(/don't have a specific exercise/i);
+  });
+
+  it('what_muscles_does_this_train lists real primary/secondary muscles', () => {
+    const reply = getAiCoachReply('what_muscles_does_this_train', { latestRecord: null, focusedExerciseName: 'Back Squat' });
+    expect(reply.message).toContain('Quads');
+    expect(reply.message).toContain('Glutes');
+  });
+
+  it('easier_version names the curated regression when one exists', () => {
+    const reply = getAiCoachReply('easier_version', { latestRecord: null, focusedExerciseName: 'Back Squat' });
+    expect(reply.message).toContain('Goblet Squat');
+  });
+
+  it('easier_version is honest when no regression is authored', () => {
+    const reply = getAiCoachReply('easier_version', { latestRecord: null, focusedExerciseName: 'Goblet Squat' });
+    expect(reply.message).toMatch(/no simpler pre-defined version/i);
+  });
+
+  it('harder_version names the curated progression when one exists', () => {
+    const reply = getAiCoachReply('harder_version', { latestRecord: null, focusedExerciseName: 'Push-Ups' });
+    expect(reply.message).toContain('Feet-Elevated Push-Up');
+  });
+
+  it('harder_version is honest when no progression is authored', () => {
+    const reply = getAiCoachReply('harder_version', { latestRecord: null, focusedExerciseName: 'Back Squat' });
+    expect(reply.message).toMatch(/no harder pre-defined progression/i);
+  });
+
+  it('why_limited_alternatives explains real equipment/injury constraints when they apply', () => {
+    const reply = getAiCoachReply('why_limited_alternatives', {
+      latestRecord: null,
+      focusedExerciseName: 'Back Squat',
+      athleteConstraints: { availableEquipment: [], injuryIds: ['knee'] },
+    });
+    expect(reply.message).toContain('equipment');
+    expect(reply.message).toMatch(/knee/i);
+  });
+
+  it('why_limited_alternatives is honest when nothing is actually restricted', () => {
+    const reply = getAiCoachReply('why_limited_alternatives', {
+      latestRecord: null,
+      focusedExerciseName: 'Back Squat',
+      athleteConstraints: constraints,
+    });
+    expect(reply.message).toMatch(/nothing is being held back/i);
+  });
+
+  it('replace_exercise recommends a real, ranked alternative when a focused exercise + constraints are given', () => {
+    const reply = getAiCoachReply('replace_exercise', {
+      latestRecord: null,
+      focusedExerciseName: 'Back Squat',
+      athleteConstraints: constraints,
+    });
+    expect(reply.message).toContain('Back Squat');
+    expect(reply.ctaLabel).toBe('CHOOSE EXERCISE');
+  });
+
+  it('replace_exercise falls back to the generic dead-end message with no focus/constraints', () => {
+    const reply = getAiCoachReply('replace_exercise', { latestRecord: null });
+    expect(reply.message).toMatch(/tell me which exercise/i);
+  });
+
+  it('replace_exercise never recommends an unsafe exercise even when constraints report an injury', () => {
+    const reply = getAiCoachReply('replace_exercise', {
+      latestRecord: null,
+      focusedExerciseName: 'Back Squat',
+      athleteConstraints: { availableEquipment: ['barbell', 'squat_rack'], injuryIds: ['knee'] },
+    });
+    expect(reply.message).not.toContain('undefined');
+  });
+
+  it('all five exercise-intelligence intents never throw and are deterministic', () => {
+    const context = { latestRecord: null, focusedExerciseName: 'Back Squat', athleteConstraints: constraints };
+    const intents: AiCoachIntent[] = [
+      'why_this_exercise',
+      'what_muscles_does_this_train',
+      'easier_version',
+      'harder_version',
+      'why_limited_alternatives',
+      'replace_exercise',
+    ];
+    for (const intent of intents) {
+      expect(() => getAiCoachReply(intent, context)).not.toThrow();
+      expect(getAiCoachReply(intent, context)).toEqual(getAiCoachReply(intent, context));
+    }
   });
 });
 

@@ -2,20 +2,55 @@ import type { AiCoachIntent, AiCoachReply } from './types';
 import type { WeeklyCoachingRecord } from '../coaching/types';
 import type { DailyReadinessRecord } from '../readiness/types';
 import type { ExerciseProgressionDecision } from '../progression/types';
+import type { ExerciseDefinition } from '../exercise/types';
 import { READINESS_STATUS_LABEL } from '../readiness/scales';
+import { getExerciseByName, getProgressions, getRegressions } from '../exercise/registry';
+import { suggestReplacements, type AthleteConstraints } from '../exercise/matchingEngine';
+import { formatEnumLabel, MATCH_REASON_LABELS } from '../exercise/labels';
 
-/** Structured context the Weekly Coaching / Daily Readiness / Progression intents below
- * read from — the most recently reviewed week's record, today's readiness check-in, and
- * today's resolved workout's per-exercise progression decisions, if any exist. Every
- * reply built from these is a pre-templated string over already-deterministic fields;
- * nothing here generates or infers new text. */
+/** Structured context the Weekly Coaching / Daily Readiness / Progression / Exercise
+ * Intelligence intents below read from — the most recently reviewed week's record,
+ * today's readiness check-in, today's resolved workout's per-exercise progression
+ * decisions, and (for the exercise-intelligence intents) which exercise the athlete is
+ * asking about plus their real equipment/injury/sport/level constraints. Every reply
+ * built from these is a pre-templated string over already-deterministic fields; nothing
+ * here generates or infers new text. */
 export interface AiCoachReplyContext {
   latestRecord: WeeklyCoachingRecord | null;
   todayReadiness?: DailyReadinessRecord | null;
   /** `ResolvedExercise.progression` for every progressable exercise in today's workout,
    * in plan order — the raw material the progression intents below pick from. */
   todaysProgressionDecisions?: ExerciseProgressionDecision[];
+  /** The exercise the exercise-intelligence intents below are about — set when the
+   * athlete reached AI Coach from a specific exercise's detail view (see
+   * ExerciseDetailPanel's "Ask AI Coach" button). Omitted falls back to the first
+   * progressable exercise in today's workout, the same "notable pick" pattern the
+   * progression intents above already use. */
+  focusedExerciseName?: string;
+  /** The athlete's real equipment/injury/sport/level constraints — required for the
+   * replacement-ranking exercise-intelligence intents (replace_exercise,
+   * why_limited_alternatives). */
+  athleteConstraints?: AthleteConstraints;
 }
+
+/** Resolves which exercise an exercise-intelligence intent is about: the explicitly
+ * focused one if it's in the library, else the first of today's progressable exercises
+ * that resolves — never guessed from free text (there isn't any). */
+function resolveFocusedExercise(context?: AiCoachReplyContext): ExerciseDefinition | null {
+  if (context?.focusedExerciseName) {
+    const def = getExerciseByName(context.focusedExerciseName);
+    if (def) return def;
+  }
+  for (const decision of context?.todaysProgressionDecisions ?? []) {
+    const def = getExerciseByName(decision.exerciseName);
+    if (def) return def;
+  }
+  return null;
+}
+
+const NO_FOCUSED_EXERCISE_REPLY: AiCoachReply = {
+  message: "I don't have a specific exercise in view right now — open an exercise's details and ask me from there.",
+};
 
 function barrierLabel(id: string): string {
   return id.replace(/_/g, ' ');
@@ -108,12 +143,26 @@ export function getAiCoachReply(intent: AiCoachIntent, context?: AiCoachReplyCon
         ctaLabel: 'VIEW UPDATED WORKOUT',
       };
 
-    case 'replace_exercise':
+    case 'replace_exercise': {
+      const ex = resolveFocusedExercise(context);
+      const constraints = context?.athleteConstraints;
+      if (!ex || !constraints) {
+        return {
+          message:
+            "Tell me which exercise, and I'll swap it for an equivalent movement that targets the same muscles.",
+          ctaLabel: 'CHOOSE EXERCISE',
+        };
+      }
+      const top = suggestReplacements(ex.id, constraints, 1)[0];
+      if (!top) {
+        return { message: `I don't have a safe, available alternative for ${ex.displayName} right now — check its details for what's ruling options out.` };
+      }
+      const reasons = top.reasons.slice(0, 2).map((r) => MATCH_REASON_LABELS[r].toLowerCase());
       return {
-        message:
-          "Tell me which exercise, and I'll swap it for an equivalent movement that targets the same muscles.",
+        message: `For ${ex.displayName}, try ${top.exercise.displayName} — ${reasons.join(' and ')}.`,
         ctaLabel: 'CHOOSE EXERCISE',
       };
+    }
 
     case 'missed_workout':
       return {
@@ -273,6 +322,64 @@ export function getAiCoachReply(intent: AiCoachIntent, context?: AiCoachReplyCon
         message: `For ${decision.exerciseName}, aim for ${describeTarget(decision, decision.nextTarget)} next time.`,
         ctaLabel: 'VIEW TODAY\'S WORKOUT',
       };
+    }
+
+    case 'why_this_exercise': {
+      const ex = resolveFocusedExercise(context);
+      if (!ex) return NO_FOCUSED_EXERCISE_REPLY;
+      const focus = ex.trainingIntents.length > 0 ? ex.trainingIntents.map(formatEnumLabel).join('/') : 'your training focus';
+      const muscles = ex.primaryMuscles.length > 0 ? ` It targets your ${ex.primaryMuscles.map(formatEnumLabel).join(', ')}.` : '';
+      return { message: `${ex.displayName} is in your plan because it builds ${focus} through a ${formatEnumLabel(ex.movementPattern)} movement.${muscles}` };
+    }
+
+    case 'what_muscles_does_this_train': {
+      const ex = resolveFocusedExercise(context);
+      if (!ex) return NO_FOCUSED_EXERCISE_REPLY;
+      if (ex.primaryMuscles.length === 0) {
+        return { message: `I don't have detailed muscle data for ${ex.displayName} yet.` };
+      }
+      const secondary = ex.secondaryMuscles.length > 0 ? ` It also works your ${ex.secondaryMuscles.map(formatEnumLabel).join(', ')}.` : '';
+      return { message: `${ex.displayName} primarily works your ${ex.primaryMuscles.map(formatEnumLabel).join(', ')}.${secondary}` };
+    }
+
+    case 'easier_version': {
+      const ex = resolveFocusedExercise(context);
+      if (!ex) return NO_FOCUSED_EXERCISE_REPLY;
+      const easier = getRegressions(ex.id)[0];
+      if (!easier) {
+        return { message: `There's no simpler pre-defined version of ${ex.displayName} in TRAINO yet — try reducing sets or reps instead.` };
+      }
+      return { message: `An easier version of ${ex.displayName} is ${easier.displayName}.`, ctaLabel: 'VIEW TODAY\'S WORKOUT' };
+    }
+
+    case 'harder_version': {
+      const ex = resolveFocusedExercise(context);
+      if (!ex) return NO_FOCUSED_EXERCISE_REPLY;
+      const harder = getProgressions(ex.id)[0];
+      if (!harder) {
+        return { message: `There's no harder pre-defined progression from ${ex.displayName} in TRAINO yet — try adding load or reps instead.` };
+      }
+      return { message: `A harder version of ${ex.displayName} is ${harder.displayName}.`, ctaLabel: 'VIEW TODAY\'S WORKOUT' };
+    }
+
+    case 'why_limited_alternatives': {
+      const ex = resolveFocusedExercise(context);
+      const constraints = context?.athleteConstraints;
+      if (!ex || !constraints) {
+        return { message: "Replacement options depend on your available equipment and any injuries on file — check your profile if something's missing." };
+      }
+      const reasons: string[] = [];
+      if (constraints.availableEquipment.length === 0) {
+        reasons.push("you haven't set any equipment as available, so only bodyweight movements qualify");
+      }
+      const realInjuries = constraints.injuryIds.filter((id) => id !== 'none');
+      if (realInjuries.length > 0) {
+        reasons.push(`movements that conflict with your reported ${realInjuries.map(formatEnumLabel).join('/')} limitation are excluded for safety`);
+      }
+      if (reasons.length === 0) {
+        return { message: 'Every safe, equipment-compatible alternative is already shown — nothing is being held back.' };
+      }
+      return { message: `Some alternatives aren't shown because ${reasons.join(', and ')}.` };
     }
   }
 }

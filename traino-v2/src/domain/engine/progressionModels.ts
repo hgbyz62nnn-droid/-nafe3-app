@@ -1,5 +1,5 @@
 import type { ExerciseCategory, ExerciseSlot } from './types';
-import type { ProgressionModelConfig, ProgressionTarget } from '../progression/types';
+import type { ProgressionModel, ProgressionModelConfig, ProgressionTarget } from '../progression/types';
 
 /** The minimal shape model inference actually reads — lets callers (e.g. planEngine,
  * resolving an already-substituted exercise) pass a lean object instead of a full
@@ -67,9 +67,42 @@ export function parseDurationSeconds(reps: string): number | null {
   return match[2].toLowerCase() === 'min' ? value * 60 : value;
 }
 
-/** Pure, deterministic — the same slot always infers the same model. */
-export function inferProgressionModel(slot: ProgressableSlot): ProgressionModelConfig | null {
+function buildConfigForModel(model: ProgressionModel, slot: ProgressableSlot): ProgressionModelConfig {
+  switch (model) {
+    case 'distance':
+      return { model: 'distance' };
+    case 'duration':
+      return { model: 'duration' };
+    case 'technique':
+      return { model: 'technique' };
+    case 'load': {
+      const repRange = parseRepRange(slot.reps);
+      // Can't build a load model's numeric bounds without a parseable rep range — fall
+      // back to 'technique' honestly rather than fabricate floor/ceiling values.
+      if (!repRange) return { model: 'technique' };
+      return { model: 'load', repFloor: repRange.min, repCeiling: repRange.max, loadIncrementKg: DEFAULT_LOAD_INCREMENT_KG };
+    }
+    case 'rep_range': {
+      const repRange = parseRepRange(slot.reps);
+      if (!repRange) return { model: 'technique' };
+      return { model: 'rep_range', repFloor: repRange.min, repCeiling: repRange.max };
+    }
+  }
+}
+
+/**
+ * Pure, deterministic — the same slot always infers the same model.
+ *
+ * When `preferredModel` is supplied (the exercise's own `ExerciseDefinition.progressionModel`
+ * — see domain/exercise/types.ts), it's used directly instead of re-classifying from the reps
+ * string: the Exercise Library is the single source of truth for "which model", this function
+ * still owns "how to parse this slot's reps into that model's numeric bounds". Omitted/exercise
+ * not yet in the library falls back to the original reps-string classification unchanged.
+ */
+export function inferProgressionModel(slot: ProgressableSlot, preferredModel?: ProgressionModel): ProgressionModelConfig | null {
   if (NON_PROGRESSED_CATEGORIES.includes(slot.category)) return null;
+
+  if (preferredModel) return buildConfigForModel(preferredModel, slot);
 
   const distanceOrDuration = parseDistanceOrDuration(slot.reps);
   if (distanceOrDuration) return { model: distanceOrDuration.model };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon } from '../components/ui/Icon';
@@ -10,8 +10,11 @@ import { useProfile } from '../domain/state/ProfileContext';
 import { useWeeklyCoaching } from '../domain/state/WeeklyCoachingContext';
 import { useDailyReadiness } from '../domain/state/DailyReadinessContext';
 import { useLogs } from '../domain/state/LogContext';
+import { useExercisePreferences } from '../domain/state/ExercisePreferenceContext';
 import { generateTodayWorkout } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
+import { derivePreferenceSignals, deriveRecentlyUsedIds } from '../domain/exercise/preferences';
+import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
 
 const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
@@ -30,10 +33,15 @@ const SUGGESTIONS: { label: string; intent: AiCoachIntent }[] = [
   { label: "Why didn't I progress?", intent: 'why_no_progression' },
   { label: "What's changed from last week?", intent: 'whats_changed_from_last_week' },
   { label: 'What should I aim for next time?', intent: 'what_should_i_aim_for' },
+  { label: 'Why did you choose this exercise?', intent: 'why_this_exercise' },
+  { label: 'What muscles does this train?', intent: 'what_muscles_does_this_train' },
+  { label: "What's an easier version?", intent: 'easier_version' },
+  { label: "What's a harder version?", intent: 'harder_version' },
+  { label: "Why can't I use other exercises?", intent: 'why_limited_alternatives' },
 ];
 
-/** Intents that read structured Weekly Coaching / Daily Readiness / Progression
- * context — everything else resolves from a fixed reply table alone. */
+/** Intents that read structured Weekly Coaching / Daily Readiness / Progression /
+ * Exercise Intelligence context — everything else resolves from a fixed reply table alone. */
 const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
   'why_consistency_dropped',
   'whats_next_week_change',
@@ -44,6 +52,12 @@ const CONTEXTUAL_INTENTS: AiCoachIntent[] = [
   'why_no_progression',
   'whats_changed_from_last_week',
   'what_should_i_aim_for',
+  'replace_exercise',
+  'why_this_exercise',
+  'what_muscles_does_this_train',
+  'easier_version',
+  'harder_version',
+  'why_limited_alternatives',
 ];
 
 type Message = { role: 'user'; text: string } | ({ role: 'ai' } & AiCoachReply);
@@ -55,12 +69,29 @@ const INITIAL_MESSAGES: Message[] = [
 
 export default function AiCoach() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, setActiveAdjustment, planStartDate } = useProfile();
   const { getLatestRecord } = useWeeklyCoaching();
   const { getTodayRecord, getRecord } = useDailyReadiness();
-  const { getExerciseHistory, getLogsSince } = useLogs();
+  const { getExerciseHistory, getLogsSince, getRecentLogs } = useLogs();
+  const { replacementCounts } = useExercisePreferences();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [draft, setDraft] = useState('');
+
+  // Set when the athlete reached AI Coach from a specific exercise's detail view
+  // (ExerciseDetailPanel's "Ask AI Coach" button) — focuses the exercise-intelligence
+  // intents on that exercise instead of falling back to today's first one.
+  const focusedExerciseName = (location.state as { exerciseName?: string } | null)?.exerciseName;
+
+  const recentExerciseLogs = getRecentLogs(90).flatMap((day) => day.exerciseLogs ?? []);
+  const athleteConstraints: AthleteConstraints = {
+    availableEquipment: profile.answers.equipmentIds,
+    injuryIds: profile.answers.injuryIds,
+    sport: profile.answers.sport,
+    athleteLevel: profile.level,
+    preferenceByExerciseId: derivePreferenceSignals(recentExerciseLogs, replacementCounts),
+    recentlyUsedExerciseIds: deriveRecentlyUsedIds(recentExerciseLogs),
+  };
 
   function todaysProgressionDecisions() {
     const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
@@ -79,6 +110,8 @@ export default function AiCoach() {
           latestRecord: getLatestRecord(),
           todayReadiness: getTodayRecord() ?? null,
           todaysProgressionDecisions: todaysProgressionDecisions(),
+          focusedExerciseName,
+          athleteConstraints,
         })
       : getAiCoachReply(intent);
     setMessages((prev) => [...prev, { role: 'user', text: label }, { role: 'ai', ...reply }]);
@@ -122,6 +155,15 @@ export default function AiCoach() {
           <Icon name="dotsVertical" size={19} className="text-white" />
         </div>
       </div>
+
+      {focusedExerciseName && (
+        <div className="mx-4 mt-3 flex items-center gap-2 bg-card border border-border-soft rounded-card-sm px-3.5 py-2">
+          <Icon name="aiMascot" size={14} className="text-red shrink-0" />
+          <p className="flex-1 text-text-secondary text-[11.5px]">
+            Asking about <span className="text-white font-semibold">{focusedExerciseName}</span>
+          </p>
+        </div>
+      )}
 
       <div className="px-4 mt-4 flex flex-col gap-3">
         {messages.map((msg, i) =>
