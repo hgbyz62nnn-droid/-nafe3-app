@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { Icon, type IconName } from '../components/ui/Icon';
@@ -13,31 +14,44 @@ interface InfoRow {
   label: string;
   value?: string;
   chevron?: boolean;
+  /** Only rows meant to be tappable get one — the chevron affordance must
+   * always match real behavior, never a fake/decorative arrow. */
+  onSelect?: () => void;
 }
 
 function InfoList({ rows }: { rows: InfoRow[] }) {
   return (
     <div className="bg-card border border-border-soft rounded-card px-4">
-      {rows.map((row, i) => (
-        <div
-          key={row.label}
-          className={`flex items-center gap-3 py-3.5 ${i < rows.length - 1 ? 'border-b border-border-soft' : ''}`}
-        >
-          <Icon name={row.icon} size={17} className="text-text-secondary shrink-0" />
-          <span className="flex-1 text-white text-[14px] font-medium">{row.label}</span>
-          {row.value && (
-            <span className="text-text-secondary text-[13px] shrink-0 truncate max-w-[150px]">
-              {row.value}
-            </span>
-          )}
-          {row.chevron && <Icon name="chevronRight" size={16} className="text-text-muted shrink-0" />}
-        </div>
-      ))}
+      {rows.map((row, i) => {
+        const rowClassName = `flex items-center gap-3 py-3.5 w-full text-left ${i < rows.length - 1 ? 'border-b border-border-soft' : ''}`;
+        const content = (
+          <>
+            <Icon name={row.icon} size={17} className="text-text-secondary shrink-0" />
+            <span className="flex-1 text-white text-[14px] font-medium">{row.label}</span>
+            {row.value && (
+              <span className="text-text-secondary text-[13px] shrink-0 truncate max-w-[150px]">
+                {row.value}
+              </span>
+            )}
+            {row.chevron && <Icon name="chevronRight" size={16} className="text-text-muted shrink-0" />}
+          </>
+        );
+        return row.onSelect ? (
+          <button key={row.label} onClick={row.onSelect} className={rowClassName}>
+            {content}
+          </button>
+        ) : (
+          <div key={row.label} className={rowClassName}>
+            {content}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 export default function Profile() {
+  const navigate = useNavigate();
   const { answers } = useProfile();
   const sportName = SPORTS.find((s) => s.id === answers.sport)?.name ?? 'Athlete';
   const goalName = GOAL_OPTIONS.find((g) => g.id === answers.goal)?.name ?? 'Not set';
@@ -52,15 +66,26 @@ export default function Profile() {
         ? 'No injuries or limitations'
         : `${answers.injuryIds.length} noted`;
 
+  // Editing reuses the existing assessment flow directly — no separate edit
+  // UI. A general row (re-)enters at the start; a row that maps to one
+  // specific existing assessment screen deep-links straight to it.
+  const editWholeProfile = () => navigate('/onboarding/about');
+
   const MY_INFO: InfoRow[] = [
-    { icon: 'profile', label: 'Athlete Profile', chevron: true },
+    { icon: 'profile', label: 'Athlete Profile', chevron: true, onSelect: editWholeProfile },
     { icon: 'bookmark', label: 'Goals', value: goalName },
     {
       icon: 'calendar',
       label: 'Training Schedule',
       value: answers.daysAvailablePerWeek > 0 ? `${answers.daysAvailablePerWeek} days / week` : 'Not set',
     },
-    { icon: 'heart', label: 'Injuries & Health', value: injuryLabel, chevron: true },
+    {
+      icon: 'heart',
+      label: 'Injuries & Health',
+      value: injuryLabel,
+      chevron: true,
+      onSelect: () => navigate('/assessment/health'),
+    },
     {
       icon: 'copy',
       label: 'Measurements',
@@ -74,6 +99,7 @@ export default function Profile() {
       label: 'Equipment',
       value: equipmentNames || 'Bodyweight only',
       chevron: true,
+      onSelect: () => navigate('/equipment'),
     },
   ];
 
@@ -102,7 +128,10 @@ export default function Profile() {
         <div className="flex-1">
           <p className="text-white text-[18px] font-extrabold">{answers.firstName || 'Athlete'}</p>
           <p className="text-text-secondary text-[13px] mt-0.5">{sportName} Player</p>
-          <button className="border border-border-soft rounded-chip px-3.5 py-1.5 text-white text-[12px] font-semibold mt-2">
+          <button
+            onClick={editWholeProfile}
+            className="border border-border-soft rounded-chip px-3.5 py-1.5 text-white text-[12px] font-semibold mt-2"
+          >
             Edit Profile
           </button>
         </div>

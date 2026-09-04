@@ -77,6 +77,6 @@ export async function completeOnboarding(page: Page, opts: OnboardingOptions = {
   await page.waitForURL('**/assessment/nutrition-preferences');
 
   await page.getByRole('button', { name: allergyLabel, exact: true }).click();
-  await page.getByRole('button', { name: 'FINISH' }).click();
+  await page.getByRole('button', { name: 'BUILD MY PLAN' }).click();
   await page.waitForURL((url) => url.pathname === '/');
 }

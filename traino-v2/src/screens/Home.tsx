@@ -132,12 +132,13 @@ export default function Home() {
             {profile.answers.firstName || 'Athlete'} <span className="align-middle">👋</span>
           </p>
         </div>
-        <button className="relative w-10 h-10 rounded-full bg-card border border-border-soft flex items-center justify-center shrink-0 mt-1">
+        {/* No notification system exists yet — decorative only, not a button. */}
+        <div className="relative w-10 h-10 rounded-full bg-card border border-border-soft flex items-center justify-center shrink-0 mt-1">
           <Icon name="notification" size={19} className="text-white" />
           <span className="absolute -top-1 -right-1 bg-red text-white text-[10px] font-bold w-4.5 h-4.5 min-w-[18px] min-h-[18px] rounded-full flex items-center justify-center">
             3
           </span>
-        </button>
+        </div>
       </div>
 
       {(resolvedContext.mode === 'travel' || contextMessage) && (
@@ -222,10 +223,13 @@ export default function Home() {
           </div>
 
           <div className="p-3">
-            <button className="w-full bg-red hover:bg-red-dim transition-colors rounded-button py-3.5 flex items-center justify-center gap-2 shadow-button">
+            <Link
+              to="/todays-workout"
+              className="w-full bg-red hover:bg-red-dim transition-colors rounded-button py-3.5 flex items-center justify-center gap-2 shadow-button"
+            >
               <span className="text-white font-extrabold text-[15px] tracking-wide">START WORKOUT</span>
               <Icon name="playTriangle" size={14} className="text-white" />
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -266,7 +270,7 @@ export default function Home() {
           </p>
           <p className="text-text-secondary text-[13px] mt-0.5">This Week</p>
         </div>
-        <button className="text-red text-[13px] font-semibold">View all</button>
+        <Link to="/progress" className="text-red text-[13px] font-semibold">View all</Link>
       </div>
 
       <div className="px-5 mt-3 flex gap-2">

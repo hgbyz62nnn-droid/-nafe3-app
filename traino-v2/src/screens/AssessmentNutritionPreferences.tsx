@@ -113,7 +113,7 @@ export default function AssessmentNutritionPreferences() {
           onClick={finish}
           className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button disabled:opacity-40"
         >
-          FINISH
+          BUILD MY PLAN
         </button>
       </div>
     </Screen>

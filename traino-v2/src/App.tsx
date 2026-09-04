@@ -7,6 +7,8 @@ import { ExercisePreferenceProvider } from './domain/state/ExercisePreferenceCon
 import { FoodPreferenceProvider } from './domain/state/FoodPreferenceContext';
 import { TrainingContextProvider } from './domain/state/TrainingContextStore';
 import Home from './screens/Home';
+import Welcome from './screens/Welcome';
+import { useProfile } from './domain/state/ProfileContext';
 import AssessmentAbout from './screens/AssessmentAbout';
 import SportSelection from './screens/SportSelection';
 import AssessmentTrainingLocation from './screens/AssessmentTrainingLocation';
@@ -26,6 +28,17 @@ import HumanCoach from './screens/HumanCoach';
 import Profile from './screens/Profile';
 import TravelCompetition from './screens/TravelCompetition';
 
+/**
+ * The root route: an athlete who hasn't completed the assessment yet sees
+ * Welcome (the "Build Your Personal Plan" / "Create My Plan" entry point)
+ * instead of Home, so the first-time journey is never ambiguous. A returning
+ * athlete (hasCompletedAssessment) always lands on the normal Home dashboard.
+ */
+function RootScreen() {
+  const { hasCompletedAssessment } = useProfile();
+  return hasCompletedAssessment ? <Home /> : <Welcome />;
+}
+
 export default function App() {
   return (
     <ProfileProvider>
@@ -37,7 +50,7 @@ export default function App() {
                 <TrainingContextProvider>
                 <BrowserRouter>
                   <Routes>
-                    <Route path="/" element={<Home />} />
+                    <Route path="/" element={<RootScreen />} />
                     <Route path="/onboarding/about" element={<AssessmentAbout />} />
                     <Route path="/sport-selection" element={<SportSelection />} />
                     <Route path="/assessment" element={<AssessmentTrainingLocation />} />
