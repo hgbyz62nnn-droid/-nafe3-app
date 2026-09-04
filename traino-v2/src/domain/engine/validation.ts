@@ -91,6 +91,36 @@ function sanitizePerformancePriority(value: unknown, violations: string[]): 'spe
   return 'strength';
 }
 
+const COMPETITIVE_LEVELS = ['beginner', 'amateur', 'competitive', 'semi_pro', 'professional'] as const;
+
+/** Optional (spec: Core Personalization Polish §6/§8) — absent is the common case (not
+ * every profile has answered this yet), left `undefined` rather than defaulted to a
+ * specific level, since planEngine's competitive-level emphasis is itself optional
+ * (no answer = no emphasis, never a fabricated "beginner" assumption). */
+function sanitizeCompetitiveLevel(
+  value: unknown,
+  violations: string[]
+): 'beginner' | 'amateur' | 'competitive' | 'semi_pro' | 'professional' | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && (COMPETITIVE_LEVELS as readonly string[]).includes(value)) {
+    return value as (typeof COMPETITIVE_LEVELS)[number];
+  }
+  violations.push(`competitiveLevel: invalid value ${JSON.stringify(value)}, dropped`);
+  return undefined;
+}
+
+/** Optional (spec §9) — same "absent is normal, dropped rather than defaulted" pattern
+ * as competitiveLevel above. Clamped to a plausible weekly match count. */
+function sanitizeMatchesPerWeek(value: unknown, violations: string[]): number | undefined {
+  if (value === undefined) return undefined;
+  const n = typeof value === 'number' ? Math.round(value) : NaN;
+  if (!Number.isFinite(n) || n < 0) {
+    violations.push(`matchesPerWeek: invalid value (${JSON.stringify(value)}), dropped`);
+    return undefined;
+  }
+  return Math.min(7, n);
+}
+
 function sanitizeEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -143,6 +173,8 @@ export function sanitizeAssessmentAnswers(answers: AssessmentAnswers): SanitizeR
     sessionDurationMin: sanitizeSessionDurationMin(answers.sessionDurationMin, violations),
     performancePriority: sanitizePerformancePriority(answers.performancePriority, violations),
     sportPositionId: typeof answers.sportPositionId === 'string' ? answers.sportPositionId : undefined,
+    competitiveLevel: sanitizeCompetitiveLevel(answers.competitiveLevel, violations),
+    matchesPerWeek: sanitizeMatchesPerWeek(answers.matchesPerWeek, violations),
   };
 
   return { value, violations };

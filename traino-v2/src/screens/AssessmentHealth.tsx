@@ -5,10 +5,13 @@ import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon } from '../components/ui/Icon';
 import { HEALTH_LIMITATIONS } from '../domain/assessment/health';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLocale } from '../domain/state/LocaleContext';
+import { localizedOptionLabel } from '../domain/i18n/optionLabels';
 
 export default function AssessmentHealth() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
+  const { locale } = useLocale();
   const selected = new Set(answers.injuryIds);
 
   function toggle(id: string) {
@@ -51,7 +54,7 @@ export default function AssessmentHealth() {
                 <Icon name={item.icon} size={20} className="text-white" />
               </span>
               <span className="flex-1 min-w-0">
-                <span className="block text-white text-[14.5px] font-bold">{item.name}</span>
+                <span className="block text-white text-[14.5px] font-bold">{localizedOptionLabel('health', item.id, item.name, locale)}</span>
                 <span className="block text-text-secondary text-[12.5px] mt-0.5">{item.description}</span>
               </span>
               <span

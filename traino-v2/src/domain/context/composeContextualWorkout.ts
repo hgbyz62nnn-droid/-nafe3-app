@@ -51,6 +51,14 @@ export interface ComposeContextualWorkoutInput {
   weeklyAdjustment: AiCoachAdjustment | null;
   resolvedContext: ResolvedContext;
   athleteConstraints: AthleteConstraints;
+  /** When supplied (even `null`), the NORMAL (non-travel) branch resolves "today"
+   * against the athlete's generated-plan cycle (spec: Core Personalization Polish
+   * §15/§21) — the same day-template choice `generatePersonalizedWeek`/
+   * `resolveTodayPlanDay` use, so this composed workout can never disagree with
+   * the Plan screen. Omitted = original real-ISO-weekday cycling (Travel Mode's
+   * own template choice is intentionally left on this path — spec §14). */
+  planStartDate?: string | null;
+  referenceDate?: Date;
 }
 
 export interface ComposedWorkoutResult {
@@ -86,8 +94,23 @@ export function composeContextualWorkout(input: ComposeContextualWorkoutInput): 
     contextMessage = contextMessage ?? "Today's session is adjusted for Travel Mode.";
   } else {
     workout = volumeAdjustment
-      ? applyCoachAdjustment(input.profile, input.dayIndex, volumeAdjustment, input.weekNumber ?? 1, input.progression)
-      : generateTodayWorkout(input.profile, input.dayIndex, input.weekNumber ?? 1, input.progression);
+      ? applyCoachAdjustment(
+          input.profile,
+          input.dayIndex,
+          volumeAdjustment,
+          input.weekNumber ?? 1,
+          input.progression,
+          input.planStartDate,
+          input.referenceDate
+        )
+      : generateTodayWorkout(
+          input.profile,
+          input.dayIndex,
+          input.weekNumber ?? 1,
+          input.progression,
+          input.planStartDate,
+          input.referenceDate
+        );
   }
 
   return { skipNormalSession: false, contextMessage, workout };

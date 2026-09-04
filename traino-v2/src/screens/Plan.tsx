@@ -8,9 +8,15 @@ import { useLogs } from '../domain/state/LogContext';
 import { useLocale } from '../domain/state/LocaleContext';
 import { generatePersonalizedWeek } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
-import { localDateKey, addDays } from '../domain/engine/dateUtils';
+import { localDateKey, parseLocalDateKey } from '../domain/engine/dateUtils';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function weekdayLabel(dateKey: string): string {
+  const date = parseLocalDateKey(dateKey);
+  if (!date) return '';
+  return DAY_LABELS[(date.getDay() + 6) % 7];
+}
 
 /**
  * THE primary "Plan" experience (spec §17/§18): the athlete's complete
@@ -32,9 +38,8 @@ export default function Plan() {
     profile.answers.daysAvailablePerWeek
   );
 
-  const week = generatePersonalizedWeek(profile, progressionWeek);
-  const today = new Date();
-  const todayDow = (today.getDay() + 6) % 7; // Mon=0 .. Sun=6, matches WeekPlanDay.dayOfWeek
+  const week = generatePersonalizedWeek(profile, planStartDate, new Date(), progressionWeek);
+  const todayKey = localDateKey(new Date());
 
   return (
     <Screen>
@@ -51,22 +56,20 @@ export default function Plan() {
 
       <div className="px-4 mt-4 flex flex-col gap-2.5">
         {week.map((day) => {
-          const offset = day.dayOfWeek - todayDow;
-          const dateKey = localDateKey(addDays(today, offset));
-          const isToday = offset === 0;
-          const completed = day.type === 'training' && getDayLog(dateKey).workoutCompleted;
+          const isToday = day.date === todayKey;
+          const completed = day.type === 'training' && getDayLog(day.date).workoutCompleted;
 
           return (
             <Link
-              key={day.dayOfWeek}
-              to={isToday ? '/todays-workout' : `/plan/${day.dayOfWeek}`}
+              key={day.cycleDayIndex}
+              to={isToday ? '/todays-workout' : `/plan/${day.cycleDayIndex}`}
               className={`flex items-center gap-3 rounded-card border px-4 py-3.5 bg-card ${
                 isToday ? 'border-red shadow-card-red' : 'border-border-soft'
               }`}
             >
               <div className="w-11 shrink-0 text-center">
                 <p className={`text-[11px] font-bold tracking-wide ${isToday ? 'text-red' : 'text-text-secondary'}`}>
-                  {DAY_LABELS[day.dayOfWeek]}
+                  {weekdayLabel(day.date)}
                 </p>
                 {isToday && <p className="text-red text-[9px] font-extrabold tracking-wider mt-0.5">{t('plan.today')}</p>}
               </div>

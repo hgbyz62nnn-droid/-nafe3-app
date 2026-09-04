@@ -199,7 +199,7 @@ export default function AiCoach() {
       getHistory: getExerciseHistory,
       getReadinessStatus: (date) => getRecord(date)?.status ?? null,
     };
-    const workout = generateTodayWorkout(profile, undefined, progressionWeek, progressionContext);
+    const workout = generateTodayWorkout(profile, undefined, progressionWeek, progressionContext, planStartDate);
     return workout.exercises.map((ex) => ex.progression).filter((d): d is NonNullable<typeof d> => !!d);
   }
 

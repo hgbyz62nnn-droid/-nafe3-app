@@ -3,19 +3,32 @@ import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon } from '../components/ui/Icon';
-import { EXPERIENCE_OPTIONS, FREQUENCY_OPTIONS, DURATION_OPTIONS, PRIORITY_OPTIONS, type BucketOption } from '../domain/assessment/experience';
+import {
+  EXPERIENCE_OPTIONS,
+  FREQUENCY_OPTIONS,
+  DURATION_OPTIONS,
+  PRIORITY_OPTIONS,
+  COMPETITIVE_LEVEL_OPTIONS,
+  MATCHES_PER_WEEK_OPTIONS,
+  type BucketOption,
+} from '../domain/assessment/experience';
 import { useProfile } from '../domain/state/ProfileContext';
 import { getSportModule } from '../domain/sports/registry';
+import { useLocale } from '../domain/state/LocaleContext';
+import { localizedOptionLabel } from '../domain/i18n/optionLabels';
 
 function BucketGrid({
   options,
   value,
   onSelect,
+  category,
 }: {
   options: BucketOption[];
   value: number;
   onSelect: (option: BucketOption) => void;
+  category: 'experience' | 'frequency' | 'duration' | 'matchesPerWeek';
 }) {
+  const { locale } = useLocale();
   return (
     <div className="grid grid-cols-2 gap-2.5 mt-3">
       {options.map((opt) => {
@@ -33,7 +46,7 @@ function BucketGrid({
                 <Icon name="checkPlain" size={10} className="text-white" strokeWidth={2.8} />
               </span>
             )}
-            <span className="text-white text-[14px] font-bold">{opt.label}</span>
+            <span className="text-white text-[14px] font-bold">{localizedOptionLabel(category, opt.id, opt.label, locale)}</span>
             <span className="text-text-secondary text-[12px]">{opt.description}</span>
           </button>
         );
@@ -56,7 +69,9 @@ function BucketGrid({
 export default function AssessmentExperience() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
+  const { locale } = useLocale();
   const positions = getSportModule(answers.sport).positions ?? [];
+  const positionCategory = answers.sport === 'swimming' ? 'position_swimming' : 'position_football';
 
   return (
     <Screen withNav={false} className="pb-8">
@@ -72,6 +87,7 @@ export default function AssessmentExperience() {
           options={EXPERIENCE_OPTIONS}
           value={answers.experienceYears}
           onSelect={(opt) => updateAnswers({ experienceYears: opt.value })}
+          category="experience"
         />
       </div>
 
@@ -94,7 +110,7 @@ export default function AssessmentExperience() {
                       <Icon name="checkPlain" size={10} className="text-white" strokeWidth={2.8} />
                     </span>
                   )}
-                  <span className="text-white text-[14px] font-bold">{p.name}</span>
+                  <span className="text-white text-[14px] font-bold">{localizedOptionLabel(positionCategory, p.id, p.name, locale)}</span>
                 </button>
               );
             })}
@@ -108,6 +124,7 @@ export default function AssessmentExperience() {
           options={FREQUENCY_OPTIONS}
           value={answers.currentTrainingFrequency}
           onSelect={(opt) => updateAnswers({ currentTrainingFrequency: opt.value })}
+          category="frequency"
         />
       </div>
 
@@ -117,6 +134,7 @@ export default function AssessmentExperience() {
           options={FREQUENCY_OPTIONS}
           value={answers.daysAvailablePerWeek}
           onSelect={(opt) => updateAnswers({ daysAvailablePerWeek: opt.value })}
+          category="frequency"
         />
       </div>
 
@@ -126,6 +144,7 @@ export default function AssessmentExperience() {
           options={DURATION_OPTIONS}
           value={answers.sessionDurationMin ?? 45}
           onSelect={(opt) => updateAnswers({ sessionDurationMin: opt.value })}
+          category="duration"
         />
       </div>
 
@@ -144,7 +163,7 @@ export default function AssessmentExperience() {
               >
                 <Icon name={p.icon} size={18} className="text-white shrink-0" />
                 <span className="flex-1 min-w-0">
-                  <span className="block text-white text-[13.5px] font-bold">{p.name}</span>
+                  <span className="block text-white text-[13.5px] font-bold">{localizedOptionLabel('priority', p.id, p.name, locale)}</span>
                   <span className="block text-text-secondary text-[11.5px]">{p.description}</span>
                 </span>
                 {active && <Icon name="checkPlain" size={14} className="text-red shrink-0" strokeWidth={2.6} />}
@@ -153,6 +172,44 @@ export default function AssessmentExperience() {
           })}
         </div>
       </div>
+
+      <div className="px-5 mt-6">
+        <h2 className="text-white text-[18px] font-extrabold">What's your competitive level?</h2>
+        <div className="grid grid-cols-2 gap-2.5 mt-3">
+          {COMPETITIVE_LEVEL_OPTIONS.map((lvl) => {
+            const active = answers.competitiveLevel === lvl.id;
+            return (
+              <button
+                key={lvl.id}
+                onClick={() => updateAnswers({ competitiveLevel: lvl.id })}
+                className={`relative rounded-card-sm border-2 px-3.5 py-3 text-left bg-card ${
+                  active ? 'border-red shadow-card-red' : 'border-border-soft'
+                }`}
+              >
+                {active && (
+                  <span className="absolute top-2 right-2 w-4.5 h-4.5 min-w-[18px] min-h-[18px] rounded-full bg-red flex items-center justify-center">
+                    <Icon name="checkPlain" size={10} className="text-white" strokeWidth={2.8} />
+                  </span>
+                )}
+                <span className="block text-white text-[13.5px] font-bold">{localizedOptionLabel('competitiveLevel', lvl.id, lvl.name, locale)}</span>
+                <span className="block text-text-secondary text-[11px] mt-0.5">{lvl.description}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {getSportModule(answers.sport).supportsMatchesPerWeek && (
+        <div className="px-5 mt-6">
+          <h2 className="text-white text-[18px] font-extrabold">How many matches do you play per week?</h2>
+          <BucketGrid
+            options={MATCHES_PER_WEEK_OPTIONS}
+            value={answers.matchesPerWeek ?? 0}
+            onSelect={(opt) => updateAnswers({ matchesPerWeek: opt.value })}
+            category="matchesPerWeek"
+          />
+        </div>
+      )}
 
       <div className="px-5 mt-6">
         <button

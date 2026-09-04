@@ -7,6 +7,7 @@ import { useLocale } from '../domain/state/LocaleContext';
 import { generatePersonalizedWeek } from '../domain/engine/planEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
 import { useLogs } from '../domain/state/LogContext';
+import { parseLocalDateKey } from '../domain/engine/dateUtils';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -28,9 +29,11 @@ export default function PlanDayDetail() {
   const progressionLogs = planStartDate ? getLogsSince(planStartDate) : [];
   const { progressionWeek } = computeProgressionInfo(planStartDate, progressionLogs, profile.answers.daysAvailablePerWeek);
 
-  const dow = Number(dayOfWeek);
-  const week = generatePersonalizedWeek(profile, progressionWeek);
-  const day = week.find((d) => d.dayOfWeek === dow);
+  const cycleDayIndex = Number(dayOfWeek);
+  const week = generatePersonalizedWeek(profile, planStartDate, new Date(), progressionWeek);
+  const day = week.find((d) => d.cycleDayIndex === cycleDayIndex);
+  const parsedDate = day ? parseLocalDateKey(day.date) : null;
+  const weekdayName = parsedDate ? DAY_NAMES[(parsedDate.getDay() + 6) % 7] : '';
 
   return (
     <Screen withNav={false} className="pb-8">
@@ -40,7 +43,7 @@ export default function PlanDayDetail() {
           <Icon name="chevronLeft" size={22} className="text-white" strokeWidth={2} />
         </Link>
         <h1 className="flex-1 text-center text-white text-[15px] font-extrabold tracking-wide">
-          {Number.isFinite(dow) ? DAY_NAMES[dow]?.toUpperCase() : ''}
+          {weekdayName.toUpperCase()}
         </h1>
         <div className="w-8 shrink-0" />
       </div>

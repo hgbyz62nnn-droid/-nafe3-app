@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { applyCoachAdjustment, generatePersonalizedWeek, generateTodayWorkout, generateWeekProgram, todayDayIndex } from './planEngine';
+import {
+  applyCoachAdjustment,
+  cycleDayIndexFor,
+  generatePersonalizedWeek,
+  generateTodayWorkout,
+  generateWeekProgram,
+  resolveTodayPlanDay,
+  todayDayIndex,
+} from './planEngine';
 import { getExerciseAlternatives } from './exerciseAlternatives';
 import { footballModule } from '../sports/football/program';
 import { swimmingModule } from '../sports/swimming/program';
@@ -432,6 +440,161 @@ describe('sport module positions (adaptive question data)', () => {
   it('D: a sport with no positions defined yields an empty list, so the adaptive question is skipped rather than shown empty', () => {
     const profile = profileFor({ sport: 'boxing' });
     expect(getSportModule(profile.answers.sport).positions ?? []).toEqual([]);
+  });
+});
+
+describe('Core Personalization Polish — position/discipline/competitive-level reach generation', () => {
+  it('1: football position reaches plan generation — winger vs defender produce a meaningfully different week', () => {
+    const winger = profileFor({
+      sport: 'football',
+      sportPositionId: 'winger',
+      performancePriority: 'speed',
+      daysAvailablePerWeek: 5,
+      sessionDurationMin: 60,
+      trainingLocationIds: ['gym'],
+      equipmentIds: ['barbell', 'squat_rack', 'bench', 'dumbbells', 'cable_machine', 'pull_up_bar', 'plyo_box'],
+    });
+    const defender = profileFor({
+      sport: 'football',
+      sportPositionId: 'defender',
+      performancePriority: 'strength',
+      daysAvailablePerWeek: 5,
+      sessionDurationMin: 60,
+      trainingLocationIds: ['gym'],
+      equipmentIds: ['barbell', 'squat_rack', 'bench', 'dumbbells', 'cable_machine', 'pull_up_bar', 'plyo_box'],
+    });
+
+    const wingerConditioning = generateWeekProgram(winger)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const defenderConditioning = generateWeekProgram(defender)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const wingerStrength = generateWeekProgram(winger)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'strength')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const defenderStrength = generateWeekProgram(defender)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'strength')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+
+    // Winger (speed priority + winger emphasis, both boost conditioning) must show
+    // strictly more conditioning volume than defender (strength priority + defender
+    // emphasis, both boost strength) — and vice versa for strength.
+    expect(wingerConditioning).toBeGreaterThan(defenderConditioning);
+    expect(defenderStrength).toBeGreaterThan(wingerStrength);
+  });
+
+  it('1: position alone (same priority) still changes the generated week — proves position, not just priority, reaches generation', () => {
+    const withPosition = profileFor({ sport: 'football', sportPositionId: 'winger', performancePriority: 'strength' });
+    const withoutPosition = profileFor({ sport: 'football', sportPositionId: undefined, performancePriority: 'strength' });
+    const withConditioning = generateWeekProgram(withPosition)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const withoutConditioning = generateWeekProgram(withoutPosition)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    // Winger's own emphasis boosts conditioning on top of whatever performancePriority
+    // ('strength', which itself does not boost conditioning) already contributes.
+    expect(withConditioning).toBeGreaterThan(withoutConditioning);
+  });
+
+  it('3: swimming discipline reaches generation — butterfly (power) vs freestyle (conditioning) differ', () => {
+    const butterfly = profileFor({ sport: 'swimming', sportPositionId: 'butterfly' });
+    const freestyle = profileFor({ sport: 'swimming', sportPositionId: 'freestyle' });
+    const butterflyPower = generateWeekProgram(butterfly)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'power')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const freestylePower = generateWeekProgram(freestyle)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'power')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    expect(butterflyPower).toBeGreaterThan(freestylePower);
+  });
+
+  it('6: competitive level reaches generation — professional leans more conditioning/power than beginner', () => {
+    const professional = profileFor({ competitiveLevel: 'professional', performancePriority: 'strength' });
+    const beginner = profileFor({ competitiveLevel: 'beginner', performancePriority: 'strength' });
+    const proConditioning = generateWeekProgram(professional)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const beginnerConditioning = generateWeekProgram(beginner)
+      .flatMap((w) => w.exercises)
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    expect(proConditioning).toBeGreaterThan(beginnerConditioning);
+  });
+
+  it('7: matches/week reduces effective weekly training capacity (football, generic mechanism)', () => {
+    const noMatches = profileFor({ daysAvailablePerWeek: 5, matchesPerWeek: 0 });
+    const twoMatches = profileFor({ daysAvailablePerWeek: 5, matchesPerWeek: 2 });
+    const weekNoMatches = generatePersonalizedWeek(noMatches);
+    const weekTwoMatches = generatePersonalizedWeek(twoMatches);
+    const trainingDaysNoMatches = weekNoMatches.filter((d) => d.type === 'training').length;
+    const trainingDaysTwoMatches = weekTwoMatches.filter((d) => d.type === 'training').length;
+    expect(trainingDaysTwoMatches).toBeLessThan(trainingDaysNoMatches);
+  });
+
+  it('safety: position/competitive-level emphasis never overrides an injury-contraindicated exercise', () => {
+    const profile = profileFor({
+      sport: 'football',
+      sportPositionId: 'defender',
+      competitiveLevel: 'professional',
+      injuryIds: ['knee'],
+      equipmentIds: ['barbell', 'squat_rack', 'bench', 'dumbbells'],
+    });
+    const allExercises = generateWeekProgram(profile).flatMap((w) => w.exercises);
+    expect(allExercises.some((ex) => ex.name === 'Back Squat')).toBe(false);
+  });
+});
+
+describe('Core Personalization Polish — rest day resolves everywhere via resolveTodayPlanDay', () => {
+  it('7: cycle day 0 (the day the plan started) is always a training day, for any frequency', () => {
+    for (const freq of [1, 2, 3, 4, 5, 6, 7]) {
+      const profile = profileFor({ daysAvailablePerWeek: freq });
+      const today = new Date(2026, 5, 15); // an arbitrary Monday
+      const planStartDate = '2026-06-15'; // = today, cycle day 0
+      const resolution = resolveTodayPlanDay(profile, planStartDate, today);
+      expect(resolution.type).toBe('training');
+    }
+  });
+
+  it('7/8: a rest cycle day resolves to rest consistently between resolveTodayPlanDay and generatePersonalizedWeek', () => {
+    const profile = profileFor({ daysAvailablePerWeek: 2 }); // trainingDaySlots(2) = [0, 4] -> day 2 is rest
+    const planStartDate = '2026-06-15';
+    const referenceDate = new Date(2026, 5, 17); // plan start + 2 days -> cycle day 2
+    expect(cycleDayIndexFor(planStartDate, referenceDate)).toBe(2);
+
+    const today = resolveTodayPlanDay(profile, planStartDate, referenceDate);
+    expect(today.type).toBe('rest');
+    expect(today.workout).toBeUndefined();
+
+    const week = generatePersonalizedWeek(profile, planStartDate, referenceDate);
+    const sameDay = week.find((d) => d.cycleDayIndex === 2);
+    expect(sameDay?.type).toBe('rest');
+  });
+
+  it('14: determinism — resolveTodayPlanDay(same profile, same planStartDate, same date) is always identical', () => {
+    const profile = profileFor({ sport: 'football', sportPositionId: 'winger', daysAvailablePerWeek: 4 });
+    const planStartDate = '2026-06-01';
+    const referenceDate = new Date(2026, 5, 5);
+    expect(resolveTodayPlanDay(profile, planStartDate, referenceDate)).toEqual(
+      resolveTodayPlanDay(profile, planStartDate, referenceDate)
+    );
+  });
+
+  it('a fresh profile with no plan yet (planStartDate null/undefined) never throws and treats "today" as cycle day 0', () => {
+    const profile = profileFor({});
+    expect(() => resolveTodayPlanDay(profile, null)).not.toThrow();
+    expect(() => resolveTodayPlanDay(profile, undefined)).not.toThrow();
+    expect(resolveTodayPlanDay(profile, null).type).toBe('training');
   });
 });
 

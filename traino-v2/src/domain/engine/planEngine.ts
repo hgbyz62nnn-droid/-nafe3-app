@@ -4,6 +4,7 @@ import type { ExerciseProgressionDecision } from '../progression/types';
 import { applyProgression } from './progressionEngine';
 import { applyExerciseProgression, type ExerciseProgressionContext } from './progressionIntegration';
 import { isValidWeekNumber } from './validation';
+import { addDays, daysBetween, localDateKey, parseLocalDateKey } from './dateUtils';
 
 export interface ResolvedExercise {
   name: string;
@@ -55,9 +56,13 @@ interface ResolveContext {
    * displayed `durationMin` is overridden to match, so display never contradicts
    * generation. Absent/falsy = no time-budget scaling (existing callers unaffected). */
   sessionDurationMin?: number;
-  /** Generic per-category volume emphasis (spec §11/§16) — a deterministic multiplier,
-   * never a new exercise or a sport-specific rule. Absent = no emphasis applied. */
-  performancePriority?: 'speed' | 'strength' | 'conditioning';
+  /** Combined, deterministic per-category volume-emphasis multiplier — the product of
+   * the athlete's performancePriority, their sport-module position/discipline emphasis
+   * (spec: Core Personalization Polish §1-§3), and their competitiveLevel (spec §8),
+   * merged once in `baseContext()` (see `mergeCategoryEmphasis`). A single combined map
+   * rather than three separate passes so the composed effect is easy to reason about
+   * and test. Absent = no emphasis applied. */
+  categoryEmphasis?: Partial<Record<ExerciseCategory, number>>;
 }
 
 /** Deterministic per-category set-volume emphasis for a stated training priority —
@@ -70,6 +75,38 @@ const PRIORITY_CATEGORY_EMPHASIS: Record<'speed' | 'strength' | 'conditioning', 
   strength: { strength: 1.15, power: 1.05, conditioning: 0.9 },
   conditioning: { conditioning: 1.2, power: 1.05, strength: 0.9 },
 };
+
+/** Conservative, generic competitive-level emphasis (spec §8/§10, Core Personalization
+ * Polish) — a small nudge toward match-readiness (conditioning/power) at higher
+ * competitive levels and toward foundational strength at the beginner level. Deltas
+ * stay small (<=8%) since this is a secondary signal composed with performancePriority
+ * and position emphasis, never a rule that alone reshapes a session. */
+const COMPETITIVE_LEVEL_EMPHASIS: Record<
+  'beginner' | 'amateur' | 'competitive' | 'semi_pro' | 'professional',
+  Partial<Record<ExerciseCategory, number>>
+> = {
+  beginner: { strength: 1.05 },
+  amateur: {},
+  competitive: { conditioning: 1.05, power: 1.05 },
+  semi_pro: { conditioning: 1.08, power: 1.08, strength: 0.97 },
+  professional: { conditioning: 1.08, power: 1.08, strength: 0.97 },
+};
+
+/** Multiplies overlapping categories together and unions the rest — how
+ * performancePriority + position emphasis + competitiveLevel emphasis combine into
+ * one `categoryEmphasis` map (spec: personalization signals compose, none silently
+ * overrides another). */
+function mergeCategoryEmphasis(
+  maps: Partial<Record<ExerciseCategory, number>>[]
+): Partial<Record<ExerciseCategory, number>> {
+  const merged: Partial<Record<ExerciseCategory, number>> = {};
+  for (const map of maps) {
+    for (const [category, multiplier] of Object.entries(map) as [ExerciseCategory, number][]) {
+      merged[category] = (merged[category] ?? 1) * multiplier;
+    }
+  }
+  return merged;
+}
 
 function resolveExercise(slot: ExerciseSlot, ctx: ResolveContext): ResolvedExercise | null {
   if (ctx.skipHighImpact && slot.highImpact) {
@@ -155,12 +192,13 @@ function resolveDay(day: WorkoutDayTemplate, ctx: ResolveContext): ResolvedWorko
     exercises,
   };
 
-  // Performance-priority emphasis first (a category-relative multiplier over the
-  // authored volume), then the session-duration time budget (a whole-day scale that
-  // also re-bases the displayed duration) — order matters only in that duration is
-  // always the last word on what's actually displayed, per spec §13.
-  if (ctx.performancePriority) {
-    resolved = applyPriorityEmphasis(resolved, ctx.performancePriority);
+  // Combined category-emphasis (performancePriority + position + competitiveLevel —
+  // a category-relative multiplier over the authored volume) first, then the
+  // session-duration time budget (a whole-day scale that also re-bases the displayed
+  // duration) — order matters only in that duration is always the last word on
+  // what's actually displayed, per spec §13.
+  if (ctx.categoryEmphasis) {
+    resolved = applyCategoryEmphasis(resolved, ctx.categoryEmphasis);
   }
   if (ctx.sessionDurationMin) {
     resolved = applySessionDurationBudget(resolved, ctx.sessionDurationMin);
@@ -169,8 +207,7 @@ function resolveDay(day: WorkoutDayTemplate, ctx: ResolveContext): ResolvedWorko
   return resolved;
 }
 
-function applyPriorityEmphasis(resolved: ResolvedWorkout, priority: 'speed' | 'strength' | 'conditioning'): ResolvedWorkout {
-  const categoryMultipliers = PRIORITY_CATEGORY_EMPHASIS[priority];
+function applyCategoryEmphasis(resolved: ResolvedWorkout, categoryMultipliers: Partial<Record<ExerciseCategory, number>>): ResolvedWorkout {
   return {
     ...resolved,
     exercises: resolved.exercises.map((ex) => {
@@ -199,6 +236,12 @@ function baseContext(profile: UserProfile, weekNumber = 1, progression?: Exercis
   // A NaN/negative/non-integer week number (corrupt state, a bad progression calc) must
   // never reach applyProgression's arithmetic — it would propagate as a NaN set count.
   const safeWeekNumber = isValidWeekNumber(weekNumber) ? weekNumber : 1;
+
+  const priorityMap = PRIORITY_CATEGORY_EMPHASIS[profile.answers.performancePriority ?? 'strength'];
+  const position = getSportModule(profile.answers.sport).positions?.find((p) => p.id === profile.answers.sportPositionId);
+  const positionMap = position?.emphasis ?? {};
+  const competitiveLevelMap = profile.answers.competitiveLevel ? COMPETITIVE_LEVEL_EMPHASIS[profile.answers.competitiveLevel] : {};
+
   return {
     equipmentIds: profile.answers.equipmentIds,
     locationIds: profile.answers.trainingLocationIds,
@@ -206,8 +249,22 @@ function baseContext(profile: UserProfile, weekNumber = 1, progression?: Exercis
     weekNumber: safeWeekNumber,
     progression,
     sessionDurationMin: profile.answers.sessionDurationMin ?? 45,
-    performancePriority: profile.answers.performancePriority ?? 'strength',
+    categoryEmphasis: mergeCategoryEmphasis([priorityMap, positionMap, competitiveLevelMap]),
   };
+}
+
+/** Matches/week is a generic weekly-load signal (spec §9, Core Personalization Polish):
+ * more competitive events on top of training modestly reduces effective training
+ * capacity, regardless of sport — this reads a generic optional field, never branches
+ * on sport id. Capped so it can reduce frequency by at most 2 days and never below 1.
+ * A real Competition Mode event (domain/context/competitionEngine.ts) remains the
+ * authoritative day-level override for an actual match day; this only shapes the
+ * WEEKLY schedule's training-day count, so the two never double-count the same thing. */
+function effectiveTrainingFrequency(daysAvailablePerWeek: number, matchesPerWeek: number | undefined): number {
+  const requested = daysAvailablePerWeek > 0 ? daysAvailablePerWeek : 3;
+  if (!matchesPerWeek || matchesPerWeek <= 0) return requested;
+  const reduction = Math.min(2, Math.floor(matchesPerWeek / 2));
+  return Math.max(1, requested - reduction);
 }
 
 /**
@@ -221,11 +278,67 @@ export function todayDayIndex(programLength: number, date: Date = new Date()): n
   return isoWeekday % programLength;
 }
 
-function dayForIndex(profile: UserProfile, dayIndex?: number): WorkoutDayTemplate {
+/** How many real calendar days `referenceDate` is past `planStartDate` (never
+ * negative — a corrupt/future planStartDate reads as "day 0", not a negative
+ * offset that would break the modulo below). */
+function daysSincePlanStart(planStartDate: string | null | undefined, referenceDate: Date): number {
+  const start = planStartDate ? parseLocalDateKey(planStartDate) : null;
+  if (!start) return 0;
+  return Math.max(0, daysBetween(start, referenceDate));
+}
+
+/**
+ * Which day of the ATHLETE'S OWN 7-day training cycle `referenceDate` is —
+ * anchored to when their plan started (cycle day 0), never the real ISO
+ * calendar week. This is what makes Rest/Training assignment both correct
+ * product behavior (an athlete who builds their plan on a Sunday shouldn't
+ * start on a rest day — day 0 of any cycle is always a training day, see
+ * `trainingDaySlots`) and safe to test deterministically regardless of which
+ * real weekday a test happens to run on.
+ */
+export function cycleDayIndexFor(planStartDate: string | null | undefined, referenceDate: Date = new Date()): number {
+  return daysSincePlanStart(planStartDate, referenceDate) % 7;
+}
+
+/** The training-day ORDINAL (0, 1, 2, ...) `cycleDayIndex` is within this
+ * frequency's `trainingDaySlots` pattern, or null if `cycleDayIndex` is a rest
+ * day — the single place both `generatePersonalizedWeek` and "today" resolution
+ * decide which of the sport's day templates to use, so they can never disagree. */
+function trainingOrdinalForCycleDay(freq: number, cycleDayIndex: number): number | null {
+  const slots = trainingDaySlots(freq);
+  const ordinal = slots.indexOf(cycleDayIndex);
+  return ordinal === -1 ? null : ordinal;
+}
+
+/**
+ * Resolves the day template for `dayIndex` (an explicit historical/relative
+ * lookup — e.g. Progress/Weekly Report's day-by-day history) or, when omitted,
+ * for "today". Passing `planStartDate` (even `null`, meaning "no plan yet")
+ * switches "today" to the plan-cycle-aware resolution used everywhere else in
+ * this file (spec: Core Personalization Polish §15/§21); omitting it entirely
+ * keeps the original real-ISO-weekday behavior for callers that don't yet
+ * thread `planStartDate` through (e.g. Travel Mode's own template choice,
+ * spec §14 — travel's existing behavior is preserved, not required to change).
+ */
+function dayForIndex(
+  profile: UserProfile,
+  dayIndex?: number,
+  planStartDate?: string | null,
+  referenceDate: Date = new Date()
+): WorkoutDayTemplate {
   const sportModule = getSportModule(profile.answers.sport);
   const days = sportModule.program[profile.level];
-  const index = dayIndex ?? todayDayIndex(days.length);
-  return days[index % days.length];
+
+  if (dayIndex !== undefined) {
+    return days[dayIndex % days.length];
+  }
+  if (planStartDate !== undefined) {
+    const freq = effectiveTrainingFrequency(profile.answers.daysAvailablePerWeek, profile.answers.matchesPerWeek);
+    const cycleDayIndex = cycleDayIndexFor(planStartDate, referenceDate);
+    const ordinal = trainingOrdinalForCycleDay(freq, cycleDayIndex) ?? 0;
+    return days[ordinal % days.length];
+  }
+  return days[todayDayIndex(days.length, referenceDate) % days.length];
 }
 
 /** The full weekly cycle for the athlete's sport/level, equipment- and injury-resolved, in order. */
@@ -237,8 +350,12 @@ export function generateWeekProgram(profile: UserProfile, weekNumber = 1): Resol
 }
 
 export interface WeekPlanDay {
-  /** Monday=0 .. Sunday=6, matching `todayDayIndex`'s convention. */
-  dayOfWeek: number;
+  /** 0-6 — this athlete's own cycle day (0 = the day their plan started), NOT the
+   * real ISO weekday. Two athletes who started their plans on different real days
+   * can have the same `cycleDayIndex` map to different calendar dates. */
+  cycleDayIndex: number;
+  /** The real calendar date (YYYY-MM-DD) this row represents. */
+  date: string;
   type: 'training' | 'rest';
   /** Present only when `type === 'training'`. */
   workout?: ResolvedWorkout;
@@ -262,49 +379,100 @@ function trainingDaySlots(freq: number): number[] {
 
 /**
  * The athlete's full personalized week — the primary "Plan" experience (spec
- * §17/§18): exactly `daysAvailablePerWeek` training days (built from the
+ * §17/§18): exactly `effectiveTrainingFrequency` training days (built from the
  * sport's existing level-appropriate day templates, cycled through and
  * resolved exactly like `generateWeekProgram` — equipment/injury substitution,
- * performance-priority emphasis and session-duration budgeting all apply),
- * the rest marked `rest`. A pure function of the profile: same profile + same
- * week number always produces the same week (spec §10/§38); a materially
- * different profile (different frequency, duration, priority, equipment,
- * location, or injuries) produces a materially different one (spec §11/§41).
+ * category emphasis and session-duration budgeting all apply), the rest marked
+ * `rest`. A pure function of the profile + planStartDate + referenceDate: same
+ * inputs always produce the same week (spec §10/§29/§38); a materially
+ * different profile (different frequency, duration, priority, position,
+ * competitive level, matches/week, equipment, location, or injuries) produces
+ * a materially different one (spec §11/§5). The returned week always includes
+ * `referenceDate` (default: today) at whatever `cycleDayIndex` it falls on —
+ * see `resolveTodayPlanDay` for the single-day version Home/Today's Workout use.
  */
-export function generatePersonalizedWeek(profile: UserProfile, weekNumber = 1): WeekPlanDay[] {
+export function generatePersonalizedWeek(
+  profile: UserProfile,
+  planStartDate?: string | null,
+  referenceDate: Date = new Date(),
+  weekNumber = 1
+): WeekPlanDay[] {
   const sportModule = getSportModule(profile.answers.sport);
   const templates = sportModule.program[profile.level];
-  const freq = profile.answers.daysAvailablePerWeek > 0 ? profile.answers.daysAvailablePerWeek : 3;
-  const trainingSlots = new Set(trainingDaySlots(freq));
+  const freq = effectiveTrainingFrequency(profile.answers.daysAvailablePerWeek, profile.answers.matchesPerWeek);
+  const slots = trainingDaySlots(freq);
+  const trainingSlotSet = new Set(slots);
   const ctx = baseContext(profile, weekNumber);
 
-  let templateIndex = 0;
+  const todayCycleIndex = cycleDayIndexFor(planStartDate, referenceDate);
+  const weekStartDate = addDays(referenceDate, -todayCycleIndex);
+
   const week: WeekPlanDay[] = [];
-  for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
-    if (trainingSlots.has(dayOfWeek)) {
-      const template = templates[templateIndex % templates.length];
-      templateIndex++;
-      week.push({ dayOfWeek, type: 'training', workout: resolveDay(template, ctx) });
+  for (let cycleDayIndex = 0; cycleDayIndex < 7; cycleDayIndex++) {
+    const date = localDateKey(addDays(weekStartDate, cycleDayIndex));
+    if (trainingSlotSet.has(cycleDayIndex)) {
+      const ordinal = slots.indexOf(cycleDayIndex);
+      const template = templates[ordinal % templates.length];
+      week.push({ cycleDayIndex, date, type: 'training', workout: resolveDay(template, ctx) });
     } else {
-      week.push({ dayOfWeek, type: 'rest' });
+      week.push({ cycleDayIndex, date, type: 'rest' });
     }
   }
   return week;
 }
 
+export interface TodayPlanResolution {
+  type: 'training' | 'rest';
+  /** Present only when `type === 'training'`. */
+  workout?: ResolvedWorkout;
+  cycleDayIndex: number;
+}
+
 /**
- * Today's workout, cycling deterministically through the weekly program
- * by real day-of-week rather than picking randomly. Pass `dayIndex`
- * explicitly to look at a specific day of the cycle (e.g. for the
- * history behind Progress/Weekly Report); omit it to mean "today".
+ * Resolves exactly what TODAY is per the athlete's generated weekly plan (spec:
+ * Core Personalization Polish §11/§15/§17) — the single source of truth
+ * Home/Today's Workout gate on before showing/hiding "START WORKOUT". Uses the
+ * exact same frequency + template-ordinal logic as `generatePersonalizedWeek`
+ * (both call `trainingOrdinalForCycleDay`), so the two screens can never
+ * disagree about what today is or which session it shows.
+ */
+export function resolveTodayPlanDay(
+  profile: UserProfile,
+  planStartDate: string | null | undefined,
+  referenceDate: Date = new Date(),
+  weekNumber = 1
+): TodayPlanResolution {
+  const cycleDayIndex = cycleDayIndexFor(planStartDate, referenceDate);
+  const freq = effectiveTrainingFrequency(profile.answers.daysAvailablePerWeek, profile.answers.matchesPerWeek);
+  const ordinal = trainingOrdinalForCycleDay(freq, cycleDayIndex);
+  if (ordinal === null) {
+    return { type: 'rest', cycleDayIndex };
+  }
+  const sportModule = getSportModule(profile.answers.sport);
+  const templates = sportModule.program[profile.level];
+  const template = templates[ordinal % templates.length];
+  const ctx = baseContext(profile, weekNumber);
+  return { type: 'training', workout: resolveDay(template, ctx), cycleDayIndex };
+}
+
+/**
+ * Today's workout, resolved against the athlete's generated plan cycle when
+ * `planStartDate` is supplied (spec §15/§21 — same day-template choice as
+ * `generatePersonalizedWeek`/`resolveTodayPlanDay`), or the original real-ISO-
+ * weekday cycling when it's omitted (existing callers that don't yet thread
+ * `planStartDate` through, e.g. Travel Mode — see `dayForIndex`). Pass
+ * `dayIndex` explicitly to look at a specific day of the cycle (e.g. for the
+ * history behind Progress/Weekly Report) — this always wins over both.
  */
 export function generateTodayWorkout(
   profile: UserProfile,
   dayIndex?: number,
   weekNumber = 1,
-  progression?: ExerciseProgressionContext
+  progression?: ExerciseProgressionContext,
+  planStartDate?: string | null,
+  referenceDate: Date = new Date()
 ): ResolvedWorkout {
-  return resolveDay(dayForIndex(profile, dayIndex), baseContext(profile, weekNumber, progression));
+  return resolveDay(dayForIndex(profile, dayIndex, planStartDate, referenceDate), baseContext(profile, weekNumber, progression));
 }
 
 /** Scales every non-warmup/cooldown block's sets by `multiplier` (a no-op for an
@@ -334,9 +502,11 @@ export function applyCoachAdjustment(
   dayIndex: number | undefined,
   adjustment: AiCoachAdjustment,
   weekNumber = 1,
-  progression?: ExerciseProgressionContext
+  progression?: ExerciseProgressionContext,
+  planStartDate?: string | null,
+  referenceDate: Date = new Date()
 ): ResolvedWorkout {
-  const day = dayForIndex(profile, dayIndex);
+  const day = dayForIndex(profile, dayIndex, planStartDate, referenceDate);
 
   const ctx: ResolveContext = {
     ...baseContext(profile, weekNumber, progression),

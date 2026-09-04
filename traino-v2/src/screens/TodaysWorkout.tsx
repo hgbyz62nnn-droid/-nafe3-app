@@ -15,7 +15,7 @@ import { derivePreferenceSignals, deriveRecentlyUsedIds } from '../domain/exerci
 import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import type { ExerciseDefinition } from '../domain/exercise/types';
 import type { ExerciseProgressionContext } from '../domain/engine/progressionIntegration';
-import type { ResolvedExercise } from '../domain/engine/planEngine';
+import { resolveTodayPlanDay, type ResolvedExercise } from '../domain/engine/planEngine';
 import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { composeContextualWorkout } from '../domain/context/composeContextualWorkout';
 import ExerciseLogPanel from '../components/ExerciseLogPanel';
@@ -89,10 +89,20 @@ export default function TodaysWorkout() {
     weeklyAdjustment,
     resolvedContext,
     athleteConstraints,
+    planStartDate,
   });
   const workout = composedWorkout;
   const isTravelContextActive = resolvedContext.mode === 'travel';
   const isCompetitionContextActive = resolvedContext.mode === 'competition' && !!contextMessage;
+  // Same single source of truth Home/`/plan` use (spec: Core Personalization
+  // Polish §11/§15) — an active AI-Coach chat adjustment or Travel Mode both
+  // keep their existing, higher-precedence behavior; rest only applies to an
+  // otherwise-normal, non-competition day.
+  const isRestDay =
+    !skipNormalSession &&
+    !activeAdjustment &&
+    resolvedContext.mode !== 'travel' &&
+    resolveTodayPlanDay(profile, planStartDate).type === 'rest';
 
   function handleReplace(index: number, sourceExerciseName: string, replacement: ExerciseDefinition) {
     const sourceId = getExerciseByName(sourceExerciseName)?.id;
@@ -180,6 +190,28 @@ export default function TodaysWorkout() {
             <Icon name="calendar" size={28} className="text-red mx-auto" />
             <h2 className="text-white text-[17px] font-extrabold mt-3">Competition Day</h2>
             <p className="text-text-secondary text-[12.5px] mt-1.5">{contextMessage}</p>
+          </div>
+        </div>
+      ) : isRestDay ? (
+        <div className="px-4 mt-4">
+          <div className="bg-card rounded-card border border-border-soft p-6 text-center">
+            <Icon name="moon" size={28} className="text-text-secondary mx-auto" />
+            <h2 className="text-white text-[17px] font-extrabold mt-3">Rest Day</h2>
+            <p className="text-text-secondary text-[12.5px] mt-1.5">Recovery is part of your plan.</p>
+          </div>
+          <div className="mt-3 flex flex-col gap-2">
+            <Link
+              to="/plan"
+              className="w-full bg-red rounded-button py-3.5 flex items-center justify-center text-white font-extrabold text-[15px] tracking-wide shadow-button"
+            >
+              VIEW WEEK
+            </Link>
+            <Link
+              to="/daily-check-in"
+              className="w-full border border-border-soft rounded-button py-3 flex items-center justify-center text-white font-semibold text-[13px]"
+            >
+              CHECK TODAY'S READINESS
+            </Link>
           </div>
         </div>
       ) : (

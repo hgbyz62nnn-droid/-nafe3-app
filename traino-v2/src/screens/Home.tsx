@@ -12,6 +12,7 @@ import { useTrainingContext } from '../domain/state/TrainingContextStore';
 import { composeContextualWorkout } from '../domain/context/composeContextualWorkout';
 import type { AthleteConstraints } from '../domain/exercise/matchingEngine';
 import { computeProgressionInfo } from '../domain/engine/progressionEngine';
+import { resolveTodayPlanDay } from '../domain/engine/planEngine';
 import { computePerformanceStats, computeWorkoutCompletion, computeNutritionAdherence } from '../domain/engine/progressEngine';
 import { buildReadinessTrend } from '../domain/performance/readinessTrend';
 import { barrierDisplayName } from '../domain/coaching/barriers';
@@ -100,8 +101,16 @@ export default function Home() {
     weeklyAdjustment,
     resolvedContext,
     athleteConstraints,
+    planStartDate,
   });
   const workout = composedWorkout;
+  // Rest is the generated plan's own state for today (spec: Core Personalization
+  // Polish §11/§17) — the SAME resolution `/plan` uses for this exact date, so
+  // the two screens can never disagree. Competition Day (skipNormalSession) and
+  // an active Travel Mode context both keep their existing, higher-precedence
+  // behavior; rest only applies to an otherwise-normal day (spec §13/§14).
+  const isRestDay =
+    !skipNormalSession && resolvedContext.mode !== 'travel' && resolveTodayPlanDay(profile, planStartDate).type === 'rest';
   const sportName = SPORTS.find((s) => s.id === profile.answers.sport)?.name ?? 'Training';
 
   const last7 = getRecentLogs(7);
@@ -199,6 +208,8 @@ export default function Home() {
               <p className="text-white text-[26px] font-extrabold leading-[1.15] mt-1">
                 {skipNormalSession || !workout ? (
                   'Competition Day'
+                ) : isRestDay ? (
+                  'Rest Day'
                 ) : workout.name.includes(' + ') ? (
                   <>
                     {workout.name.split(' + ')[0]} +<br />
@@ -208,7 +219,10 @@ export default function Home() {
                   workout.name
                 )}
               </p>
-              {workout && !skipNormalSession && (
+              {isRestDay && (
+                <p className="text-text-secondary text-[13px] mt-2 max-w-[65%]">Recovery is part of your plan.</p>
+              )}
+              {workout && !skipNormalSession && !isRestDay && (
                 <div className="flex items-center gap-3 mt-3 text-white text-[13px] font-medium">
                   <span className="flex items-center gap-1.5">
                     <Icon name="clock" size={15} />
@@ -225,13 +239,30 @@ export default function Home() {
           </div>
 
           <div className="p-3">
-            <Link
-              to="/todays-workout"
-              className="w-full bg-red hover:bg-red-dim transition-colors rounded-button py-3.5 flex items-center justify-center gap-2 shadow-button"
-            >
-              <span className="text-white font-extrabold text-[15px] tracking-wide">{t('home.startWorkout')}</span>
-              <Icon name="playTriangle" size={14} className="text-white" />
-            </Link>
+            {isRestDay ? (
+              <div className="flex flex-col gap-2">
+                <Link
+                  to="/plan"
+                  className="w-full bg-red hover:bg-red-dim transition-colors rounded-button py-3.5 flex items-center justify-center gap-2 shadow-button"
+                >
+                  <span className="text-white font-extrabold text-[15px] tracking-wide">VIEW WEEK</span>
+                </Link>
+                <Link
+                  to="/daily-check-in"
+                  className="w-full border border-border-soft rounded-button py-3 flex items-center justify-center gap-2"
+                >
+                  <span className="text-white font-semibold text-[13px] tracking-wide">CHECK TODAY'S READINESS</span>
+                </Link>
+              </div>
+            ) : (
+              <Link
+                to="/todays-workout"
+                className="w-full bg-red hover:bg-red-dim transition-colors rounded-button py-3.5 flex items-center justify-center gap-2 shadow-button"
+              >
+                <span className="text-white font-extrabold text-[15px] tracking-wide">{t('home.startWorkout')}</span>
+                <Icon name="playTriangle" size={14} className="text-white" />
+              </Link>
+            )}
           </div>
         </div>
       </div>

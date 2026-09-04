@@ -5,10 +5,13 @@ import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon } from '../components/ui/Icon';
 import { DIET_PREFERENCE_OPTIONS, ALLERGY_OPTIONS, BUDGET_OPTIONS } from '../domain/assessment/nutritionPreferences';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLocale } from '../domain/state/LocaleContext';
+import { localizedOptionLabel } from '../domain/i18n/optionLabels';
 
 export default function AssessmentNutritionPreferences() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
+  const { locale } = useLocale();
   const selectedAllergies = new Set(answers.allergyIds);
 
   function toggleAllergy(id: string) {
@@ -52,7 +55,7 @@ export default function AssessmentNutritionPreferences() {
               >
                 <Icon name={diet.icon} size={18} className="text-white shrink-0" />
                 <span className="flex-1 min-w-0">
-                  <span className="block text-white text-[13.5px] font-bold">{diet.name}</span>
+                  <span className="block text-white text-[13.5px] font-bold">{localizedOptionLabel('diet', diet.id, diet.name, locale)}</span>
                   <span className="block text-text-secondary text-[11.5px]">{diet.description}</span>
                 </span>
                 {active && <Icon name="checkPlain" size={14} className="text-red shrink-0" strokeWidth={2.6} />}
@@ -75,7 +78,7 @@ export default function AssessmentNutritionPreferences() {
                   active ? 'border-red bg-red/15 text-white' : 'border-border-soft bg-card-nested text-text-secondary'
                 }`}
               >
-                {a.name}
+                {localizedOptionLabel('allergy', a.id, a.name, locale)}
               </button>
             );
           })}
@@ -96,7 +99,7 @@ export default function AssessmentNutritionPreferences() {
                 }`}
               >
                 <span>
-                  <span className="block text-white text-[13.5px] font-bold">{b.name}</span>
+                  <span className="block text-white text-[13.5px] font-bold">{localizedOptionLabel('budget', b.id, b.name, locale)}</span>
                   <span className="block text-text-secondary text-[11.5px]">{b.description}</span>
                 </span>
                 {active && <Icon name="checkPlain" size={14} className="text-red shrink-0" strokeWidth={2.6} />}

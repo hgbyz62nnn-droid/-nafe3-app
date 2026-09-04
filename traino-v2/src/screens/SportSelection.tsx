@@ -5,6 +5,8 @@ import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon, type IconName } from '../components/ui/Icon';
 import { SPORTS } from '../domain/sports/sports';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLocale } from '../domain/state/LocaleContext';
+import { localizedOptionLabel } from '../domain/i18n/optionLabels';
 
 /** No real per-sport photography exists yet — rather than a fabricated
  * image URL or a visible "· placeholder" tag on every card (spec §31), each
@@ -61,6 +63,7 @@ function SportCard({
 export default function SportSelection() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
+  const { locale } = useLocale();
 
   return (
     <Screen withNav={false} className="pb-8">
@@ -72,7 +75,7 @@ export default function SportSelection() {
           <SportCard
             key={sport.id}
             id={sport.id}
-            name={sport.name}
+            name={localizedOptionLabel('sport', sport.id, sport.name, locale)}
             selected={answers.sport === sport.id}
             onClick={() => updateAnswers({ sport: sport.id })}
           />

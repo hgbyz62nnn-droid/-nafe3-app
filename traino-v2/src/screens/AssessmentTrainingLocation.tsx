@@ -5,10 +5,13 @@ import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon } from '../components/ui/Icon';
 import { TRAINING_LOCATIONS } from '../domain/assessment/trainingLocations';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLocale } from '../domain/state/LocaleContext';
+import { localizedOptionLabel } from '../domain/i18n/optionLabels';
 
 export default function AssessmentTrainingLocation() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
+  const { locale } = useLocale();
   const selected = new Set(answers.trainingLocationIds);
 
   function toggle(id: string) {
@@ -44,7 +47,7 @@ export default function AssessmentTrainingLocation() {
                 <Icon name={loc.icon} size={20} className="text-white" />
               </span>
               <span className="flex-1 min-w-0">
-                <span className="block text-white text-[14.5px] font-bold">{loc.name}</span>
+                <span className="block text-white text-[14.5px] font-bold">{localizedOptionLabel('location', loc.id, loc.name, locale)}</span>
                 <span className="block text-text-secondary text-[12.5px] mt-0.5">{loc.description}</span>
               </span>
               <span

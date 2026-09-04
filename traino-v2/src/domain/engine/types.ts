@@ -55,9 +55,21 @@ export interface AssessmentAnswers {
   performancePriority?: 'speed' | 'strength' | 'conditioning';
   /** Sport-specific position/discipline id, drawn from `SportModuleData.positions` for
    * the athlete's chosen sport (empty/absent for a sport with no positions defined —
-   * the assessment question is skipped entirely rather than shown empty). Display/
-   * explanation only for now; not yet a plan-generation input. */
+   * the assessment question is skipped entirely rather than shown empty). Read by
+   * planEngine as a per-category volume-emphasis multiplier (see `SportModuleData.
+   * positions[].emphasis`) — generic, sport-module-supplied data, never a hardcoded
+   * per-sport branch in the engine. */
   sportPositionId?: string;
+  /** Generic, sport-agnostic self-reported competitive level. Read by planEngine as a
+   * small, conservative per-category volume-emphasis multiplier (see
+   * COMPETITIVE_LEVEL_EMPHASIS in planEngine.ts) — never a sport-specific rule.
+   * Optional; missing/invalid is simply not applied (no emphasis shift). */
+  competitiveLevel?: 'beginner' | 'amateur' | 'competitive' | 'semi_pro' | 'professional';
+  /** Matches/competitive events per week, independent of any specific Competition Mode
+   * event (see domain/context/) — a generic weekly-load signal read by planEngine to
+   * modestly reduce effective training frequency/capacity for athletes carrying more
+   * weekly match load, regardless of sport. Optional; 0/absent = no adjustment. */
+  matchesPerWeek?: number;
 }
 
 export interface UserProfile {
@@ -139,8 +151,22 @@ export interface SportModuleData {
    * strokes) this sport module offers. When non-empty, the assessment shows a
    * generic "Position / Discipline" question populated from this list — the UI
    * never hardcodes per-sport position names (spec §6/§16). Absent/empty for a
-   * sport with nothing meaningful to ask here. */
-  positions?: { id: string; name: string }[];
+   * sport with nothing meaningful to ask here.
+   *
+   * `emphasis` is the position's/discipline's structured contribution to plan
+   * generation (spec: Core Personalization Polish §1-§3) — a conservative,
+   * generic per-`ExerciseCategory` volume multiplier applied by planEngine.ts
+   * alongside the athlete's `performancePriority` multiplier. This is training-
+   * emphasis direction ("this position leans more conditioning"), never a
+   * specific exercise name or a fabricated physiological claim. Absent = no
+   * position-specific emphasis (a position can exist purely for display/
+   * explanation without one). */
+  positions?: { id: string; name: string; emphasis?: Partial<Record<ExerciseCategory, number>> }[];
+  /** Whether this sport's assessment should ask "matches/week" (spec: Core
+   * Personalization Polish §9) — a data-driven capability flag, read generically by
+   * the assessment screen, rather than a hardcoded per-sport UI branch. Absent/false
+   * for a sport where a weekly match count doesn't apply. */
+  supportsMatchesPerWeek?: boolean;
 }
 
 /** The fixed set of quick-reply intents the AI Coach screen offers — a closed, enumerable list.

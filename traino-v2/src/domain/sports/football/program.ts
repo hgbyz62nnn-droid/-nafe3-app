@@ -517,13 +517,20 @@ export const footballModule: SportModuleData = {
     intermediate: intermediateDays,
     advanced: advancedDays,
   },
+  // Conservative, direction-only training-emphasis multipliers (spec: Core
+  // Personalization Polish §1/§2) — general, defensible position tendencies
+  // (a winger leans speed/agility work; a defender/goalkeeper leans strength/
+  // power for duels and reactive power), not specific exercise prescriptions
+  // or invented sport science. Deltas stay small (+/-15% max) so they shape
+  // emphasis without producing an unsafe or extreme session.
   positions: [
-    { id: 'goalkeeper', name: 'Goalkeeper' },
-    { id: 'defender', name: 'Defender' },
-    { id: 'midfielder', name: 'Midfielder' },
-    { id: 'winger', name: 'Winger' },
-    { id: 'striker', name: 'Striker' },
+    { id: 'goalkeeper', name: 'Goalkeeper', emphasis: { power: 1.15, strength: 1.05, conditioning: 0.9 } },
+    { id: 'defender', name: 'Defender', emphasis: { strength: 1.15, power: 1.05, conditioning: 0.95 } },
+    { id: 'midfielder', name: 'Midfielder', emphasis: { conditioning: 1.15, strength: 0.95 } },
+    { id: 'winger', name: 'Winger', emphasis: { conditioning: 1.15, power: 1.1, strength: 0.9 } },
+    { id: 'striker', name: 'Striker', emphasis: { power: 1.15, strength: 1.05, conditioning: 0.95 } },
   ],
+  supportsMatchesPerWeek: true,
   nutritionProfile: {
     proteinGPerKg: 2.0,
     carbBias: 'high',

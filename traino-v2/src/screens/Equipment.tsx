@@ -5,10 +5,13 @@ import { OnboardingHeader } from '../components/ui/OnboardingHeader';
 import { Icon } from '../components/ui/Icon';
 import { EQUIPMENT_OPTIONS } from '../domain/assessment/equipment';
 import { useProfile } from '../domain/state/ProfileContext';
+import { useLocale } from '../domain/state/LocaleContext';
+import { localizedOptionLabel } from '../domain/i18n/optionLabels';
 
 export default function Equipment() {
   const navigate = useNavigate();
   const { answers, updateAnswers } = useProfile();
+  const { locale } = useLocale();
   const selected = new Set(answers.equipmentIds);
 
   function toggle(id: string) {
@@ -51,7 +54,7 @@ export default function Equipment() {
               )}
               <Icon name={eq.icon} size={24} className="text-white" />
               <span className="text-white text-[11px] font-semibold text-center leading-tight">
-                {eq.name}
+                {localizedOptionLabel('equipment', eq.id, eq.name, locale)}
               </span>
             </button>
           );

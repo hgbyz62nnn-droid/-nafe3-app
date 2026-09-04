@@ -43,3 +43,29 @@ export const PRIORITY_OPTIONS: PriorityOption[] = [
   { id: 'strength', name: 'Strength', description: 'Loaded strength & muscle work', icon: 'dumbbell' },
   { id: 'conditioning', name: 'Conditioning', description: 'Endurance & work capacity', icon: 'fitness' },
 ];
+
+/** Self-reported competitive level — generic across every sport (spec: Core
+ * Personalization Polish §6/§8). Read by planEngine.ts as a small, optional
+ * per-category emphasis multiplier; absent = no emphasis applied. */
+export interface CompetitiveLevelOption {
+  id: 'beginner' | 'amateur' | 'competitive' | 'semi_pro' | 'professional';
+  name: string;
+  description: string;
+}
+
+export const COMPETITIVE_LEVEL_OPTIONS: CompetitiveLevelOption[] = [
+  { id: 'beginner', name: 'Beginner', description: 'Just starting out' },
+  { id: 'amateur', name: 'Amateur', description: 'Recreational / social level' },
+  { id: 'competitive', name: 'Competitive', description: 'Club or league competition' },
+  { id: 'semi_pro', name: 'Semi-Pro', description: 'Regular competitive play' },
+  { id: 'professional', name: 'Professional', description: 'Full-time competitive athlete' },
+];
+
+/** Matches/week (spec §9) — only shown when the athlete's sport module sets
+ * `supportsMatchesPerWeek`. */
+export const MATCHES_PER_WEEK_OPTIONS: BucketOption[] = [
+  { id: 'none', label: '0', description: 'No matches this week', value: 0 },
+  { id: 'one', label: '1', description: 'One match this week', value: 1 },
+  { id: 'two', label: '2', description: 'Two matches this week', value: 2 },
+  { id: 'three_plus', label: '3+', description: 'Three or more matches', value: 3 },
+];

@@ -1,5 +1,17 @@
 import type { Page } from '@playwright/test';
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Matches an accessible name that starts with `label`, not followed by
+ * another word character or hyphen — avoids both a substring collision
+ * (e.g. "Competitive" inside "Semi-Pro Regular competitive play") and a
+ * numeral-prefix collision (e.g. "1" inside "1-2 / week"). */
+function startAnchor(label: string): RegExp {
+  return new RegExp('^' + escapeRegExp(label) + '(?![\\w-])');
+}
+
 /**
  * Reusable onboarding/assessment helper (Phase 12 spec §7/§26). Drives the
  * real 8-step assessment UI exactly as an athlete would — no localStorage
@@ -23,6 +35,16 @@ export interface OnboardingOptions {
   frequencyLabel?: string;
   /** Exact ALLERGY_OPTIONS label to select on the final step. Defaults to 'None'. */
   allergyLabel?: string;
+  /** Exact position/discipline name (e.g. 'Winger', 'Butterfly') — only clicked if
+   * provided; the screen only shows this section when the sport has positions. */
+  position?: string;
+  /** Exact COMPETITIVE_LEVEL_OPTIONS name (e.g. 'Professional'). Optional. */
+  competitiveLevel?: string;
+  /** Exact MATCHES_PER_WEEK_OPTIONS label (e.g. '2') — only clicked if provided;
+   * only shown for a sport whose module sets `supportsMatchesPerWeek`. */
+  matchesPerWeek?: string;
+  /** Exact PRIORITY_OPTIONS name (e.g. 'Speed & Power'). Optional. */
+  priority?: string;
 }
 
 export async function completeOnboarding(page: Page, opts: OnboardingOptions = {}): Promise<void> {
@@ -33,6 +55,10 @@ export async function completeOnboarding(page: Page, opts: OnboardingOptions = {
     equipment = sport === 'Swimming' ? 'Kickboard' : 'Dumbbells',
     frequencyLabel = '3-4 / week',
     allergyLabel = 'None',
+    position,
+    competitiveLevel,
+    matchesPerWeek,
+    priority,
   } = opts;
 
   // Real fresh-user flow: LANGUAGE -> WELCOME -> CREATE MY PLAN -> assessment
@@ -73,9 +99,28 @@ export async function completeOnboarding(page: Page, opts: OnboardingOptions = {
   // Not `exact`: BucketGrid options also concatenate a description line
   // into the accessible name (e.g. "New to it Less than a year").
   await page.getByRole('button', { name: 'New to it' }).click();
+  if (position) {
+    await page.getByRole('button', { name: position, exact: true }).click();
+  }
   const frequencyButtons = page.getByRole('button', { name: frequencyLabel });
   await frequencyButtons.nth(0).click(); // "currently train"
   await frequencyButtons.nth(1).click(); // "commit going forward"
+  if (priority) {
+    await page.getByRole('button', { name: priority }).click();
+  }
+  // Anchored (not `exact`, not a bare substring): each button's accessible
+  // name concatenates its description line too (e.g. "Competitive Club or
+  // league competition"), and plain substring matching would also hit other
+  // options whose own description contains the word (e.g. "Semi-Pro Regular
+  // competitive play"). Anchoring to the start of the name, with a
+  // not-followed-by-word/hyphen guard, disambiguates from a numeral prefix
+  // collision too (e.g. matchesPerWeek "1" vs. the frequency grid's "1-2 / week").
+  if (competitiveLevel) {
+    await page.getByRole('button', { name: startAnchor(competitiveLevel) }).click();
+  }
+  if (matchesPerWeek) {
+    await page.getByRole('button', { name: startAnchor(matchesPerWeek) }).click();
+  }
   await page.getByRole('button', { name: 'NEXT' }).click();
   await page.waitForURL('**/assessment/health');
 

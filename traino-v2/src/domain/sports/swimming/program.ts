@@ -484,12 +484,17 @@ export const swimmingModule: SportModuleData = {
     intermediate: intermediateDays,
     advanced: advancedDays,
   },
+  // Same conservative, direction-only emphasis pattern as football's positions
+  // above — general, well-established relative stroke tendencies (freestyle/IM
+  // lean endurance and technique volume; butterfly is the most power-dominant
+  // stroke; breaststroke leans technique for its timing-dependent pull/kick),
+  // not new sport science or a fabricated physiological claim.
   positions: [
-    { id: 'freestyle', name: 'Freestyle' },
-    { id: 'backstroke', name: 'Backstroke' },
-    { id: 'breaststroke', name: 'Breaststroke' },
-    { id: 'butterfly', name: 'Butterfly' },
-    { id: 'im', name: 'Individual Medley' },
+    { id: 'freestyle', name: 'Freestyle', emphasis: { conditioning: 1.15, technique: 1.05 } },
+    { id: 'backstroke', name: 'Backstroke', emphasis: { strength: 1.05, conditioning: 1.05 } },
+    { id: 'breaststroke', name: 'Breaststroke', emphasis: { technique: 1.15, strength: 1.05 } },
+    { id: 'butterfly', name: 'Butterfly', emphasis: { power: 1.15, strength: 1.05, conditioning: 0.95 } },
+    { id: 'im', name: 'Individual Medley', emphasis: { conditioning: 1.1, technique: 1.1 } },
   ],
   nutritionProfile: {
     // Endurance-dominant sport: meaningful but not football-level protein
