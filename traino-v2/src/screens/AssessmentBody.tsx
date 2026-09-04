@@ -42,10 +42,10 @@ export default function AssessmentBody() {
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="Body Data" progress={7 / 8} />
+      <OnboardingHeader title="Body Data" progress={7 / 9} />
 
       <div className="px-5 mt-4">
-        <p className="text-text-secondary text-[12px] font-semibold">Step 7 of 8</p>
+        <p className="text-text-secondary text-[12px] font-semibold">Step 7 of 9</p>
         <h1 className="text-white text-[24px] font-extrabold mt-1">Tell us about your body</h1>
         <p className="text-text-secondary text-[13px] mt-1">
           Used to calculate your calorie and macro targets

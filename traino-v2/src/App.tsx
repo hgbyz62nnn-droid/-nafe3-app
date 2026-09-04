@@ -6,10 +6,16 @@ import { DailyReadinessProvider } from './domain/state/DailyReadinessContext';
 import { ExercisePreferenceProvider } from './domain/state/ExercisePreferenceContext';
 import { FoodPreferenceProvider } from './domain/state/FoodPreferenceContext';
 import { TrainingContextProvider } from './domain/state/TrainingContextStore';
+import { LocaleProvider, useLocale } from './domain/state/LocaleContext';
 import Home from './screens/Home';
 import Welcome from './screens/Welcome';
+import LanguageSelect from './screens/LanguageSelect';
 import { useProfile } from './domain/state/ProfileContext';
 import AssessmentAbout from './screens/AssessmentAbout';
+import AssessmentReview from './screens/AssessmentReview';
+import PlanReady from './screens/PlanReady';
+import Plan from './screens/Plan';
+import PlanDayDetail from './screens/PlanDayDetail';
 import SportSelection from './screens/SportSelection';
 import AssessmentTrainingLocation from './screens/AssessmentTrainingLocation';
 import Equipment from './screens/Equipment';
@@ -29,18 +35,23 @@ import Profile from './screens/Profile';
 import TravelCompetition from './screens/TravelCompetition';
 
 /**
- * The root route: an athlete who hasn't completed the assessment yet sees
- * Welcome (the "Build Your Personal Plan" / "Create My Plan" entry point)
- * instead of Home, so the first-time journey is never ambiguous. A returning
- * athlete (hasCompletedAssessment) always lands on the normal Home dashboard.
+ * The root route. A fresh install (no language chosen yet) sees Language
+ * Selection first; after that, an athlete who hasn't completed the
+ * assessment sees Welcome (the "Build Your Personal Plan" / "Create My
+ * Plan" entry point) instead of Home, so the first-time journey is never
+ * ambiguous. A returning athlete (hasCompletedAssessment) always lands on
+ * the normal Home dashboard.
  */
 function RootScreen() {
   const { hasCompletedAssessment } = useProfile();
+  const { hasChosenLanguage } = useLocale();
+  if (!hasChosenLanguage) return <LanguageSelect />;
   return hasCompletedAssessment ? <Home /> : <Welcome />;
 }
 
 export default function App() {
   return (
+    <LocaleProvider>
     <ProfileProvider>
       <LogProvider>
         <WeeklyCoachingProvider>
@@ -51,6 +62,7 @@ export default function App() {
                 <BrowserRouter>
                   <Routes>
                     <Route path="/" element={<RootScreen />} />
+                    <Route path="/language" element={<LanguageSelect />} />
                     <Route path="/onboarding/about" element={<AssessmentAbout />} />
                     <Route path="/sport-selection" element={<SportSelection />} />
                     <Route path="/assessment" element={<AssessmentTrainingLocation />} />
@@ -59,6 +71,10 @@ export default function App() {
                     <Route path="/assessment/health" element={<AssessmentHealth />} />
                     <Route path="/assessment/body" element={<AssessmentBody />} />
                     <Route path="/assessment/nutrition-preferences" element={<AssessmentNutritionPreferences />} />
+                    <Route path="/assessment/review" element={<AssessmentReview />} />
+                    <Route path="/plan-ready" element={<PlanReady />} />
+                    <Route path="/plan" element={<Plan />} />
+                    <Route path="/plan/:dayOfWeek" element={<PlanDayDetail />} />
                     <Route path="/ai-coach" element={<AiCoach />} />
                     <Route path="/todays-workout" element={<TodaysWorkout />} />
                     <Route path="/nutrition" element={<Nutrition />} />
@@ -78,5 +94,6 @@ export default function App() {
         </WeeklyCoachingProvider>
       </LogProvider>
     </ProfileProvider>
+    </LocaleProvider>
   );
 }

@@ -24,6 +24,8 @@ export function baseAnswers(overrides: Partial<AssessmentAnswers> = {}): Assessm
     allergyIds: [],
     budgetTier: 'medium',
     mealsPerDay: 4,
+    sessionDurationMin: 45,
+    performancePriority: 'strength',
     ...overrides,
   };
 }

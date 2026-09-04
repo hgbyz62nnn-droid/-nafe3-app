@@ -2,35 +2,49 @@ import { useNavigate } from 'react-router-dom';
 import { Screen } from '../components/ui/Screen';
 import { StatusBar } from '../components/ui/StatusBar';
 import { OnboardingHeader } from '../components/ui/OnboardingHeader';
-import { AssetSlot } from '../components/ui/AssetSlot';
-import { Icon } from '../components/ui/Icon';
+import { Icon, type IconName } from '../components/ui/Icon';
 import { SPORTS } from '../domain/sports/sports';
 import { useProfile } from '../domain/state/ProfileContext';
 
+/** No real per-sport photography exists yet — rather than a fabricated
+ * image URL or a visible "· placeholder" tag on every card (spec §31), each
+ * sport gets a clean, consistent icon from the existing TRAINO icon system.
+ * Falls back to the generic 'fitness' icon for a sport with no closer match
+ * in the current icon set, rather than inventing a new one. */
+const SPORT_ICON: Partial<Record<string, IconName>> = {
+  football: 'target',
+  basketball: 'target',
+  swimming: 'pool',
+  boxing: 'fitness',
+  tennis: 'target',
+  running: 'fitness',
+  gym_fitness: 'dumbbell',
+  volleyball: 'fitness',
+  athletics: 'trophy',
+  martial_arts: 'fitness',
+};
+
 function SportCard({
+  id,
   name,
   selected,
   onClick,
-  photoLabel,
 }: {
+  id: string;
   name: string;
   selected: boolean;
   onClick: () => void;
-  photoLabel: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`relative rounded-card-sm overflow-hidden aspect-[3/4] border-2 text-left transition-colors ${
+      className={`relative rounded-card-sm overflow-hidden aspect-[3/4] border-2 text-left transition-colors bg-card-nested ${
         selected ? 'border-red' : 'border-border-soft'
       }`}
     >
-      <AssetSlot
-        className="absolute inset-0"
-        label={photoLabel}
-        labelPosition="top-left"
-        placeholderIcon={<Icon name="fitness" size={30} />}
-      />
+      <div className="absolute inset-0 flex items-center justify-center text-text-muted">
+        <Icon name={SPORT_ICON[id] ?? 'fitness'} size={34} />
+      </div>
       <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
       <p className="absolute left-0 right-0 bottom-3 text-center text-white text-[15px] font-bold px-1">
         {name}
@@ -51,14 +65,14 @@ export default function SportSelection() {
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="Choose Your Sport" progress={2 / 8} />
+      <OnboardingHeader title="Choose Your Sport" progress={2 / 9} />
 
       <div className="px-5 mt-5 grid grid-cols-2 gap-3">
         {SPORTS.map((sport) => (
           <SportCard
             key={sport.id}
+            id={sport.id}
             name={sport.name}
-            photoLabel={sport.photoAssetLabel}
             selected={answers.sport === sport.id}
             onClick={() => updateAnswers({ sport: sport.id })}
           />

@@ -67,6 +67,30 @@ function sanitizeMealsPerDay(value: unknown, violations: string[]): 3 | 4 | 5 {
   return 4;
 }
 
+const PERFORMANCE_PRIORITIES = ['speed', 'strength', 'conditioning'] as const;
+
+/** Optional, additive fields (spec: Deep Adaptive Assessment) — absent on every profile
+ * persisted before this change, so `undefined` is the expected common case and is
+ * defaulted silently, following the exact `mealsPerDay` precedent above. */
+function sanitizeSessionDurationMin(value: unknown, violations: string[]): number {
+  if (value === undefined) return 45;
+  const n = typeof value === 'number' ? value : NaN;
+  if (Number.isNaN(n)) {
+    violations.push(`sessionDurationMin: not a finite number (${JSON.stringify(value)}), defaulted to 45`);
+    return 45;
+  }
+  return Math.min(180, Math.max(10, Math.round(n)));
+}
+
+function sanitizePerformancePriority(value: unknown, violations: string[]): 'speed' | 'strength' | 'conditioning' {
+  if (value === undefined) return 'strength';
+  if (typeof value === 'string' && (PERFORMANCE_PRIORITIES as readonly string[]).includes(value)) {
+    return value as 'speed' | 'strength' | 'conditioning';
+  }
+  violations.push(`performancePriority: invalid value ${JSON.stringify(value)}, defaulted to 'strength'`);
+  return 'strength';
+}
+
 function sanitizeEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
@@ -116,6 +140,9 @@ export function sanitizeAssessmentAnswers(answers: AssessmentAnswers): SanitizeR
     allergyIds: sanitizeStringArray(answers.allergyIds, 'allergyIds', violations),
     budgetTier: sanitizeEnum(answers.budgetTier, BUDGET_TIERS, 'medium', 'budgetTier', violations),
     mealsPerDay: sanitizeMealsPerDay(answers.mealsPerDay, violations),
+    sessionDurationMin: sanitizeSessionDurationMin(answers.sessionDurationMin, violations),
+    performancePriority: sanitizePerformancePriority(answers.performancePriority, violations),
+    sportPositionId: typeof answers.sportPositionId === 'string' ? answers.sportPositionId : undefined,
   };
 
   return { value, violations };

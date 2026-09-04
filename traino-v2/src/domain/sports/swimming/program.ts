@@ -24,12 +24,12 @@ import type { SportModuleData, WorkoutDayTemplate } from '../../engine/types';
  *
  * Injury coverage: shoulder (rotator-cuff strain from stroke volume) and
  * knee (breaststroke kick) are the swim-relevant contraindications used
- * here; lower_back covers starts/dryland extension work. No stroke-
- * preference question was added to the assessment — the three day types
- * below (technique/sprint, dryland strength, endurance) already rotate
+ * here; lower_back covers starts/dryland extension work. The assessment
+ * now asks a stroke/discipline question (`positions` below), captured on
+ * the athlete's profile for display/explanation — but the three day types
+ * below (technique/sprint, dryland strength, endurance) still rotate
  * through freestyle, breaststroke and backstroke work across the week
- * without needing the athlete to pre-select one, the same way football's
- * day rotation doesn't ask which position the athlete plays.
+ * regardless of the answer; no stroke-specific program branching exists yet.
  */
 
 function drylandWarmup(minutes: string): WorkoutDayTemplate['exercises'][number] {
@@ -484,6 +484,13 @@ export const swimmingModule: SportModuleData = {
     intermediate: intermediateDays,
     advanced: advancedDays,
   },
+  positions: [
+    { id: 'freestyle', name: 'Freestyle' },
+    { id: 'backstroke', name: 'Backstroke' },
+    { id: 'breaststroke', name: 'Breaststroke' },
+    { id: 'butterfly', name: 'Butterfly' },
+    { id: 'im', name: 'Individual Medley' },
+  ],
   nutritionProfile: {
     // Endurance-dominant sport: meaningful but not football-level protein
     // demand, and a high carb bias to fuel long aerobic volume.

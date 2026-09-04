@@ -18,10 +18,10 @@ export default function AssessmentAbout() {
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="About You" progress={1 / 8} />
+      <OnboardingHeader title="About You" progress={1 / 9} />
 
       <div className="px-5 mt-4">
-        <p className="text-text-secondary text-[12px] font-semibold">Step 1 of 8</p>
+        <p className="text-text-secondary text-[12px] font-semibold">Step 1 of 9</p>
         <h1 className="text-white text-[24px] font-extrabold mt-1">What should we call you?</h1>
 
         <input

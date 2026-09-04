@@ -51,11 +51,11 @@ test.describe('Core navigation', () => {
     await expect(page).toHaveURL('/');
   });
 
-  test('the bottom-nav "Plan" item is no longer a dead link — it opens Today\'s Workout', async ({ page }) => {
+  test('the bottom-nav "Plan" item opens the full generated week, not just Today\'s Workout', async ({ page }) => {
     await completeOnboarding(page);
     await page.getByRole('link', { name: 'Plan' }).click();
-    await expect(page).toHaveURL('/todays-workout');
-    await expect(page.getByRole('heading', { name: "TODAY'S WORKOUT" })).toBeVisible();
+    await expect(page).toHaveURL('/plan');
+    await expect(page.getByText('TODAY')).toBeVisible();
   });
 
   test('Human Coach is reachable from AI Coach (no longer an orphaned route)', async ({ page }) => {

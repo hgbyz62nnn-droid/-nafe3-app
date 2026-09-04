@@ -17,6 +17,7 @@ import { buildReadinessTrend } from '../domain/performance/readinessTrend';
 import { barrierDisplayName } from '../domain/coaching/barriers';
 import { READINESS_STATUS_COLOR, READINESS_STATUS_LABEL } from '../domain/readiness/scales';
 import { SPORTS } from '../domain/sports/sports';
+import { useLocale } from '../domain/state/LocaleContext';
 
 function trendToPoints(trend: number[], width = 60, height = 20): string {
   const max = Math.max(...trend, 1);
@@ -67,6 +68,7 @@ function StatTile({ children, label }: { children: React.ReactNode; label: strin
 
 export default function Home() {
   const { profile, planStartDate } = useProfile();
+  const { t } = useLocale();
   const { getRecentLogs, getLogsSince } = useLogs();
   const { getRecord, getApprovedAdjustmentForWeek } = useWeeklyCoaching();
   const { getTodayRecord, getRecordsInRange } = useDailyReadiness();
@@ -127,7 +129,7 @@ export default function Home() {
 
       <div className="px-5 pt-3 flex items-start justify-between">
         <div>
-          <p className="text-text-secondary text-[15px]">Good morning,</p>
+          <p className="text-text-secondary text-[15px]">{t('home.greeting')}</p>
           <p className="text-white text-[26px] font-extrabold leading-tight">
             {profile.answers.firstName || 'Athlete'} <span className="align-middle">👋</span>
           </p>
@@ -156,7 +158,7 @@ export default function Home() {
 
       <div className="px-5 mt-5">
         <p className="text-text-secondary text-[11px] font-bold tracking-wider uppercase mb-2">
-          Today's Plan
+          {t('home.todaysPlan')}
         </p>
 
         <div className="relative rounded-card border-2 border-red overflow-hidden bg-card">
@@ -227,7 +229,7 @@ export default function Home() {
               to="/todays-workout"
               className="w-full bg-red hover:bg-red-dim transition-colors rounded-button py-3.5 flex items-center justify-center gap-2 shadow-button"
             >
-              <span className="text-white font-extrabold text-[15px] tracking-wide">START WORKOUT</span>
+              <span className="text-white font-extrabold text-[15px] tracking-wide">{t('home.startWorkout')}</span>
               <Icon name="playTriangle" size={14} className="text-white" />
             </Link>
           </div>

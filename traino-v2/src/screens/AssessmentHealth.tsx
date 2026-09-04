@@ -26,10 +26,10 @@ export default function AssessmentHealth() {
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="Health" progress={6 / 8} />
+      <OnboardingHeader title="Health" progress={6 / 9} />
 
       <div className="px-5 mt-4">
-        <p className="text-text-secondary text-[12px] font-semibold">Step 6 of 8</p>
+        <p className="text-text-secondary text-[12px] font-semibold">Step 6 of 9</p>
         <h1 className="text-white text-[24px] font-extrabold mt-1">Any injuries or limitations?</h1>
         <p className="text-text-secondary text-[13px] mt-1">
           This helps us avoid movements that could aggravate them

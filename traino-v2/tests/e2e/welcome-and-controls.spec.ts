@@ -12,8 +12,12 @@ import { completeOnboarding } from './helpers/onboarding';
  */
 
 test.describe('Welcome — fresh vs returning user', () => {
-  test('a fresh install shows "Build Your Personal Plan" and CREATE MY PLAN starts the real assessment flow', async ({ page }) => {
+  test('a fresh install shows Language Selection first, then "Build Your Personal Plan", and CREATE MY PLAN starts the real assessment flow', async ({ page }) => {
     await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Choose Your Language' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'English', exact: true }).click();
+    await expect(page).toHaveURL('/');
     await expect(page.getByRole('heading', { name: 'Build Your Personal Plan' })).toBeVisible();
     await expect(page.getByText('Not checked in yet')).toHaveCount(0); // never renders Home's dashboard underneath
 

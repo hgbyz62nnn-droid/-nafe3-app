@@ -517,6 +517,13 @@ export const footballModule: SportModuleData = {
     intermediate: intermediateDays,
     advanced: advancedDays,
   },
+  positions: [
+    { id: 'goalkeeper', name: 'Goalkeeper' },
+    { id: 'defender', name: 'Defender' },
+    { id: 'midfielder', name: 'Midfielder' },
+    { id: 'winger', name: 'Winger' },
+    { id: 'striker', name: 'Striker' },
+  ],
   nutritionProfile: {
     proteinGPerKg: 2.0,
     carbBias: 'high',

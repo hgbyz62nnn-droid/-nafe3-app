@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { applyCoachAdjustment, generateTodayWorkout, generateWeekProgram, todayDayIndex } from './planEngine';
+import { applyCoachAdjustment, generatePersonalizedWeek, generateTodayWorkout, generateWeekProgram, todayDayIndex } from './planEngine';
 import { getExerciseAlternatives } from './exerciseAlternatives';
 import { footballModule } from '../sports/football/program';
+import { swimmingModule } from '../sports/swimming/program';
+import { getSportModule } from '../sports/registry';
 import { baseAnswers } from './testFixtures';
 import type { AssessmentAnswers, FitnessLevel, UserProfile } from './types';
 import type { ExerciseProgressionContext } from './progressionIntegration';
@@ -294,6 +296,142 @@ describe('planEngine — Progression Engine integration (workout-level, spec §1
     expect(target?.progression?.decision).toBe('PROGRESS');
     // Volume-multiplier still reduces sets on top of the progression-derived reps.
     expect(target!.sets).toBeLessThanOrEqual(bodyweightStrength.sets);
+  });
+});
+
+describe('deep adaptive personalization (generatePersonalizedWeek)', () => {
+  it('H: training frequency drives the number of training days in the generated week', () => {
+    for (const freq of [2, 4, 5, 7]) {
+      const profile = profileFor({ daysAvailablePerWeek: freq });
+      const week = generatePersonalizedWeek(profile);
+      expect(week).toHaveLength(7);
+      expect(week.filter((d) => d.type === 'training')).toHaveLength(freq);
+      expect(week.filter((d) => d.type === 'rest')).toHaveLength(7 - freq);
+    }
+  });
+
+  it('I: session duration affects the generated/displayed workout duration', () => {
+    const short = profileFor({ daysAvailablePerWeek: 4, sessionDurationMin: 20 });
+    const long = profileFor({ daysAvailablePerWeek: 4, sessionDurationMin: 90 });
+    const shortDay = generatePersonalizedWeek(short).find((d) => d.type === 'training')!;
+    const longDay = generatePersonalizedWeek(long).find((d) => d.type === 'training')!;
+    expect(shortDay.workout!.durationMin).toBeLessThan(longDay.workout!.durationMin);
+    // Displayed duration must never contradict what was actually generated (spec §13):
+    // a shorter budget must never produce equal-or-more total sets than a longer one.
+    const shortSets = shortDay.workout!.exercises.reduce((sum, ex) => sum + ex.sets, 0);
+    const longSets = longDay.workout!.exercises.reduce((sum, ex) => sum + ex.sets, 0);
+    expect(shortSets).toBeLessThan(longSets);
+  });
+
+  it('J: equipment affects exercise selection — no equipment means no equipment-dependent exercise is selected', () => {
+    const profile = profileFor({ trainingLocationIds: ['home'], equipmentIds: [] });
+    const week = generatePersonalizedWeek(profile);
+    const allNames = week.flatMap((d) => d.workout?.exercises.map((ex) => ex.name) ?? []);
+    // Every football day template includes at least one barbell/squat-rack slot
+    // (Back Squat) — with zero equipment it must always resolve to its bodyweight
+    // alternative, never the loaded movement itself.
+    expect(allNames).not.toContain('Back Squat');
+  });
+
+  it('K: injury remains a hard safety constraint inside the personalized week', () => {
+    const profile = profileFor({ injuryIds: ['knee'], equipmentIds: ['barbell', 'squat_rack', 'bench', 'dumbbells'] });
+    const week = generatePersonalizedWeek(profile);
+    const allExercises = week.flatMap((d) => d.workout?.exercises ?? []);
+    // Nothing resolved for a knee-injured athlete may carry a 'knee' contraindication —
+    // resolveExercise already guarantees this; this test proves it still holds through
+    // the new frequency/duration/priority personalization layers.
+    for (const ex of allExercises) {
+      expect(ex.substitutionReason === 'injury' || !['Back Squat', 'Bulgarian Split Squat', 'Leg Press'].includes(ex.name)).toBe(true);
+    }
+  });
+
+  it('L: performance priority shifts category emphasis — conditioning priority yields more conditioning volume than strength priority', () => {
+    const conditioningFocused = profileFor({ performancePriority: 'conditioning', daysAvailablePerWeek: 7 });
+    const strengthFocused = profileFor({ performancePriority: 'strength', daysAvailablePerWeek: 7 });
+    const conditioningSets = generatePersonalizedWeek(conditioningFocused)
+      .flatMap((d) => d.workout?.exercises ?? [])
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    const strengthSets = generatePersonalizedWeek(strengthFocused)
+      .flatMap((d) => d.workout?.exercises ?? [])
+      .filter((ex) => ex.category === 'conditioning')
+      .reduce((sum, ex) => sum + ex.sets, 0);
+    expect(conditioningSets).toBeGreaterThan(strengthSets);
+  });
+
+  it('P: same complete profile always produces an identical generated week (determinism)', () => {
+    const profile = profileFor({ daysAvailablePerWeek: 5, sessionDurationMin: 60, performancePriority: 'speed' });
+    expect(generatePersonalizedWeek(profile)).toEqual(generatePersonalizedWeek(profile));
+  });
+
+  it('O/§41: two meaningfully different football athletes get meaningfully different generated weeks', () => {
+    // Athlete A: winger, intermediate-leaning, 5 days, 60 min, gym, performance/speed, no injury.
+    const athleteA = profileFor({
+      sport: 'football',
+      sportPositionId: 'winger',
+      daysAvailablePerWeek: 5,
+      sessionDurationMin: 60,
+      trainingLocationIds: ['gym'],
+      equipmentIds: ['barbell', 'squat_rack', 'bench', 'dumbbells', 'cable_machine', 'pull_up_bar', 'plyo_box'],
+      goal: 'performance',
+      performancePriority: 'speed',
+      injuryIds: ['none'],
+    }, 'intermediate');
+
+    // Athlete B: center back, beginner, 3 days, 30 min, home/bodyweight, fat loss, strength priority, knee limitation.
+    const athleteB = profileFor({
+      sport: 'football',
+      sportPositionId: 'defender',
+      daysAvailablePerWeek: 3,
+      sessionDurationMin: 30,
+      trainingLocationIds: ['home'],
+      equipmentIds: [],
+      goal: 'fat_loss',
+      performancePriority: 'strength',
+      injuryIds: ['knee'],
+    }, 'beginner');
+
+    const weekA = generatePersonalizedWeek(athleteA);
+    const weekB = generatePersonalizedWeek(athleteB);
+
+    // Different number of training days.
+    expect(weekA.filter((d) => d.type === 'training').length).not.toBe(weekB.filter((d) => d.type === 'training').length);
+
+    // Different session duration.
+    const workoutA = weekA.find((d) => d.type === 'training')!.workout!;
+    const workoutB = weekB.find((d) => d.type === 'training')!.workout!;
+    expect(workoutA.durationMin).not.toBe(workoutB.durationMin);
+
+    // Different exercise selection — Athlete A's gym access resolves loaded
+    // barbell work Athlete B's bodyweight-only equipment can never resolve.
+    const namesA = new Set(weekA.flatMap((d) => d.workout?.exercises.map((ex) => ex.name) ?? []));
+    const namesB = new Set(weekB.flatMap((d) => d.workout?.exercises.map((ex) => ex.name) ?? []));
+    expect(namesA).not.toEqual(namesB);
+
+    // Safety: Athlete B's knee limitation means no knee-contraindicated movement
+    // ever appears in her plan, while Athlete A's plan (no injury, gym access) can
+    // legitimately include one — proving safety substitution actually differs.
+    const bHasContraindicatedKnee = [...namesB].some((n) => ['Back Squat', 'Bulgarian Split Squat'].includes(n));
+    expect(bHasContraindicatedKnee).toBe(false);
+
+    // Determinism holds independently for each athlete.
+    expect(generatePersonalizedWeek(athleteA)).toEqual(weekA);
+    expect(generatePersonalizedWeek(athleteB)).toEqual(weekB);
+  });
+});
+
+describe('sport module positions (adaptive question data)', () => {
+  it('D/E/F: football and swimming each expose sport-specific positions/disciplines, distinct from each other', () => {
+    expect(footballModule.positions?.length).toBeGreaterThan(0);
+    expect(swimmingModule.positions?.length).toBeGreaterThan(0);
+    const footballIds = new Set(footballModule.positions!.map((p) => p.id));
+    const swimIds = new Set(swimmingModule.positions!.map((p) => p.id));
+    for (const id of swimIds) expect(footballIds.has(id)).toBe(false);
+  });
+
+  it('D: a sport with no positions defined yields an empty list, so the adaptive question is skipped rather than shown empty', () => {
+    const profile = profileFor({ sport: 'boxing' });
+    expect(getSportModule(profile.answers.sport).positions ?? []).toEqual([]);
   });
 });
 

@@ -45,6 +45,19 @@ export interface AssessmentAnswers {
    * missing/invalid values fall back to 4 (see domain/nutrition — the
    * MEAL_DISTRIBUTIONS default the app already used). */
   mealsPerDay?: 3 | 4 | 5;
+  /** Target minutes per training session — a real generation constraint (planEngine
+   * scales session volume/duration to fit this budget). Optional for the same
+   * backward-compatibility reason as `mealsPerDay`; missing/invalid falls back to 45. */
+  sessionDurationMin?: number;
+  /** Generic, sport-agnostic training emphasis the athlete wants more of. Read by
+   * planEngine as a deterministic per-category volume multiplier — never branched on
+   * by sport. Optional; missing/invalid falls back to 'strength'. */
+  performancePriority?: 'speed' | 'strength' | 'conditioning';
+  /** Sport-specific position/discipline id, drawn from `SportModuleData.positions` for
+   * the athlete's chosen sport (empty/absent for a sport with no positions defined —
+   * the assessment question is skipped entirely rather than shown empty). Display/
+   * explanation only for now; not yet a plan-generation input. */
+  sportPositionId?: string;
 }
 
 export interface UserProfile {
@@ -122,6 +135,12 @@ export interface SportModuleData {
      * specific to say here just omits it, never a fabricated placeholder. */
     considerations?: string[];
   };
+  /** Optional sport-specific positions/disciplines (e.g. football positions, swim
+   * strokes) this sport module offers. When non-empty, the assessment shows a
+   * generic "Position / Discipline" question populated from this list — the UI
+   * never hardcodes per-sport position names (spec §6/§16). Absent/empty for a
+   * sport with nothing meaningful to ask here. */
+  positions?: { id: string; name: string }[];
 }
 
 /** The fixed set of quick-reply intents the AI Coach screen offers — a closed, enumerable list.

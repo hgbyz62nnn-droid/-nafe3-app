@@ -35,7 +35,18 @@ export async function completeOnboarding(page: Page, opts: OnboardingOptions = {
     allergyLabel = 'None',
   } = opts;
 
-  await page.goto('/onboarding/about');
+  // Real fresh-user flow: LANGUAGE -> WELCOME -> CREATE MY PLAN -> assessment
+  // (spec: Deep Adaptive Assessment §1/§2). Only ONE real `page.goto` for the
+  // whole helper (this first one — every step after is a client-side route
+  // change via `waitForURL`/button clicks, not a fresh page load) — a visual-
+  // suite page fixture that doesn't block the real Google Fonts request can
+  // hang on an unrelated extra full navigation, so every avoidable `goto` here
+  // is deliberately avoided in favor of driving the actual UI.
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English', exact: true }).click();
+  await page.getByRole('button', { name: 'CREATE MY PLAN' }).click();
+  await page.waitForURL('**/onboarding/about');
+
   await page.getByPlaceholder('Your first name').fill(firstName);
   await page.getByRole('button', { name: 'NEXT' }).click();
   await page.waitForURL('**/sport-selection');
@@ -77,6 +88,19 @@ export async function completeOnboarding(page: Page, opts: OnboardingOptions = {
   await page.waitForURL('**/assessment/nutrition-preferences');
 
   await page.getByRole('button', { name: allergyLabel, exact: true }).click();
+  await page.getByRole('button', { name: 'NEXT' }).click();
+  await page.waitForURL('**/assessment/review');
+
+  // The real final CTA (Review screen) — this is what actually calls
+  // completeAssessment() and persists the profile.
   await page.getByRole('button', { name: 'BUILD MY PLAN' }).click();
+  await page.waitForURL('**/plan-ready');
+  await page.getByRole('button', { name: 'VIEW MY PLAN' }).click();
+  await page.waitForURL('**/plan');
+
+  // Every existing test built on this helper expects to land on Home — return
+  // there via the real bottom-nav Home link (client-side route change, not a
+  // fresh page load) rather than changing that long-standing contract everywhere.
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
   await page.waitForURL((url) => url.pathname === '/');
 }

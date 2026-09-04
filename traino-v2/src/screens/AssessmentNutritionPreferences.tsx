@@ -8,7 +8,7 @@ import { useProfile } from '../domain/state/ProfileContext';
 
 export default function AssessmentNutritionPreferences() {
   const navigate = useNavigate();
-  const { answers, updateAnswers, completeAssessment } = useProfile();
+  const { answers, updateAnswers } = useProfile();
   const selectedAllergies = new Set(answers.allergyIds);
 
   function toggleAllergy(id: string) {
@@ -23,18 +23,17 @@ export default function AssessmentNutritionPreferences() {
     updateAnswers({ allergyIds: Array.from(next) });
   }
 
-  function finish() {
-    completeAssessment();
-    navigate('/');
+  function goToReview() {
+    navigate('/assessment/review');
   }
 
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="Nutrition" progress={8 / 8} />
+      <OnboardingHeader title="Nutrition" progress={8 / 9} />
 
       <div className="px-5 mt-4">
-        <p className="text-text-secondary text-[12px] font-semibold">Step 8 of 8</p>
+        <p className="text-text-secondary text-[12px] font-semibold">Step 8 of 9</p>
         <h1 className="text-white text-[24px] font-extrabold mt-1">Nutrition preferences</h1>
       </div>
 
@@ -110,10 +109,10 @@ export default function AssessmentNutritionPreferences() {
       <div className="px-5 mt-6">
         <button
           disabled={selectedAllergies.size === 0}
-          onClick={finish}
+          onClick={goToReview}
           className="w-full bg-red rounded-button py-4 text-white font-extrabold text-[15px] tracking-wide shadow-button disabled:opacity-40"
         >
-          BUILD MY PLAN
+          NEXT
         </button>
       </div>
     </Screen>

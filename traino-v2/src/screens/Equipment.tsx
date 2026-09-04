@@ -21,10 +21,10 @@ export default function Equipment() {
   return (
     <Screen withNav={false} className="pb-8">
       <StatusBar />
-      <OnboardingHeader title="Equipment" progress={4 / 8} />
+      <OnboardingHeader title="Equipment" progress={4 / 9} />
 
       <div className="px-5 mt-4">
-        <p className="text-text-secondary text-[12px] font-semibold">Step 4 of 8</p>
+        <p className="text-text-secondary text-[12px] font-semibold">Step 4 of 9</p>
         <h1 className="text-white text-[24px] font-extrabold mt-1 leading-tight">
           What equipment
           <br />
