@@ -3,15 +3,22 @@ import { Icon, type IconName } from './Icon';
 
 type NavItem = { to: string; label: string; icon: IconName; badge?: boolean };
 
-// Reproduced exactly per-screen from the reference PNGs — they are NOT
-// consistent with each other. Home/Nutrition/Progress/Profile all show
-// [Home, Plan, Nutrition, Progress, Profile]. The AI Coach screen alone
+// Reproduced from the reference PNGs — Home/Nutrition/Progress/Profile all
+// show [Home, Plan, Nutrition, Progress, Profile]. The AI Coach screen alone
 // shows a different set: Progress is absent and AI Coach takes its slot,
 // rendered with a distinct filled-red-circle badge instead of the plain
 // filled-icon treatment every other active tab uses (see 05-ai-coach.png).
+//
+// Phase 12.5: "Plan" originally pointed at `/plan`, a route App.tsx never
+// registered — a dead primary-nav item since the day this shipped. The
+// current product's "today's training plan" screen is already fully built
+// at `/todays-workout` (reached today via Daily Check-in/AI Coach/Weekly
+// Report); a separate `/plan` route would just duplicate it. Repointed here
+// rather than inventing a new screen — see docs/TRAINO-DESIGN-BASELINE.md
+// §8 for the full navigation-architecture decision.
 const DEFAULT_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', icon: 'home' },
-  { to: '/plan', label: 'Plan', icon: 'calendar' },
+  { to: '/todays-workout', label: 'Plan', icon: 'calendar' },
   { to: '/nutrition', label: 'Nutrition', icon: 'nutrition' },
   { to: '/progress', label: 'Progress', icon: 'chart' },
   { to: '/profile', label: 'Profile', icon: 'profile' },
@@ -19,7 +26,7 @@ const DEFAULT_ITEMS: NavItem[] = [
 
 const AI_COACH_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', icon: 'home' },
-  { to: '/plan', label: 'Plan', icon: 'calendar' },
+  { to: '/todays-workout', label: 'Plan', icon: 'calendar' },
   { to: '/ai-coach', label: 'AI Coach', icon: 'aiMascot', badge: true },
   { to: '/nutrition', label: 'Nutrition', icon: 'nutrition' },
   { to: '/profile', label: 'Profile', icon: 'profile' },

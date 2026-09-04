@@ -261,7 +261,12 @@ export default function AiCoach() {
         </h1>
         <div className="flex items-center gap-3 shrink-0">
           <Icon name="sliders" size={19} className="text-white" />
-          <Icon name="dotsVertical" size={19} className="text-white" />
+          {/* Phase 12.5: the only in-app entry point to /human-coach (the
+             human-escalation layer) — reuses this existing overflow icon
+             rather than adding a new nav tab or redesigning either screen. */}
+          <Link to="/human-coach" aria-label="Talk to a human coach" className="flex items-center justify-center">
+            <Icon name="dotsVertical" size={19} className="text-white" />
+          </Link>
         </div>
       </div>
 
