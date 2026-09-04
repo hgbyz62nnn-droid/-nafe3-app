@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 
 const router = express.Router();
 
@@ -83,7 +84,7 @@ router.post('/:id/report', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('reviews', 'view'), (req, res) => {
   const reviews = db
     .prepare(
       `SELECT r.*, t.name AS trainee_name, c.name AS coach_name
@@ -94,19 +95,21 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   res.json({ reviews });
 });
 
-router.post('/admin/:id/hide', requireAdmin, (req, res) => {
+router.post('/admin/:id/hide', requireAdmin, requirePermission('reviews', 'edit'), (req, res) => {
   db.prepare('UPDATE reviews SET hidden = 1 WHERE id = ?').run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'hide_review', resourceType: 'reviews', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/restore', requireAdmin, (req, res) => {
+router.post('/admin/:id/restore', requireAdmin, requirePermission('reviews', 'edit'), (req, res) => {
   db.prepare('UPDATE reviews SET hidden = 0 WHERE id = ?').run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'restore_review', resourceType: 'reviews', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
 // -------------------- بلاغات على التقييمات --------------------
 
-router.get('/admin/reports', requireAdmin, (req, res) => {
+router.get('/admin/reports', requireAdmin, requirePermission('reviews', 'view'), (req, res) => {
   const clauses = [];
   const params = [];
   if (req.query.status && ['open', 'dismissed', 'action_taken'].includes(req.query.status)) {
@@ -129,7 +132,7 @@ router.get('/admin/reports', requireAdmin, (req, res) => {
   res.json({ reports });
 });
 
-router.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
+router.post('/admin/reports/:id/action', requireAdmin, requirePermission('reviews', 'edit'), (req, res) => {
   const report = db.prepare('SELECT * FROM review_reports WHERE id = ?').get(req.params.id);
   if (!report) return res.status(404).json({ error: 'البلاغ غير موجود' });
   const action = ['dismiss', 'hide'].includes(req.body.action) ? req.body.action : null;
@@ -140,6 +143,7 @@ router.post('/admin/reports/:id/action', requireAdmin, (req, res) => {
   }
   const status = action === 'dismiss' ? 'dismissed' : 'action_taken';
   db.prepare('UPDATE review_reports SET status = ?, admin_action = ? WHERE id = ?').run(status, action, report.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: `review_report_${action}`, resourceType: 'reviews', resourceId: report.review_id, metadata: { reportId: report.id }, ip: req.ip });
   res.json({ ok: true });
 });
 

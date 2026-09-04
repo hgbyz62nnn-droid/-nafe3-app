@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 const { sendBroadcastEmail } = require('../lib/email');
 const { deleteUserAccount } = require('../lib/accountDeletion');
 const { emailActionLimiter } = require('../lib/rateLimit');
@@ -33,7 +34,7 @@ router.post('/', emailActionLimiter, async (req, res) => {
 
 // -------------------- الأدمن --------------------
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('deletion_requests', 'view'), (req, res) => {
   const clauses = [];
   const params = [];
   if (req.query.status && ['pending', 'completed', 'rejected'].includes(req.query.status)) {
@@ -54,7 +55,10 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   res.json({ requests });
 });
 
-router.post('/admin/:id/approve', requireAdmin, (req, res) => {
+// Approving this deletes the matching account permanently - same
+// irreversible-deletion class as DELETE /api/auth/admin/:id, so it's
+// gated on the same 'delete' action (SUPER_ADMIN only), not 'edit'.
+router.post('/admin/:id/approve', requireAdmin, requirePermission('users', 'delete'), (req, res) => {
   const reqRow = db.prepare('SELECT * FROM account_deletion_requests WHERE id = ?').get(req.params.id);
   if (!reqRow) return res.status(404).json({ error: 'الطلب غير موجود' });
   if (reqRow.status !== 'pending') return res.status(400).json({ error: 'الطلب اتصرف فيه بالفعل' });
@@ -64,14 +68,16 @@ router.post('/admin/:id/approve', requireAdmin, (req, res) => {
 
   deleteUserAccount(user.id);
   db.prepare("UPDATE account_deletion_requests SET status = 'completed', processed_at = datetime('now') WHERE id = ?").run(reqRow.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'approve_deletion_request', resourceType: 'deletion_requests', resourceId: reqRow.id, metadata: { deletedUserId: user.id }, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/reject', requireAdmin, (req, res) => {
+router.post('/admin/:id/reject', requireAdmin, requirePermission('deletion_requests', 'edit'), (req, res) => {
   const reqRow = db.prepare('SELECT * FROM account_deletion_requests WHERE id = ?').get(req.params.id);
   if (!reqRow) return res.status(404).json({ error: 'الطلب غير موجود' });
   if (reqRow.status !== 'pending') return res.status(400).json({ error: 'الطلب اتصرف فيه بالفعل' });
   db.prepare("UPDATE account_deletion_requests SET status = 'rejected', processed_at = datetime('now') WHERE id = ?").run(reqRow.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'reject_deletion_request', resourceType: 'deletion_requests', resourceId: reqRow.id, ip: req.ip });
   res.json({ ok: true });
 });
 

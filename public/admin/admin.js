@@ -79,13 +79,27 @@ function wireLogout() {
 }
 
 async function renderDashboard(admin) {
-  let stats = { users: 0, activeSubscriptions: 0, totalCommission: 0 };
+  const isSuperAdmin = admin.role === 'SUPER_ADMIN';
+  let stats = {
+    users: 0, athletes: 0, coaches: 0, pendingCoachApprovals: 0, activeSubscriptions: 0,
+    totalCommission: 0, totalCoachPayouts: 0, completedSessions: 0,
+    checkInsSubmitted: 0, progressEntriesLogged: 0, openSupportTickets: 0, openUserReports: 0,
+  };
   try { stats = await api('/admin/stats'); } catch (e) {}
 
+  // كل رقم هنا استعلام حقيقي من القاعدة (routes/adminAuth.js /stats) -
+  // مفيش أرقام مختلقة (Super Admin spec §12).
   render(`
     <div class="stat-row">
       <div class="stat-tile"><div class="num">${stats.users}</div><div class="label">يوزر</div></div>
+      <div class="stat-tile"><div class="num">${stats.athletes}</div><div class="label">متدرب</div></div>
+      <div class="stat-tile"><div class="num">${stats.coaches}</div><div class="label">مدرب معتمد</div></div>
       <div class="stat-tile"><div class="num">${stats.activeSubscriptions}</div><div class="label">اشتراك نشط</div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="num">${stats.completedSessions}</div><div class="label">جلسة اتعملت</div></div>
+      <div class="stat-tile"><div class="num">${stats.checkInsSubmitted}</div><div class="label">تشيك-إن</div></div>
+      <div class="stat-tile"><div class="num">${stats.openSupportTickets}</div><div class="label">تذاكر مفتوحة</div></div>
       <div class="stat-tile"><div class="num">${stats.totalCommission}</div><div class="label">إجمالي العمولة (ج)</div></div>
     </div>
     <div class="tabs">
@@ -100,15 +114,28 @@ async function renderDashboard(admin) {
       <div class="tab" id="tabBookings">الحجوزات</div>
       <div class="tab" id="tabContent">محتوى المدربين</div>
       <div class="tab" id="tabUsers">المستخدمين</div>
+      <div class="tab" id="tabAthletes">المتدربين (تفاصيل)</div>
+      <div class="tab" id="tabSubscriptions">الاشتراكات والدفع</div>
+      <div class="tab" id="tabExercises">مكتبة التمارين</div>
+      <div class="tab" id="tabFoods">مكتبة الأطعمة</div>
+      <div class="tab" id="tabAiCoach">AI Coach</div>
+      ${isSuperAdmin ? '<div class="tab" id="tabAdmins">الأدمن والصلاحيات</div>' : ''}
+      ${isSuperAdmin ? '<div class="tab" id="tabAudit">سجل التدقيق</div>' : ''}
       <div class="tab" id="tabSettings">الإعدادات</div>
     </div>
     <div id="adminContent"></div>
     ${logoutBtn()}
   `);
 
+  const ALL_TABS = [
+    'tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged',
+    'tabReviews', 'tabBookings', 'tabContent', 'tabUsers', 'tabAthletes', 'tabSubscriptions', 'tabExercises',
+    'tabFoods', 'tabAiCoach', 'tabAdmins', 'tabAudit', 'tabSettings',
+  ];
   function activateTab(id) {
-    ['tabPending', 'tabProfileEdits', 'tabDocs', 'tabSupport', 'tabReports', 'tabDeletions', 'tabFlagged', 'tabReviews', 'tabBookings', 'tabContent', 'tabUsers', 'tabSettings'].forEach((t) => {
-      document.getElementById(t).classList.toggle('active', t === id);
+    ALL_TABS.forEach((t) => {
+      const el = document.getElementById(t);
+      if (el) el.classList.toggle('active', t === id);
     });
   }
 
@@ -738,6 +765,237 @@ async function renderDashboard(admin) {
     load();
   }
 
+  // -------------------- المتدربين (سياق كامل) --------------------
+
+  async function showAthletes() {
+    activateTab('tabAthletes');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>المتدربين</h2>
+        <p class="small" style="margin-bottom:10px;">افتح أي متدرب عشان تشوف: التقييم اللي ملأه، خطة التمرين والتغذية اللي بناها الكوتش، تقدمه، عاداته، شارات إنجازه.</p>
+        <div class="filters">
+          <input id="atSearch" placeholder="بحث بالاسم أو الإيميل">
+          <button id="atApply" style="width:auto; padding:8px 16px;">بحث</button>
+        </div>
+        <div id="athletesList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const q = document.getElementById('atSearch').value;
+      const params = q ? '?q=' + encodeURIComponent(q) : '';
+      const { trainees } = await api('/athletes' + params);
+      document.getElementById('athletesList').innerHTML = trainees.length === 0
+        ? '<p class="small">مفيش نتايج.</p>'
+        : trainees.map((t) => `
+          <div class="coach-row" ${t.latest_subscription_id ? `data-open-athlete="${t.latest_subscription_id}"` : ''}>
+            <div>
+              <b>${escapeHtml(t.name)}</b>
+              <div class="small">${escapeHtml(t.email)} ${t.banned ? '· <span style="color:var(--danger)">محظور</span>' : ''}</div>
+            </div>
+            <div class="small">${t.latest_coach_name ? 'مع: ' + escapeHtml(t.latest_coach_name) : 'مفيش اشتراك'}</div>
+          </div>
+        `).join('');
+      document.querySelectorAll('[data-open-athlete]').forEach((el) => {
+        el.onclick = () => showAthleteDetail(el.dataset.openAthlete);
+      });
+    }
+    on('atApply', 'click', load);
+    load();
+  }
+
+  async function showAthleteDetail(subscriptionId) {
+    const data = await api('/athletes/' + subscriptionId);
+    const { subscription, assessment, workoutPlan, nutritionPlan, progressEntries, habits, badges, checkIns, transformationCount } = data;
+    document.getElementById('adminContent').innerHTML = `
+      <button class="secondary" id="athleteBack" style="margin-bottom:12px;">← رجوع لكل المتدربين</button>
+      <div class="card">
+        <h2>${escapeHtml(subscription.trainee_name)}</h2>
+        <p class="small">${escapeHtml(subscription.trainee_email)} · الكوتش: ${escapeHtml(subscription.coach_name)} · حالة الاشتراك: ${escapeHtml(subscription.status)}</p>
+      </div>
+      <div class="card">
+        <h2>التقييم (Assessment)</h2>
+        ${!assessment ? '<p class="small">لسه ملأش التقييم.</p>' : `
+          <p class="small">اتبعت: ${escapeHtml(assessment.submittedAt || 'لسه')}</p>
+          ${assessment.answers.map((a) => `<div class="coach-row" style="display:block; padding:6px 0;"><b class="small">${escapeHtml(a.label)}</b><p class="small" style="margin:2px 0;">${escapeHtml(JSON.stringify(a.answer))}</p></div>`).join('')}
+        `}
+      </div>
+      <div class="card">
+        <h2>خطة التمرين</h2>
+        ${!workoutPlan ? '<p class="small">مفيش خطة اتبنت لسه.</p>' : `<p class="small">${escapeHtml(workoutPlan.title || '-')} · ${workoutPlan.days.length} يوم · آخر تحديث: ${escapeHtml(workoutPlan.updatedAt)}</p>`}
+      </div>
+      <div class="card">
+        <h2>خطة التغذية</h2>
+        ${!nutritionPlan ? '<p class="small">مفيش خطة اتبنت لسه.</p>' : `<p class="small">${nutritionPlan.dailyCalories || '-'} سعرة/يوم · ${nutritionPlan.meals.length} وجبة</p>`}
+      </div>
+      <div class="card">
+        <h2>التقدم (${progressEntries.length})</h2>
+        ${progressEntries.slice(0, 5).map((p) => `<p class="small">${escapeHtml(p.created_at)} — ${p.weight_kg ? p.weight_kg + ' كجم' : ''} ${p.note ? '· ' + escapeHtml(p.note) : ''}</p>`).join('') || '<p class="small">مفيش تسجيلات.</p>'}
+      </div>
+      <div class="card">
+        <h2>العادات</h2>
+        ${habits.map((h) => `<p class="small">${escapeHtml(h.label)} — اتعمل ${h.doneLast30Days} مرة آخر 30 يوم</p>`).join('') || '<p class="small">مفيش عادات متابَعة.</p>'}
+      </div>
+      <div class="card">
+        <h2>الشارات (${badges.length}) · تشيك-إن (${checkIns.length}) · صور تحوّل (${transformationCount})</h2>
+      </div>
+    `;
+    document.getElementById('athleteBack').onclick = showAthletes;
+  }
+
+  // -------------------- الاشتراكات والدفع --------------------
+
+  const SUB_STATUS_LABELS = { pending_payment: 'في انتظار الدفع', active: 'نشط', expired: 'منتهي', cancelled: 'ملغي' };
+
+  async function showSubscriptions() {
+    activateTab('tabSubscriptions');
+    document.getElementById('adminContent').innerHTML = `<div class="card"><h2>الاشتراكات والدفع</h2><div id="subsList"><p class="small">بيحمّل...</p></div></div>`;
+    const { subscriptions } = await api('/subscriptions/admin/all');
+    document.getElementById('subsList').innerHTML = subscriptions.length === 0
+      ? '<p class="small">مفيش اشتراكات.</p>'
+      : subscriptions.slice(0, 200).map((s) => `
+        <div class="coach-row">
+          <div>
+            <b>${escapeHtml(s.trainee_name)} ← ${escapeHtml(s.coach_name)}</b>
+            <div class="small">الباقة: ${escapeHtml(s.package)} · ${s.amount} ج · ${escapeHtml(s.created_at)}</div>
+          </div>
+          <span class="badge ${s.status === 'active' ? '' : s.status === 'cancelled' ? 'blocked' : 'review'}">${SUB_STATUS_LABELS[s.status] || s.status}</span>
+        </div>
+      `).join('');
+  }
+
+  // -------------------- مكتبة التمارين/الأطعمة العامة (Super Admin) --------------------
+
+  async function showExercisesAdmin() {
+    activateTab('tabExercises');
+    document.getElementById('adminContent').innerHTML = `<div class="card"><h2>مكتبة التمارين العامة</h2><p class="small" style="margin-bottom:10px;">دي التمارين المتاحة لكل المدربين (مش تمارين مدرب معيّن). إضافة/تعديل/حذف محصورة على Super Admin.</p><div id="exList"><p class="small">بيحمّل...</p></div></div>`;
+    try {
+      const { exercises } = await api('/exercises/admin/all');
+      document.getElementById('exList').innerHTML = exercises.length === 0
+        ? '<p class="small">مفيش تمارين عامة.</p>'
+        : `<p class="small">${exercises.length} تمرين. ${exercises.slice(0, 30).map((e) => escapeHtml(e.name)).join('، ')}${exercises.length > 30 ? '...' : ''}</p>`;
+    } catch (e) {
+      document.getElementById('exList').innerHTML = `<p class="small">${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  async function showFoodsAdmin() {
+    activateTab('tabFoods');
+    document.getElementById('adminContent').innerHTML = `<div class="card"><h2>مكتبة الأطعمة العامة</h2><p class="small" style="margin-bottom:10px;">القيم الغذائية دي مدخلة يدويًا فقط - مفيش أرقام مختلقة تلقائيًا. إضافة/تعديل/حذف محصورة على Super Admin.</p><div id="foodList"><p class="small">بيحمّل...</p></div></div>`;
+    try {
+      const { foods } = await api('/foods/admin/all');
+      document.getElementById('foodList').innerHTML = foods.length === 0
+        ? '<p class="small">مفيش أطعمة عامة.</p>'
+        : `<p class="small">${foods.length} صنف. ${foods.slice(0, 30).map((f) => escapeHtml(f.name)).join('، ')}${foods.length > 30 ? '...' : ''}</p>`;
+    } catch (e) {
+      document.getElementById('foodList').innerHTML = `<p class="small">${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  // -------------------- AI Coach --------------------
+  // Honest architecture note (spec §11: "do NOT fake unsupported admin
+  // functionality"). This backend is a coach-assigns-a-plan marketplace; it
+  // does not run the deterministic Coaching Engine (intents/coaching-rules/
+  // readiness/progression/weekly-coaching/travel-competition rules) that
+  // exists in the separate client-only TRAINO rebuild, which has no server
+  // and sends nothing here. There is nothing to configure server-side.
+
+  function showAiCoach() {
+    activateTab('tabAiCoach');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>AI Coach</h2>
+        <p class="small">مفيش محرك ذكاء اصطناعي/قواعد آلية شغال على السيرفر ده حاليًا. المنصة دي مبنية على مبدأ "الكوتش البني-آدم بيبني الخطة يدويًا" - مفيش intents ولا coaching rules ولا readiness rules ولا progression rules متخزنة أو شغالة هنا يتم إدارتها.</p>
+        <p class="small" style="margin-top:8px;">فيه محرك تدريب آلي (Deterministic Coaching Engine) موجود فعلاً في نسخة تانية من التطبيق (TRAINO rebuild) - لكنه شغال بالكامل على جهاز المستخدم (client-side فقط)، من غير أي سيرفر أو قاعدة بيانات، ومش متصل بالباك إند ده خالص. عشان كده مفيش حاجة نعرضها أو نتحكم فيها هنا بدون ما نختلق بيانات مش موجودة فعلاً.</p>
+      </div>
+    `;
+  }
+
+  // -------------------- الأدمن والصلاحيات (Super Admin فقط) --------------------
+
+  const ADMIN_ROLE_LABELS = { ADMIN: 'ADMIN', SUPER_ADMIN: 'SUPER_ADMIN' };
+
+  async function showAdmins() {
+    activateTab('tabAdmins');
+    document.getElementById('adminContent').innerHTML = `
+      <div class="card">
+        <h2>إنشاء حساب أدمن جديد</h2>
+        <div class="error hidden" id="newAdminErr"></div>
+        <input id="newAdminUsername" placeholder="اليوزرنيم">
+        <input id="newAdminPassword" type="password" placeholder="الباسورد (10 حروف على الأقل)">
+        <select id="newAdminRole"><option value="ADMIN">ADMIN</option><option value="SUPER_ADMIN">SUPER_ADMIN</option></select>
+        <button id="createAdminBtn">إنشاء</button>
+      </div>
+      <div class="card">
+        <h2>كل حسابات الأدمن</h2>
+        <div id="adminsList"><p class="small">بيحمّل...</p></div>
+      </div>
+    `;
+    async function load() {
+      const { admins } = await api('/admins');
+      document.getElementById('adminsList').innerHTML = admins.map((a) => `
+        <div class="coach-row">
+          <div>
+            <b>${escapeHtml(a.username)}</b> ${a.id === admin.id ? '<span class="small">(انت)</span>' : ''}
+            <div class="small">${ADMIN_ROLE_LABELS[a.role] || a.role} ${a.status === 'suspended' ? '· <span style="color:var(--danger)">معلّق</span>' : ''}</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${a.id === admin.id ? '' : a.role === 'ADMIN'
+              ? `<button data-promote="${a.id}" style="width:auto; padding:6px 12px; font-size:11.5px;">رقّي لـ SUPER_ADMIN</button>`
+              : `<button data-demote="${a.id}" style="width:auto; padding:6px 12px; font-size:11.5px;">نزّل لـ ADMIN</button>`}
+            ${a.id === admin.id ? '' : a.status === 'suspended'
+              ? `<button data-restore-admin="${a.id}" style="width:auto; padding:6px 12px; font-size:11.5px;">${svgIconPro('check', 13)}إلغاء التعليق</button>`
+              : `<button class="danger" data-suspend-admin="${a.id}" style="width:auto; padding:6px 12px; font-size:11.5px;">تعليق</button>`}
+          </div>
+        </div>
+      `).join('');
+      document.querySelectorAll('[data-promote]').forEach((el) => {
+        el.onclick = async () => { try { await api(`/admins/${el.dataset.promote}/role`, { method: 'PATCH', body: JSON.stringify({ role: 'SUPER_ADMIN' }) }); load(); } catch (e) { alert(e.message); } };
+      });
+      document.querySelectorAll('[data-demote]').forEach((el) => {
+        el.onclick = async () => { try { await api(`/admins/${el.dataset.demote}/role`, { method: 'PATCH', body: JSON.stringify({ role: 'ADMIN' }) }); load(); } catch (e) { alert(e.message); } };
+      });
+      document.querySelectorAll('[data-suspend-admin]').forEach((el) => {
+        el.onclick = async () => { if (!confirm('متأكد من تعليق حساب الأدمن ده؟')) return; try { await api(`/admins/${el.dataset.suspendAdmin}/suspend`, { method: 'POST' }); load(); } catch (e) { alert(e.message); } };
+      });
+      document.querySelectorAll('[data-restore-admin]').forEach((el) => {
+        el.onclick = async () => { await api(`/admins/${el.dataset.restoreAdmin}/restore`, { method: 'POST' }); load(); };
+      });
+    }
+    on('createAdminBtn', 'click', async () => {
+      const errEl = document.getElementById('newAdminErr');
+      errEl.classList.add('hidden');
+      try {
+        await api('/admins', { method: 'POST', body: JSON.stringify({
+          username: document.getElementById('newAdminUsername').value,
+          password: document.getElementById('newAdminPassword').value,
+          role: document.getElementById('newAdminRole').value,
+        })});
+        document.getElementById('newAdminUsername').value = '';
+        document.getElementById('newAdminPassword').value = '';
+        load();
+      } catch (e) {
+        errEl.textContent = e.message; errEl.classList.remove('hidden');
+      }
+    });
+    load();
+  }
+
+  // -------------------- سجل التدقيق (Super Admin فقط) --------------------
+
+  async function showAuditLog() {
+    activateTab('tabAudit');
+    document.getElementById('adminContent').innerHTML = `<div class="card"><h2>سجل التدقيق</h2><p class="small" style="margin-bottom:10px;">سجل دائم لكل الحاجات المهمة اللي أي أدمن عملها - بيتضاف عليه بس، محدش يقدر يعدّله أو يمسحه.</p><div id="auditList"><p class="small">بيحمّل...</p></div></div>`;
+    const { entries } = await api('/admin/audit-log');
+    document.getElementById('auditList').innerHTML = entries.length === 0
+      ? '<p class="small">مفيش حاجة متسجلة لسه.</p>'
+      : entries.map((e) => `
+        <div class="attempt-row">
+          <div><b>${escapeHtml(e.action)}</b> ${e.success ? '' : '<span class="badge blocked">اترفض</span>'} <span class="small">· ${escapeHtml(e.admin_username || '-')} · ${escapeHtml(e.created_at)}</span></div>
+          <div class="small">${escapeHtml(e.resource_type)}${e.resource_id ? ' #' + escapeHtml(e.resource_id) : ''}</div>
+        </div>
+      `).join('');
+  }
+
   async function showSettings() {
     activateTab('tabSettings');
     document.getElementById('adminContent').innerHTML = `
@@ -799,6 +1057,15 @@ async function renderDashboard(admin) {
   document.getElementById('tabBookings').onclick = showBookings;
   document.getElementById('tabContent').onclick = showContent;
   document.getElementById('tabUsers').onclick = showUsers;
+  document.getElementById('tabAthletes').onclick = showAthletes;
+  document.getElementById('tabSubscriptions').onclick = showSubscriptions;
+  document.getElementById('tabExercises').onclick = showExercisesAdmin;
+  document.getElementById('tabFoods').onclick = showFoodsAdmin;
+  document.getElementById('tabAiCoach').onclick = showAiCoach;
+  if (isSuperAdmin) {
+    document.getElementById('tabAdmins').onclick = showAdmins;
+    document.getElementById('tabAudit').onclick = showAuditLog;
+  }
   document.getElementById('tabSettings').onclick = showSettings;
   showPending();
   wireLogout();

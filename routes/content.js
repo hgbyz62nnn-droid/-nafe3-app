@@ -2,7 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 const { saveGalleryPhoto, deleteUploadedFile } = require('../lib/media');
 const { analyzeMessage, shouldBlock } = require('../lib/privacyFilter');
 
@@ -150,7 +151,7 @@ router.delete('/:id/save', requireAuth, (req, res) => {
 
 // -------------------- الأدمن --------------------
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('content', 'view'), (req, res) => {
   const posts = db
     .prepare(
       `SELECT p.*, u.name AS coach_name, u.email AS coach_email
@@ -161,13 +162,15 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   res.json({ posts });
 });
 
-router.post('/admin/:id/hide', requireAdmin, (req, res) => {
+router.post('/admin/:id/hide', requireAdmin, requirePermission('content', 'edit'), (req, res) => {
   db.prepare('UPDATE trainer_posts SET hidden = 1 WHERE id = ?').run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'hide_content', resourceType: 'content', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/restore', requireAdmin, (req, res) => {
+router.post('/admin/:id/restore', requireAdmin, requirePermission('content', 'edit'), (req, res) => {
   db.prepare('UPDATE trainer_posts SET hidden = 0 WHERE id = ?').run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'restore_content', resourceType: 'content', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 

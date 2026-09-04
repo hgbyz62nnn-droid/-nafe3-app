@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 
 const router = express.Router();
 
@@ -75,7 +76,7 @@ router.post('/:id/reply', requireAuth, (req, res) => {
 
 // -------------------- الأدمن (نفس لوحة التحكم الحالية) --------------------
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('chat_support', 'view'), (req, res) => {
   const clauses = [];
   const params = [];
   if (req.query.status && STATUSES.includes(req.query.status)) { clauses.push('t.status = ?'); params.push(req.query.status); }
@@ -95,7 +96,7 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   res.json({ tickets });
 });
 
-router.get('/admin/:id', requireAdmin, (req, res) => {
+router.get('/admin/:id', requireAdmin, requirePermission('chat_support', 'view'), (req, res) => {
   const ticket = db
     .prepare(
       `SELECT t.*, u.name AS user_name, u.email AS user_email, u.role AS user_role, u.banned AS user_banned
@@ -120,7 +121,7 @@ router.get('/admin/:id', requireAdmin, (req, res) => {
   res.json({ ticket, messages, context: { activeSubscription: activeSub || null } });
 });
 
-router.post('/admin/:id/reply', requireAdmin, (req, res) => {
+router.post('/admin/:id/reply', requireAdmin, requirePermission('chat_support', 'manage'), (req, res) => {
   const ticket = db.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id);
   if (!ticket) return res.status(404).json({ error: 'التذكرة غير موجودة' });
   const message = String(req.body.message ?? '').trim().slice(0, 2000);
@@ -134,7 +135,7 @@ router.post('/admin/:id/reply', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/status', requireAdmin, (req, res) => {
+router.post('/admin/:id/status', requireAdmin, requirePermission('chat_support', 'manage'), (req, res) => {
   const updates = [];
   const params = [];
   if (req.body.status !== undefined) {

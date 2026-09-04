@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 const { clampStr, toNullableNumber } = require('../lib/sanitize');
 
 const router = express.Router();
@@ -128,6 +130,66 @@ router.post('/:id/favorite', requireAuth, requireRole('coach'), (req, res) => {
 
 router.delete('/:id/favorite', requireAuth, requireRole('coach'), (req, res) => {
   db.prepare('DELETE FROM exercise_favorites WHERE coach_id = ? AND exercise_id = ?').run(req.user.id, req.params.id);
+  res.json({ ok: true });
+});
+
+// -------------------- الأدمن: مكتبة التمارين العامة (coach_id = NULL) --------------------
+// Administrative visibility/control over the platform-wide exercise
+// registry (spec §8) - the same `exercises` table every coach's library
+// already reads, scoped here to only the system-wide rows (coach_id IS
+// NULL) so a coach's own custom exercises are never touched by an admin.
+// There is no separate "sports/positions" registry in this backend (a
+// coach's sport is a free-text `specialty` field, not a controlled table) -
+// see the final report; this section only covers what genuinely exists:
+// exercises, their muscle groups/equipment/movement patterns.
+
+router.get('/admin/all', requireAdmin, requirePermission('exercises', 'view'), (req, res) => {
+  const exercises = db
+    .prepare(
+      `SELECT id, name, muscle_group, equipment, difficulty, exercise_type, movement_pattern, secondary_muscles, created_at
+       FROM exercises WHERE coach_id IS NULL ORDER BY name`
+    )
+    .all();
+  res.json({ exercises });
+});
+
+router.post('/admin', requireAdmin, requirePermission('exercises', 'create'), (req, res) => {
+  const name = clampStr(req.body.name, 100).trim();
+  if (!name) return res.status(400).json({ error: 'اكتب اسم التمرين' });
+  const muscleGroup = MUSCLE_GROUPS.includes(req.body.muscleGroup) ? req.body.muscleGroup : null;
+  const equipment = EQUIPMENT_TYPES.includes(req.body.equipment) ? req.body.equipment : null;
+  const difficulty = DIFFICULTIES.includes(req.body.difficulty) ? req.body.difficulty : null;
+  const exerciseType = EXERCISE_KINDS.includes(req.body.exerciseType) ? req.body.exerciseType : null;
+  const movementPattern = MOVEMENT_PATTERNS.includes(req.body.movementPattern) ? req.body.movementPattern : null;
+  const instructions = clampStr(req.body.instructions, 500);
+  const secondaryMuscles = Array.isArray(req.body.secondaryMuscles)
+    ? req.body.secondaryMuscles.filter((m) => MUSCLE_GROUPS.includes(m) && m !== muscleGroup).slice(0, 6)
+    : [];
+  const info = db
+    .prepare('INSERT INTO exercises (coach_id, name, muscle_group, equipment, difficulty, exercise_type, movement_pattern, instructions, secondary_muscles) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(name, muscleGroup, equipment, difficulty, exerciseType, movementPattern, instructions || null, JSON.stringify(secondaryMuscles));
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'create_system_exercise', resourceType: 'exercises', resourceId: info.lastInsertRowid, metadata: { name }, ip: req.ip });
+  res.json({ ok: true, id: info.lastInsertRowid });
+});
+
+router.put('/admin/:id', requireAdmin, requirePermission('exercises', 'edit'), (req, res) => {
+  const ex = db.prepare('SELECT * FROM exercises WHERE id = ? AND coach_id IS NULL').get(req.params.id);
+  if (!ex) return res.status(404).json({ error: 'التمرين غير موجود' });
+  const name = clampStr(req.body.name, 100).trim() || ex.name;
+  const muscleGroup = MUSCLE_GROUPS.includes(req.body.muscleGroup) ? req.body.muscleGroup : ex.muscle_group;
+  const equipment = EQUIPMENT_TYPES.includes(req.body.equipment) ? req.body.equipment : ex.equipment;
+  const difficulty = DIFFICULTIES.includes(req.body.difficulty) ? req.body.difficulty : ex.difficulty;
+  db.prepare('UPDATE exercises SET name = ?, muscle_group = ?, equipment = ?, difficulty = ? WHERE id = ?').run(name, muscleGroup, equipment, difficulty, ex.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'edit_system_exercise', resourceType: 'exercises', resourceId: ex.id, ip: req.ip });
+  res.json({ ok: true });
+});
+
+router.delete('/admin/:id', requireAdmin, requirePermission('exercises', 'delete'), (req, res) => {
+  const ex = db.prepare('SELECT id FROM exercises WHERE id = ? AND coach_id IS NULL').get(req.params.id);
+  if (!ex) return res.status(404).json({ error: 'التمرين غير موجود' });
+  db.prepare('DELETE FROM exercise_favorites WHERE exercise_id = ?').run(ex.id);
+  db.prepare('DELETE FROM exercises WHERE id = ?').run(ex.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'delete_system_exercise', resourceType: 'exercises', resourceId: ex.id, ip: req.ip });
   res.json({ ok: true });
 });
 

@@ -1,8 +1,9 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, optionalAuth } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
 const { GOALS, EXPERIENCE_LEVELS, TRAINING_TYPES } = require('../lib/matching');
+const { logAudit } = require('../lib/auditLog');
 
 const router = express.Router();
 
@@ -129,7 +130,7 @@ router.put('/me/matching-tags', requireAuth, requireRole('coach'), (req, res) =>
   res.json({ ok: true });
 });
 
-router.get('/admin/pending', requireAdmin, (req, res) => {
+router.get('/admin/pending', requireAdmin, requirePermission('coaches', 'view'), (req, res) => {
   const pending = db
     .prepare(
       `SELECT u.id, u.name, u.email, c.specialty, c.bio, c.certification
@@ -140,19 +141,21 @@ router.get('/admin/pending', requireAdmin, (req, res) => {
   res.json({ pending });
 });
 
-router.post('/admin/:id/approve', requireAdmin, (req, res) => {
+router.post('/admin/:id/approve', requireAdmin, requirePermission('coaches', 'edit'), (req, res) => {
   db.prepare("UPDATE coach_profiles SET status='approved' WHERE user_id=?").run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'approve_coach', resourceType: 'coaches', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/reject', requireAdmin, (req, res) => {
+router.post('/admin/:id/reject', requireAdmin, requirePermission('coaches', 'edit'), (req, res) => {
   db.prepare("UPDATE coach_profiles SET status='rejected' WHERE user_id=?").run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'reject_coach', resourceType: 'coaches', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
 // -------------------- طلبات تعديل بروفايل مدرب معتمد --------------------
 
-router.get('/admin/pending-edits', requireAdmin, (req, res) => {
+router.get('/admin/pending-edits', requireAdmin, requirePermission('coaches', 'view'), (req, res) => {
   const edits = db
     .prepare(
       `SELECT e.*, u.name AS coach_name, u.email AS coach_email,
@@ -169,7 +172,7 @@ router.get('/admin/pending-edits', requireAdmin, (req, res) => {
   res.json({ edits });
 });
 
-router.post('/admin/edits/:id/approve', requireAdmin, (req, res) => {
+router.post('/admin/edits/:id/approve', requireAdmin, requirePermission('coaches', 'edit'), (req, res) => {
   const edit = db.prepare('SELECT * FROM coach_profile_edits WHERE id = ?').get(req.params.id);
   if (!edit || edit.status !== 'pending') return res.status(404).json({ error: 'الطلب غير موجود' });
   db.prepare(
@@ -177,14 +180,16 @@ router.post('/admin/edits/:id/approve', requireAdmin, (req, res) => {
      WHERE user_id=?`
   ).run(edit.specialty, edit.bio, edit.certification, edit.price_1m, edit.price_3m, edit.price_6m, edit.gender, edit.location, edit.coach_id);
   db.prepare("UPDATE coach_profile_edits SET status='approved', reviewed_at=datetime('now') WHERE id=?").run(edit.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'approve_coach_profile_edit', resourceType: 'coaches', resourceId: edit.coach_id, metadata: { editId: edit.id }, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.post('/admin/edits/:id/reject', requireAdmin, (req, res) => {
+router.post('/admin/edits/:id/reject', requireAdmin, requirePermission('coaches', 'edit'), (req, res) => {
   const edit = db.prepare('SELECT * FROM coach_profile_edits WHERE id = ?').get(req.params.id);
   if (!edit || edit.status !== 'pending') return res.status(404).json({ error: 'الطلب غير موجود' });
   const note = String(req.body.note ?? '').trim().slice(0, 500) || null;
   db.prepare("UPDATE coach_profile_edits SET status='rejected', review_note=?, reviewed_at=datetime('now') WHERE id=?").run(note, edit.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'reject_coach_profile_edit', resourceType: 'coaches', resourceId: edit.coach_id, metadata: { editId: edit.id, note }, ip: req.ip });
   res.json({ ok: true });
 });
 

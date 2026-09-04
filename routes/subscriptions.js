@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
 const { createPaymentSession, isConfigured, verifyWebhookHmac } = require('../lib/paymob');
 const { computeCommission } = require('../lib/commission');
 
@@ -130,7 +130,7 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ subscription: sub, otherParty });
 });
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('subscriptions', 'view'), (req, res) => {
   const subs = db
     .prepare(
       `SELECT s.*, t.name AS trainee_name, c.name AS coach_name

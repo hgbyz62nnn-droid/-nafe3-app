@@ -2,10 +2,11 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
 const { sendVerificationEmail, sendPasswordResetEmail, sendBroadcastEmail } = require('../lib/email');
 const { emailActionLimiter } = require('../lib/rateLimit');
 const { deleteUserAccount } = require('../lib/accountDeletion');
+const { logAudit } = require('../lib/auditLog');
 
 const router = express.Router();
 
@@ -214,7 +215,7 @@ router.get('/me', (req, res) => {
   }
 });
 
-router.get('/admin/users', requireAdmin, (req, res) => {
+router.get('/admin/users', requireAdmin, requirePermission('users', 'view'), (req, res) => {
   const q = req.query.q;
   let query = "SELECT id, role, name, email, banned, verified, created_at FROM users WHERE role != 'admin'";
   const params = [];
@@ -227,30 +228,37 @@ router.get('/admin/users', requireAdmin, (req, res) => {
   res.json({ users });
 });
 
-router.post('/admin/:id/ban', requireAdmin, (req, res) => {
+router.post('/admin/:id/ban', requireAdmin, requirePermission('users', 'suspend'), (req, res) => {
   db.prepare('UPDATE users SET banned = 1 WHERE id = ?').run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'ban_user', resourceType: 'users', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.post('/admin/:id/unban', requireAdmin, (req, res) => {
+router.post('/admin/:id/unban', requireAdmin, requirePermission('users', 'restore'), (req, res) => {
   db.prepare('UPDATE users SET banned = 0 WHERE id = ?').run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'unban_user', resourceType: 'users', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
 // For when a user's verification email never arrives (bounced, stuck in
 // spam, wrong address) and support needs to unblock their account by hand.
-router.post('/admin/:id/verify', requireAdmin, (req, res) => {
+router.post('/admin/:id/verify', requireAdmin, requirePermission('users', 'edit'), (req, res) => {
   db.prepare("UPDATE users SET verified = 1, verify_code = NULL WHERE id = ?").run(req.params.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'manual_verify_user', resourceType: 'users', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.delete('/admin/:id', requireAdmin, (req, res) => {
+// Permanent, irreversible deletion of a user's account and all their data -
+// reserved to SUPER_ADMIN (spec §5: "reset relevant account state" is an
+// ADMIN action via ban/unban/verify above; a full hard delete is not).
+router.delete('/admin/:id', requireAdmin, requirePermission('users', 'delete'), (req, res) => {
   const deleted = deleteUserAccount(req.params.id);
   if (!deleted) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: 'delete_user', resourceType: 'users', resourceId: req.params.id, ip: req.ip });
   res.json({ ok: true });
 });
 
-router.get('/admin/flagged-attempts', requireAdmin, (req, res) => {
+router.get('/admin/flagged-attempts', requireAdmin, requirePermission('moderation', 'view'), (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
   const conditions = [];
   const params = [];
@@ -280,7 +288,13 @@ router.get('/admin/flagged-attempts', requireAdmin, (req, res) => {
   res.json({ attempts });
 });
 
-router.post('/admin/broadcast', requireAdmin, async (req, res) => {
+// The only platform-wide "notification/announcement" mechanism that
+// actually exists in this codebase is this broadcast email - there is no
+// push-notification infrastructure implemented anywhere, so the admin
+// panel's Notifications section does not claim one (spec §13: "do NOT fake
+// them"). Sending an email to every user is high blast-radius, so it's
+// reserved to SUPER_ADMIN.
+router.post('/admin/broadcast', requireAdmin, requirePermission('notifications', 'manage'), async (req, res) => {
   const { targetRole, subject, message } = req.body;
   const targets = (targetRole === 'trainee' || targetRole === 'coach')
     ? db.prepare('SELECT email FROM users WHERE role = ?').all(targetRole)
@@ -291,6 +305,11 @@ router.post('/admin/broadcast', requireAdmin, async (req, res) => {
     try { await sendBroadcastEmail(t.email, subject, message); sent++; }
     catch (e) { failed++; }
   }
+  logAudit(db, {
+    adminId: req.admin.id, adminUsername: req.admin.username,
+    action: 'send_broadcast', resourceType: 'notifications', resourceId: null,
+    metadata: { targetRole: targetRole || 'all', subject, sent, failed, total: targets.length }, ip: req.ip,
+  });
   res.json({ ok: true, sent, failed, total: targets.length });
 });
 

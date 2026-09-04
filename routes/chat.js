@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
 const { analyzeWithHistory, shouldBlock } = require('../lib/privacyFilter');
 
 const router = express.Router();
@@ -68,6 +69,24 @@ router.post('/:subscriptionId', requireAuth, (req, res) => {
     .run(req.params.subscriptionId, req.user.id, content.trim());
 
   res.json({ id: info.lastInsertRowid, ok: true });
+});
+
+// Admin oversight of a subscription's chat thread (spec §7: "view coach
+// conversations") - a real, previously-absent read endpoint over the same
+// `messages` table the two participants already use; no new data source.
+router.get('/admin/:subscriptionId', requireAdmin, requirePermission('chat_support', 'view'), (req, res) => {
+  const sub = db
+    .prepare(
+      `SELECT s.*, t.name AS trainee_name, c.name AS coach_name
+       FROM subscriptions s JOIN users t ON t.id = s.trainee_id JOIN users c ON c.id = s.coach_id
+       WHERE s.id = ?`
+    )
+    .get(req.params.subscriptionId);
+  if (!sub) return res.status(404).json({ error: 'الاشتراك غير موجود' });
+  const messages = db
+    .prepare('SELECT id, sender_id, content, flagged, created_at FROM messages WHERE subscription_id = ? ORDER BY id ASC')
+    .all(req.params.subscriptionId);
+  res.json({ subscription: sub, messages });
 });
 
 module.exports = router;

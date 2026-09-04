@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
 const { requireSubscriptionParty } = require('../middleware/subscriptionAccess');
 const { checkAndAwardBadges } = require('../lib/badges');
 const { hasAvailabilityConfigured, computeAvailableSlots, parseRequestedDateTime } = require('../lib/availability');
@@ -60,7 +60,7 @@ router.post('/:subscriptionId/:sessionId/status', requireAuth, requireSubscripti
 
 // -------------------- الأدمن: كل الحجوزات --------------------
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('subscriptions', 'view'), (req, res) => {
   const clauses = [];
   const params = [];
   if (req.query.status && ['scheduled', 'completed', 'cancelled', 'no_show'].includes(req.query.status)) {

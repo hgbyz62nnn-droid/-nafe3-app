@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 const { sendBroadcastEmail } = require('../lib/email');
 
 const router = express.Router();
@@ -73,7 +74,7 @@ router.post('/report/:userId', requireAuth, (req, res) => {
 
 // -------------------- الأدمن --------------------
 
-router.get('/admin/reports', requireAdmin, (req, res) => {
+router.get('/admin/reports', requireAdmin, requirePermission('moderation', 'view'), (req, res) => {
   const clauses = [];
   const params = [];
   if (req.query.status && ['open', 'dismissed', 'action_taken'].includes(req.query.status)) {
@@ -95,7 +96,7 @@ router.get('/admin/reports', requireAdmin, (req, res) => {
   res.json({ reports });
 });
 
-router.post('/admin/reports/:id/action', requireAdmin, async (req, res) => {
+router.post('/admin/reports/:id/action', requireAdmin, requirePermission('moderation', 'edit'), async (req, res) => {
   const report = db.prepare('SELECT * FROM user_reports WHERE id = ?').get(req.params.id);
   if (!report) return res.status(404).json({ error: 'البلاغ غير موجود' });
   const action = REPORT_ACTIONS.includes(req.body.action) ? req.body.action : null;
@@ -120,6 +121,7 @@ router.post('/admin/reports/:id/action', requireAdmin, async (req, res) => {
 
   const status = action === 'dismiss' ? 'dismissed' : 'action_taken';
   db.prepare('UPDATE user_reports SET status = ?, admin_action = ? WHERE id = ?').run(status, action, report.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: `user_report_${action}`, resourceType: 'moderation', resourceId: report.id, metadata: { reportedId: report.reported_id }, ip: req.ip });
   res.json({ ok: true });
 });
 

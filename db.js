@@ -829,4 +829,38 @@ CREATE TABLE IF NOT EXISTS client_assessments (
 CREATE INDEX IF NOT EXISTS idx_client_assessments_template ON client_assessments(template_id);
 `);
 
+// Super Admin / Full Platform Control - role + status on the existing
+// `admins` table (kept as the one authoritative admin identity space; the
+// `users.role` CHECK still lists 'admin' from before this feature but that
+// value has never actually been used by any login path - real admin auth
+// has always gone through this separate table/cookie, so we extend it
+// rather than merge two identity spaces). Every admin row created before
+// this migration defaults to 'ADMIN' (least privilege) - nobody is silently
+// promoted to SUPER_ADMIN by this migration; promotion is a deliberate,
+// explicit, audited action (routes/admins.js).
+try { db.exec("ALTER TABLE admins ADD COLUMN role TEXT NOT NULL DEFAULT 'ADMIN' CHECK(role IN ('ADMIN','SUPER_ADMIN'))"); } catch (e) {}
+try { db.exec("ALTER TABLE admins ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended'))"); } catch (e) {}
+try { db.exec("ALTER TABLE admins ADD COLUMN created_by INTEGER REFERENCES admins(id)"); } catch (e) {}
+
+// Immutable audit trail (spec: Super Admin §14). Application code never
+// exposes an UPDATE or DELETE route for this table - every admin action
+// that touches it only ever INSERTs a new row.
+db.exec(`
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id INTEGER REFERENCES admins(id),
+  admin_username TEXT,
+  action TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT,
+  metadata TEXT,
+  success INTEGER NOT NULL DEFAULT 1,
+  ip TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_admin ON audit_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
+`);
+
 module.exports = db;

@@ -5,7 +5,8 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission } = require('../middleware/adminAuth');
+const { logAudit } = require('../lib/auditLog');
 const { saveTrainerDocument, deletePrivateDoc } = require('../lib/media');
 const { privateDocsDir } = require('../lib/paths');
 
@@ -109,7 +110,7 @@ router.get('/:id/file', requireOwnerOrAdmin, (req, res) => {
 
 // -------------------- الأدمن --------------------
 
-router.get('/admin/all', requireAdmin, (req, res) => {
+router.get('/admin/all', requireAdmin, requirePermission('coach_documents', 'view'), (req, res) => {
   const clauses = [];
   const params = [];
   if (req.query.status && ['pending', 'approved', 'rejected'].includes(req.query.status)) {
@@ -128,7 +129,7 @@ router.get('/admin/all', requireAdmin, (req, res) => {
   res.json({ documents });
 });
 
-router.post('/admin/:id/review', requireAdmin, (req, res) => {
+router.post('/admin/:id/review', requireAdmin, requirePermission('coach_documents', 'edit'), (req, res) => {
   const doc = db.prepare('SELECT * FROM trainer_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'المستند غير موجود' });
   const action = ['approve', 'reject'].includes(req.body.action) ? req.body.action : null;
@@ -138,6 +139,7 @@ router.post('/admin/:id/review', requireAdmin, (req, res) => {
   db.prepare(
     "UPDATE trainer_documents SET status = ?, review_note = ?, reviewed_at = datetime('now') WHERE id = ?"
   ).run(action === 'approve' ? 'approved' : 'rejected', note, doc.id);
+  logAudit(db, { adminId: req.admin.id, adminUsername: req.admin.username, action: `${action}_trainer_document`, resourceType: 'coach_documents', resourceId: doc.id, metadata: { coachId: doc.coach_id, note }, ip: req.ip });
   res.json({ ok: true });
 });
 

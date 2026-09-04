@@ -2,9 +2,10 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
-const { requireAdmin } = require('../middleware/adminAuth');
+const { requireAdmin, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const { adminLoginLimiter } = require('../lib/rateLimit');
 const { listBackups, resolveBackupPath } = require('../lib/backup');
+const { logAudit } = require('../lib/auditLog');
 
 const router = express.Router();
 
@@ -25,6 +26,10 @@ function setAdminCookie(res, token) {
 
 // بيشتغل مرة واحدة بس: أول ما يتعمل أدمن واحد، الباب ده بيتقفل لنفسه
 // (بيرجع 403 لأي محاولة تانية) - مفيش سر ثابت في الكود محتاج يتحذف بعدين.
+// The very first admin ever created this way is the platform's first
+// SUPER_ADMIN (nobody exists yet to grant it, so it has to be self-granted
+// exactly once) - every admin after this one is created via the SUPER_ADMIN-
+// only routes/admins.js and defaults to ADMIN.
 router.post('/bootstrap', (req, res) => {
   const { username, password } = req.body;
   const count = db.prepare('SELECT COUNT(*) AS c FROM admins').get().c;
@@ -33,7 +38,18 @@ router.post('/bootstrap', (req, res) => {
     return res.status(400).json({ error: 'يوزرنيم وباسورد (10 حروف على الأقل) مطلوبين' });
   }
   const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, password_hash);
+  const info = db
+    .prepare("INSERT INTO admins (username, password_hash, role) VALUES (?, ?, 'SUPER_ADMIN')")
+    .run(username, password_hash);
+  logAudit(db, {
+    adminId: info.lastInsertRowid,
+    adminUsername: username,
+    action: 'bootstrap_super_admin',
+    resourceType: 'admins',
+    resourceId: info.lastInsertRowid,
+    metadata: { note: 'first admin account, self-bootstrapped as SUPER_ADMIN' },
+    ip: req.ip,
+  });
   res.json({ ok: true });
 });
 
@@ -43,8 +59,9 @@ router.post('/login', adminLoginLimiter, (req, res) => {
   if (!admin || !bcrypt.compareSync(password || '', admin.password_hash)) {
     return res.status(401).json({ error: 'يوزرنيم أو باسورد غلط' });
   }
+  if (admin.status === 'suspended') return res.status(403).json({ error: 'تم تعليق حساب الأدمن ده' });
   setAdminCookie(res, signAdminToken(admin));
-  res.json({ ok: true, admin: { id: admin.id, username: admin.username } });
+  res.json({ ok: true, admin: { id: admin.id, username: admin.username, role: admin.role } });
 });
 
 router.post('/logout', (req, res) => {
@@ -57,8 +74,9 @@ router.get('/me', (req, res) => {
   if (!token) return res.json({ admin: null });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const admin = db.prepare('SELECT id, username FROM admins WHERE id = ?').get(decoded.adminId);
-    res.json({ admin: admin || null });
+    const admin = db.prepare('SELECT id, username, role, status FROM admins WHERE id = ?').get(decoded.adminId);
+    if (!admin || admin.status === 'suspended') return res.json({ admin: null });
+    res.json({ admin: { id: admin.id, username: admin.username, role: admin.role } });
   } catch {
     res.json({ admin: null });
   }
@@ -74,26 +92,70 @@ router.post('/change-password', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'الباسورد الجديد لازم يكون 10 حروف على الأقل' });
   }
   db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), admin.id);
+  logAudit(db, {
+    adminId: req.admin.id, adminUsername: req.admin.username,
+    action: 'change_own_password', resourceType: 'admins', resourceId: admin.id, ip: req.ip,
+  });
   res.json({ ok: true });
 });
 
-router.get('/stats', requireAdmin, (req, res) => {
+// Every figure here is a direct COUNT/SUM over persisted rows - none of it
+// is estimated or fabricated (spec §12: "never fabricate metrics").
+router.get('/stats', requireAdmin, requirePermission('analytics', 'view'), (req, res) => {
   const users = db.prepare("SELECT COUNT(*) AS c FROM users WHERE role != 'admin'").get().c;
+  const athletes = db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'trainee'").get().c;
+  const coaches = db.prepare("SELECT COUNT(*) AS c FROM coach_profiles WHERE status = 'approved'").get().c;
+  const pendingCoachApprovals = db.prepare("SELECT COUNT(*) AS c FROM coach_profiles WHERE status = 'pending'").get().c;
   const activeSubscriptions = db.prepare("SELECT COUNT(*) AS c FROM subscriptions WHERE status = 'active'").get().c;
   const totalCommission = db
     .prepare("SELECT COALESCE(SUM(commission_amount), 0) AS s FROM subscriptions WHERE status IN ('active','expired')")
     .get().s;
-  res.json({ users, activeSubscriptions, totalCommission });
+  const totalCoachPayouts = db
+    .prepare("SELECT COALESCE(SUM(coach_payout), 0) AS s FROM subscriptions WHERE status IN ('active','expired')")
+    .get().s;
+  const completedSessions = db.prepare("SELECT COUNT(*) AS c FROM booked_sessions WHERE status = 'completed'").get().c;
+  const checkInsSubmitted = db.prepare('SELECT COUNT(*) AS c FROM check_ins').get().c;
+  const progressEntriesLogged = db.prepare('SELECT COUNT(*) AS c FROM progress_entries').get().c;
+  const openSupportTickets = db.prepare("SELECT COUNT(*) AS c FROM support_tickets WHERE status IN ('open','in_progress','waiting_user')").get().c;
+  const openUserReports = db.prepare("SELECT COUNT(*) AS c FROM user_reports WHERE status = 'open'").get().c;
+  res.json({
+    users, athletes, coaches, pendingCoachApprovals, activeSubscriptions,
+    totalCommission, totalCoachPayouts, completedSessions,
+    checkInsSubmitted, progressEntriesLogged, openSupportTickets, openUserReports,
+  });
 });
 
-router.get('/backups', requireAdmin, (req, res) => {
+// Full raw DB backups contain every user's password hash and every private
+// message/document on the platform - reserved to SUPER_ADMIN outright
+// (spec §10: "do not weaken payment-provider security" / §2: settings is a
+// SUPER_ADMIN-only resource).
+router.get('/backups', requireAdmin, requireSuperAdmin, (req, res) => {
   res.json({ backups: listBackups() });
 });
 
-router.get('/backups/:name', requireAdmin, (req, res) => {
+router.get('/backups/:name', requireAdmin, requireSuperAdmin, (req, res) => {
   const filePath = resolveBackupPath(req.params.name);
   if (!filePath) return res.status(404).json({ error: 'النسخة الاحتياطية غير موجودة' });
+  logAudit(db, {
+    adminId: req.admin.id, adminUsername: req.admin.username,
+    action: 'download_backup', resourceType: 'settings', resourceId: req.params.name, ip: req.ip,
+  });
   res.download(filePath);
+});
+
+// Audit trail itself - read-only, SUPER_ADMIN only (spec §2: "audit_logs"
+// is empty for ADMIN so it can never view or tamper with the record of its
+// own actions). No update/delete route exists for this table anywhere.
+router.get('/audit-log', requireAdmin, requireSuperAdmin, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+  const conditions = [];
+  const params = [];
+  if (req.query.resourceType) { conditions.push('resource_type = ?'); params.push(req.query.resourceType); }
+  if (req.query.adminId) { conditions.push('admin_id = ?'); params.push(req.query.adminId); }
+  if (req.query.success === '0' || req.query.success === '1') { conditions.push('success = ?'); params.push(Number(req.query.success)); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const entries = db.prepare(`SELECT * FROM audit_logs ${where} ORDER BY id DESC LIMIT ?`).all(...params, limit);
+  res.json({ entries });
 });
 
 module.exports = router;
