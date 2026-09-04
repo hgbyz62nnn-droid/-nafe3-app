@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Reuses TRAINO's existing brand tokens (tailwind.config.js: bg / red.DEFAULT) —
+         not new colors. colorPrimaryDark also backs the system status bar background
+         in AppCompat, matching the app's own black background so the real status bar
+         doesn't clash with the app's decorative in-app StatusBar row. -->
+    <color name="colorPrimary">#E0272E</color>
+    <color name="colorPrimaryDark">#050505</color>
+    <color name="colorAccent">#E0272E</color>
+</resources>
