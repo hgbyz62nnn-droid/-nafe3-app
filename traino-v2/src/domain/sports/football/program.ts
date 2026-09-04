@@ -249,7 +249,11 @@ const intermediateDays: WorkoutDayTemplate[] = [
         reps: '6-8',
         restSec: 90,
         equipment: ['pull_up_bar'],
-        bodyweightAlternative: { name: 'Dumbbell Row', reps: '10 / side' },
+        // "Dumbbell Row" itself requires dumbbells — not a valid equipment-free
+        // substitute. "Inverted Row (table)" is the genuinely no-equipment
+        // pulling-pattern substitute already used elsewhere in this file (see
+        // "Dumbbell Row" -> "Inverted Row (table)" above).
+        bodyweightAlternative: { name: 'Inverted Row (table)', reps: '10 / side' },
         category: 'strength',
         contraindications: ['shoulder'],
       },
@@ -410,7 +414,9 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '6',
         restSec: 120,
         equipment: ['pull_up_bar'],
-        bodyweightAlternative: { name: 'Pull-Up', reps: '8-10' },
+        // "Pull-Up" still requires a pull-up bar — not equipment-free. Same
+        // no-equipment pulling substitute as above.
+        bodyweightAlternative: { name: 'Inverted Row (table)', reps: '8-10' },
         category: 'strength',
         contraindications: ['shoulder'],
       },
@@ -430,7 +436,9 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '10 / side',
         restSec: 75,
         equipment: ['cable_machine'],
-        bodyweightAlternative: { name: 'Dumbbell Row', reps: '12 / side' },
+        // "Dumbbell Row" requires dumbbells — not equipment-free. Same
+        // no-equipment pulling substitute as above.
+        bodyweightAlternative: { name: 'Inverted Row (table)', reps: '12 / side' },
         category: 'strength',
       },
       {

@@ -70,6 +70,38 @@ describe('resolveTravelWorkout — G: no equipment travel', () => {
   });
 });
 
+describe('resolveTravelWorkout — equipment-constrained progression model (regression)', () => {
+  // Same real-world bug this test file's own D/E/G scenarios exist to prevent, but at the
+  // progression-model layer: an equipment-unavailable travel resolution must never leave a
+  // strength/power exercise resolved with a 'load' progression model.
+  function progressionContext() {
+    return { getHistory: () => [], getReadinessStatus: () => null };
+  }
+
+  it('no-equipment travel never resolves a load progression model', () => {
+    const profile = profileFor({ equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const workout = resolveTravelWorkout(profile, travelConstraints({ equipmentIds: [] }), {
+      athleteConstraints: constraintsFor(profile),
+      progression: progressionContext(),
+    });
+    const strengthExercises = workout.exercises.filter((ex) => ex.progression && (ex.category === 'strength' || ex.category === 'power'));
+    expect(strengthExercises.length).toBeGreaterThan(0);
+    for (const ex of strengthExercises) {
+      expect(ex.progression!.model).not.toBe('load');
+    }
+  });
+
+  it('travel with dumbbells available still allows load progression where the resolved exercise supports it', () => {
+    const profile = profileFor({ equipmentIds: FULL_EQUIPMENT, trainingLocationIds: ['gym'] });
+    const workout = resolveTravelWorkout(profile, travelConstraints({ equipmentIds: ['dumbbells'] }), {
+      athleteConstraints: constraintsFor(profile),
+      progression: progressionContext(),
+    });
+    const loadExercises = workout.exercises.filter((ex) => ex.progression?.model === 'load');
+    expect(loadExercises.length).toBeGreaterThan(0);
+  });
+});
+
 describe('compressWorkoutToTimeBudget — H: reduced time', () => {
   it('compresses a normal-duration workout down toward the time budget without positional truncation', () => {
     const profile = profileFor({ equipmentIds: [], trainingLocationIds: ['home'] });

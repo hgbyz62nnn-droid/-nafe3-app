@@ -1,7 +1,7 @@
 import type { ResolvedExercise, ResolvedWorkout } from '../engine/planEngine';
 import { generateContextAdjustedWorkout } from '../engine/planEngine';
 import type { AiCoachAdjustment, UserProfile } from '../engine/types';
-import type { ExerciseProgressionContext } from '../engine/progressionIntegration';
+import { applyExerciseProgression, type ExerciseProgressionContext } from '../engine/progressionIntegration';
 import { getExerciseByName } from '../exercise/registry';
 import { suggestReplacements, type AthleteConstraints } from '../exercise/matchingEngine';
 import type { TravelConstraints } from './types';
@@ -25,7 +25,12 @@ import type { TravelConstraints } from './types';
 /** Only apply the Exercise-Intelligence upgrade when the travel equipment set
  * is a genuine, non-empty PARTIAL subset — a pure bodyweight-only preset has
  * nothing better to offer than the already-correct bodyweightAlternative. */
-function enrichWithExerciseIntelligence(workout: ResolvedWorkout, travel: TravelConstraints, baseConstraints: AthleteConstraints): ResolvedWorkout {
+function enrichWithExerciseIntelligence(
+  workout: ResolvedWorkout,
+  travel: TravelConstraints,
+  baseConstraints: AthleteConstraints,
+  progression?: ExerciseProgressionContext
+): ResolvedWorkout {
   if (travel.equipmentIds.length === 0) return workout;
 
   const exercises = workout.exercises.map((ex): ResolvedExercise => {
@@ -38,7 +43,21 @@ function enrichWithExerciseIntelligence(workout: ResolvedWorkout, travel: Travel
     const top = candidates[0];
     if (!top) return ex; // no compatible alternative for this subset — keep the safe bodyweight fallback
 
-    return { ...ex, name: top.exercise.displayName, substitutionReason: 'travel' };
+    const swapped: ResolvedExercise = { ...ex, name: top.exercise.displayName, substitutionReason: 'travel' };
+    if (!progression) return swapped;
+
+    // The base resolution's `ex.progression` was computed for the ORIGINAL bodyweight
+    // fallback (equipment-free) — swapping to a richer, equipment-matched alternative here
+    // must recompute it for what the athlete is actually performing now, using the real
+    // travel equipment subset (already the hard filter `suggestReplacements` matched
+    // `top.exercise` against), never leaving the stale pre-swap model/decision attached to
+    // a different exercise name.
+    const progressed = applyExerciseProgression(
+      { name: swapped.name, sets: swapped.sets, reps: swapped.reps, category: swapped.category },
+      travel.equipmentIds,
+      progression
+    );
+    return progressed ? { ...swapped, reps: progressed.reps, progression: progressed.decision } : swapped;
   });
 
   return { ...workout, exercises };
@@ -135,6 +154,6 @@ export function resolveTravelWorkout(profile: UserProfile, travel: TravelConstra
     options.weekNumber ?? 1,
     options.progression
   );
-  const enriched = enrichWithExerciseIntelligence(base, travel, options.athleteConstraints);
+  const enriched = enrichWithExerciseIntelligence(base, travel, options.athleteConstraints, options.progression);
   return compressWorkoutToTimeBudget(enriched, travel.time.minutesAvailable);
 }

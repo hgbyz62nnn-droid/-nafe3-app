@@ -3,6 +3,7 @@ import { generateTodayWorkout, applyCoachAdjustment } from './planEngine';
 import type { ExerciseProgressionContext } from './progressionIntegration';
 import { footballModule } from '../sports/football/program';
 import { swimmingModule } from '../sports/swimming/program';
+import { getExerciseByName } from '../exercise/registry';
 import { baseAnswers } from './testFixtures';
 import type { AssessmentAnswers, FitnessLevel, UserProfile } from './types';
 import type { ExercisePerformanceLog } from '../progression/types';
@@ -95,6 +96,40 @@ describe('R: equipment constraint changes the progression model itself, not just
     for (const ex of strengthExercises) {
       // No equipment is available at all, so nothing resolved today can be a load model.
       expect(ex.progression!.model).not.toBe('load');
+    }
+  });
+
+  it('the same invariant holds for Swimming — generic across sports, not football-specific', () => {
+    const noEquipment = profileFor({ sport: 'swimming', trainingLocationIds: ['pool'], equipmentIds: [] }, 'advanced');
+    const resolved = generateTodayWorkout(noEquipment, undefined, 1, progressionContext({}));
+    const strengthExercises = resolved.exercises.filter((ex) => ex.progression && (ex.category === 'strength' || ex.category === 'power'));
+    for (const ex of strengthExercises) {
+      expect(ex.progression!.model).not.toBe('load');
+    }
+  });
+
+  it('a load exercise with its required equipment available still progresses as load — the fix does not globally suppress load progression', () => {
+    const equipped = profileFor({ sport: 'football', trainingLocationIds: ['gym'], equipmentIds: ['barbell', 'bench', 'squat_rack', 'dumbbells', 'pull_up_bar', 'cable_machine'] }, 'advanced');
+    const resolved = generateTodayWorkout(equipped, undefined, 1, progressionContext({}));
+    const loadExercises = resolved.exercises.filter((ex) => ex.progression?.model === 'load');
+    expect(loadExercises.length).toBeGreaterThan(0);
+  });
+
+  it('an equipment-substituted exercise\'s OWN safety contraindications never include the athlete\'s injury (substitution never carries forward the original exercise\'s unsafe tag)', () => {
+    // The same mis-authored bodyweightAlternative data that broke the progression model
+    // (an equipment-requiring exercise name used as a "bodyweight" substitute) also broke
+    // this independent safety invariant, since the substitute's own canonical Exercise
+    // Library entry could still carry the very contraindication the substitution exists
+    // to avoid — e.g. "Weighted Pull-Up" (contraindications: ['shoulder']) substituting to
+    // "Pull-Up", which itself also carries contraindications: ['shoulder']. Covering both
+    // from the same real-world regression.
+    const injured = profileFor({ sport: 'football', injuryIds: ['shoulder'], equipmentIds: [] }, 'advanced');
+    const resolved = generateTodayWorkout(injured, undefined, 1, progressionContext({}));
+    expect(resolved.exercises.length).toBeGreaterThan(0);
+    for (const ex of resolved.exercises) {
+      const def = getExerciseByName(ex.name);
+      if (!def) continue;
+      expect(def.safety.contraindications.includes('shoulder')).toBe(false);
     }
   });
 });

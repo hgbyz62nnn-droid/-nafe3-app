@@ -391,7 +391,10 @@ const advancedDays: WorkoutDayTemplate[] = [
         reps: '6',
         restSec: 90,
         equipment: ['pull_up_bar'],
-        bodyweightAlternative: { name: 'Pull-Up', reps: '8-10' },
+        // "Pull-Up" still requires a pull-up bar — not equipment-free.
+        // "Inverted Row (table)" is the genuinely no-equipment pulling-pattern
+        // substitute (same fix applied in the Football module).
+        bodyweightAlternative: { name: 'Inverted Row (table)', reps: '8-10' },
         category: 'strength',
         contraindications: ['shoulder'],
       },

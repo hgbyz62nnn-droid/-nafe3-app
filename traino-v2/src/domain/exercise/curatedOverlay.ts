@@ -93,9 +93,21 @@ export const CURATED_OVERLAY: Record<string, Partial<ExerciseDefinition>> = {
     regressionIds: ['push-ups'],
   },
   'dumbbell-floor-press': {
+    // Only ever reached via LEGACY_ALTERNATIVES_BY_NAME's conservative
+    // "bodyweight equipment default" fold-in (deriveDefinitions.ts) — never
+    // authored as a real sport-module slot, so that default's equipment: []
+    // silently mislabeled a dumbbell-requiring movement as equipment-free.
+    // Corrected here at the single-source-of-truth layer; `progressionModel`
+    // is explicit too since it's derived from the (wrong) raw equipment
+    // before this overlay is merged, so it wouldn't otherwise self-correct.
+    equipment: ['dumbbells'],
+    progressionModel: 'load',
     primaryMuscles: ['chest', 'triceps'],
   },
   'dumbbell-bench-press': {
+    // Same fix as 'dumbbell-floor-press' above, same root cause.
+    equipment: ['dumbbells'],
+    progressionModel: 'load',
     aliases: ['DB Bench Press'],
     primaryMuscles: ['chest', 'triceps'],
     secondaryMuscles: ['shoulders'],

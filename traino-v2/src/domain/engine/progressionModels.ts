@@ -98,11 +98,23 @@ function buildConfigForModel(model: ProgressionModel, slot: ProgressableSlot): P
  * string: the Exercise Library is the single source of truth for "which model", this function
  * still owns "how to parse this slot's reps into that model's numeric bounds". Omitted/exercise
  * not yet in the library falls back to the original reps-string classification unchanged.
+ *
+ * Invariant: a exercise's canonical `preferredModel` describes what that named movement
+ * generally supports (its identity) — it does NOT describe what's valid for *this particular
+ * resolution* (its performed context). `slot.equipment` is always the actually-resolved
+ * equipment for what the athlete is doing today (see planEngine.ts's `equipmentForModel`,
+ * always `[]` for an equipment/injury/location substitution's bodyweight alternative). A
+ * 'load' model can never be valid with zero resolved equipment — nothing external exists to
+ * add load with — regardless of what the resolved exercise's own canonical metadata says.
+ * When that contradiction occurs, fall through to the reps-string classification below,
+ * which naturally lands on 'rep_range'/'technique' for an equipment-free slot. Every other
+ * preferred model (including 'load' WITH equipment) is unaffected and still applies directly.
  */
 export function inferProgressionModel(slot: ProgressableSlot, preferredModel?: ProgressionModel): ProgressionModelConfig | null {
   if (NON_PROGRESSED_CATEGORIES.includes(slot.category)) return null;
 
-  if (preferredModel) return buildConfigForModel(preferredModel, slot);
+  const preferredModelIsValidForContext = preferredModel && !(preferredModel === 'load' && slot.equipment.length === 0);
+  if (preferredModelIsValidForContext) return buildConfigForModel(preferredModel, slot);
 
   const distanceOrDuration = parseDistanceOrDuration(slot.reps);
   if (distanceOrDuration) return { model: distanceOrDuration.model };
